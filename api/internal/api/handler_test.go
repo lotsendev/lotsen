@@ -1,15 +1,20 @@
 package api_test
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ercadev/dirigent/internal/api"
+	"github.com/ercadev/dirigent/internal/events"
 	"github.com/ercadev/dirigent/store"
 )
 
@@ -75,9 +80,24 @@ func (m *memStore) Delete(id string) error {
 	return nil
 }
 
+// failUpdateStore wraps memStore but always fails on Update.
+type failUpdateStore struct {
+	*memStore
+}
+
+func (f *failUpdateStore) Update(_ store.Deployment) (store.Deployment, error) {
+	return store.Deployment{}, errors.New("disk full")
+}
+
 func newTestServer(s api.Store) *httptest.Server {
 	mux := http.NewServeMux()
-	api.New(s).RegisterRoutes(mux)
+	api.New(s, events.NewBroker()).RegisterRoutes(mux)
+	return httptest.NewServer(mux)
+}
+
+func newTestServerWithBroker(s api.Store, b *events.Broker) *httptest.Server {
+	mux := http.NewServeMux()
+	api.New(s, b).RegisterRoutes(mux)
 	return httptest.NewServer(mux)
 }
 
@@ -369,5 +389,312 @@ func TestDeleteDeployment_StoreError(t *testing.T) {
 
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d", resp.StatusCode)
+	}
+}
+
+// readSSEEvents connects to the SSE endpoint and sends parsed events to the
+// returned channel until ctx is cancelled or the connection drops.
+func readSSEEvents(ctx context.Context, t *testing.T, url string) <-chan events.StatusEvent {
+	t.Helper()
+	out := make(chan events.StatusEvent, 8)
+	go func() {
+		defer close(out)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			var e events.StatusEvent
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &e); err != nil {
+				continue
+			}
+			select {
+			case out <- e:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
+}
+
+func TestDeploymentEvents_EmitsDeployingOnCreate(t *testing.T) {
+	broker := events.NewBroker()
+	srv := newTestServerWithBroker(newMemStore(), broker)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	evtCh := readSSEEvents(ctx, t, srv.URL+"/api/deployments/events")
+	// Give the SSE goroutine time to connect and subscribe before we trigger.
+	time.Sleep(50 * time.Millisecond)
+
+	body, _ := json.Marshal(map[string]string{"name": "web", "image": "nginx:latest"})
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	var created store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	resp.Body.Close()
+
+	select {
+	case event := <-evtCh:
+		if event.DeploymentID != created.ID {
+			t.Errorf("want deploymentId %s, got %s", created.ID, event.DeploymentID)
+		}
+		if event.Status != string(store.StatusDeploying) {
+			t.Errorf("want status deploying, got %s", event.Status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: no SSE event received after create")
+	}
+}
+
+func TestDeploymentEvents_EmitsAllStatusesViaPatch(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusDeploying}
+
+	broker := events.NewBroker()
+	srv := newTestServerWithBroker(s, broker)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	evtCh := readSSEEvents(ctx, t, srv.URL+"/api/deployments/events")
+	time.Sleep(50 * time.Millisecond)
+
+	statuses := []store.Status{
+		store.StatusHealthy,
+		store.StatusFailed,
+		store.StatusIdle,
+		store.StatusDeploying,
+	}
+
+	for _, st := range statuses {
+		body, _ := json.Marshal(map[string]string{"status": string(st)})
+		req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1/status", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("PATCH status %s: %v", st, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("PATCH status %s: want 200, got %d", st, resp.StatusCode)
+		}
+
+		select {
+		case event := <-evtCh:
+			if event.DeploymentID != "d1" {
+				t.Errorf("status %s: want deploymentId d1, got %s", st, event.DeploymentID)
+			}
+			if event.Status != string(st) {
+				t.Errorf("want status %s, got %s", st, event.Status)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timeout: no SSE event received for status %s", st)
+		}
+	}
+}
+
+func TestDeploymentEvents_FailedStatusCarriesError(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusDeploying}
+
+	broker := events.NewBroker()
+	srv := newTestServerWithBroker(s, broker)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	evtCh := readSSEEvents(ctx, t, srv.URL+"/api/deployments/events")
+	time.Sleep(50 * time.Millisecond)
+
+	body, _ := json.Marshal(map[string]string{
+		"status": string(store.StatusFailed),
+		"error":  "container exited with code 1",
+	})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1/status", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+
+	select {
+	case event := <-evtCh:
+		if event.Status != string(store.StatusFailed) {
+			t.Errorf("want status failed, got %s", event.Status)
+		}
+		if event.Error != "container exited with code 1" {
+			t.Errorf("want error message, got %q", event.Error)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: no SSE event received")
+	}
+}
+
+func TestDeploymentEvents_ClientDisconnectCleansUp(t *testing.T) {
+	broker := events.NewBroker()
+	srv := newTestServerWithBroker(newMemStore(), broker)
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	evtCh := readSSEEvents(ctx, t, srv.URL+"/api/deployments/events")
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel the client — simulates disconnect.
+	cancel()
+
+	// After disconnect the channel should close (goroutine exits).
+	select {
+	case _, open := <-evtCh:
+		if open {
+			t.Error("expected channel to be closed after client disconnect")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: SSE goroutine did not exit after client disconnect")
+	}
+}
+
+func TestUpdateDeploymentStatus(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusDeploying}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"status": "healthy"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1/status", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/d1/status: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if updated.Status != store.StatusHealthy {
+		t.Errorf("want status healthy, got %s", updated.Status)
+	}
+}
+
+func TestUpdateDeploymentStatus_InvalidStatus(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusDeploying}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"status": "unknown"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1/status", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/d1/status: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateDeploymentStatus_NotFound(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"status": "healthy"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/nonexistent/status", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH status nonexistent: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateDeploymentStatus_StoreGetError(t *testing.T) {
+	srv := newTestServer(&errStore{})
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"status": "healthy"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/any/status", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH status store error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateDeploymentStatus_StoreUpdateError(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusDeploying}
+
+	srv := newTestServer(&failUpdateStore{s})
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"status": "healthy"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1/status", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH status update error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateDeploymentStatus_InvalidBody(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1/status", bytes.NewBufferString("not json"))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH status invalid body: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
 	}
 }

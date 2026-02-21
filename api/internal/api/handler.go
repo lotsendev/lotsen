@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/ercadev/dirigent/internal/events"
 	"github.com/ercadev/dirigent/store"
 )
 
@@ -18,6 +19,12 @@ type Store interface {
 	Create(d store.Deployment) (store.Deployment, error)
 	Update(d store.Deployment) (store.Deployment, error)
 	Delete(id string) error
+}
+
+// EventBus is the pub/sub interface required by the API handlers.
+type EventBus interface {
+	Subscribe() (<-chan events.StatusEvent, func())
+	Publish(events.StatusEvent)
 }
 
 type deploymentRequest struct {
@@ -31,20 +38,23 @@ type deploymentRequest struct {
 
 // Handler holds the dependencies for the API layer.
 type Handler struct {
-	store Store
+	store  Store
+	events EventBus
 }
 
-// New creates a Handler backed by the given store.
-func New(s Store) *Handler {
-	return &Handler{store: s}
+// New creates a Handler backed by the given store and event bus.
+func New(s Store, eb EventBus) *Handler {
+	return &Handler{store: s, events: eb}
 }
 
 // RegisterRoutes wires all deployment endpoints into mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/deployments", h.listDeployments)
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
+	mux.HandleFunc("GET /api/deployments/events", h.deploymentEvents)
 	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)
 	mux.HandleFunc("DELETE /api/deployments/{id}", h.deleteDeployment)
+	mux.HandleFunc("PATCH /api/deployments/{id}/status", h.updateDeploymentStatus)
 	mux.HandleFunc("PATCH /api/deployments/{id}", h.patchDeployment)
 }
 
@@ -127,6 +137,11 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.events.Publish(events.StatusEvent{
+		DeploymentID: created.ID,
+		Status:       string(store.StatusDeploying),
+	})
+
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -145,6 +160,54 @@ func (h *Handler) deleteDeployment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) updateDeploymentStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var body struct {
+		Status store.Status `json:"status"`
+		Error  string       `json:"error"`
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	switch body.Status {
+	case store.StatusIdle, store.StatusDeploying, store.StatusHealthy, store.StatusFailed:
+		// valid
+	default:
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+
+	d, err := h.store.Get(id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "deployment not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to get deployment", http.StatusInternalServerError)
+		return
+	}
+
+	d.Status = body.Status
+	updated, err := h.store.Update(d)
+	if err != nil {
+		http.Error(w, "failed to update deployment", http.StatusInternalServerError)
+		return
+	}
+
+	h.events.Publish(events.StatusEvent{
+		DeploymentID: id,
+		Status:       string(body.Status),
+		Error:        body.Error,
+	})
+
+	writeJSON(w, http.StatusOK, updated)
+}
+
 func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var body deploymentRequest
@@ -155,6 +218,7 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+
 	deployment := store.Deployment{
 		ID:      id,
 		Name:    body.Name,
@@ -175,6 +239,41 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// deploymentEvents streams deployment status-change events as SSE.
+// The stream stays open until the client disconnects.
+func (h *Handler) deploymentEvents(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ch, cancel := h.events.Subscribe()
+	defer cancel()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case event := <-ch:
+			data, err := json.Marshal(event)
+			if err != nil {
+				log.Printf("deploymentEvents: marshal event: %v", err)
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				log.Printf("deploymentEvents: write: %v", err)
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

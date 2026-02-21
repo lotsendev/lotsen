@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/ercadev/dirigent/internal/api"
+	"github.com/ercadev/dirigent/internal/events"
 	"github.com/ercadev/dirigent/store"
 )
 
@@ -24,8 +25,10 @@ func main() {
 		log.Fatalf("dirigent: open store: %v", err)
 	}
 
+	broker := events.NewBroker()
+
 	mux := http.NewServeMux()
-	api.New(s).RegisterRoutes(mux)
+	api.New(s, broker).RegisterRoutes(mux)
 
 	log.Printf("dirigent API listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {

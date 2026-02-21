@@ -13,8 +13,10 @@ import (
 
 // Store is the persistence interface required by the API handlers.
 type Store interface {
-	List() []store.Deployment
+	List() ([]store.Deployment, error)
+	Get(id string) (store.Deployment, error)
 	Create(d store.Deployment) (store.Deployment, error)
+	Update(d store.Deployment) (store.Deployment, error)
 	Delete(id string) error
 }
 
@@ -32,15 +34,36 @@ func New(s Store) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/deployments", h.listDeployments)
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
+	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)
 	mux.HandleFunc("DELETE /api/deployments/{id}", h.deleteDeployment)
 }
 
 func (h *Handler) listDeployments(w http.ResponseWriter, r *http.Request) {
-	deployments := h.store.List()
+	deployments, err := h.store.List()
+	if err != nil {
+		http.Error(w, "failed to list deployments", http.StatusInternalServerError)
+		return
+	}
 	if deployments == nil {
 		deployments = []store.Deployment{}
 	}
 	writeJSON(w, http.StatusOK, deployments)
+}
+
+func (h *Handler) getDeployment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	d, err := h.store.Get(id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "deployment not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to get deployment", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, d)
 }
 
 func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
@@ -88,11 +111,15 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		Ports:   body.Ports,
 		Volumes: body.Volumes,
 		Domain:  body.Domain,
-		Status:  store.StatusIdle,
+		Status:  store.StatusDeploying,
 	}
 
 	created, err := h.store.Create(d)
 	if err != nil {
+		if errors.Is(err, store.ErrDuplicateName) {
+			http.Error(w, "deployment name already in use", http.StatusConflict)
+			return
+		}
 		http.Error(w, "failed to create deployment", http.StatusInternalServerError)
 		return
 	}

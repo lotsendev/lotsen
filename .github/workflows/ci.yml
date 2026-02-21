@@ -9,9 +9,6 @@ jobs:
   go:
     name: Go
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: control-plane
     steps:
       - uses: actions/checkout@v4
 
@@ -23,19 +20,34 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('control-plane/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum', 'orchestrator/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
-      - name: Build
+      - name: Build API
+        working-directory: api
         run: go build ./...
 
-      - name: Test
+      - name: Test API
+        working-directory: api
+        run: go test ./...
+
+      - name: Build orchestrator
+        working-directory: orchestrator
+        run: go build ./...
+
+      - name: Test orchestrator
+        working-directory: orchestrator
         run: go test ./...
 
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
-          working-directory: control-plane
+          working-directory: api
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          working-directory: orchestrator
 
   react:
     name: React

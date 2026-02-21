@@ -12,6 +12,9 @@ import (
 // ErrNotFound is returned when a deployment with the given ID does not exist.
 var ErrNotFound = errors.New("deployment not found")
 
+// ErrDuplicateName is returned by Create when a deployment with the same name already exists.
+var ErrDuplicateName = errors.New("deployment name already in use")
+
 // Status represents the lifecycle state of a deployment.
 type Status string
 
@@ -143,15 +146,56 @@ func (s *JSONStore) List() []Deployment {
 	return result
 }
 
+// Get returns the deployment with the given ID.
+// Returns ErrNotFound if no such deployment exists.
+func (s *JSONStore) Get(id string) (Deployment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	d, ok := s.data[id]
+	if !ok {
+		return Deployment{}, ErrNotFound
+	}
+	return d, nil
+}
+
 // Create persists a new deployment and returns it.
+// Returns ErrDuplicateName if a deployment with the same name already exists.
 func (s *JSONStore) Create(d Deployment) (Deployment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	for _, existing := range s.data {
+		if existing.Name == d.Name {
+			return Deployment{}, ErrDuplicateName
+		}
+	}
 
 	s.data[d.ID] = d
 
 	if err := s.persist(); err != nil {
 		delete(s.data, d.ID)
+		return Deployment{}, err
+	}
+
+	return d, nil
+}
+
+// Update replaces the stored deployment and persists to disk.
+// Returns ErrNotFound if no deployment with that ID exists.
+func (s *JSONStore) Update(d Deployment) (Deployment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prev, ok := s.data[d.ID]
+	if !ok {
+		return Deployment{}, ErrNotFound
+	}
+
+	s.data[d.ID] = d
+
+	if err := s.persist(); err != nil {
+		s.data[d.ID] = prev
 		return Deployment{}, err
 	}
 

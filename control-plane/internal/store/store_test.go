@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -118,5 +119,96 @@ func TestJSONStore_InvalidPath(t *testing.T) {
 	_, err = store.NewJSONStore("relative/path.json")
 	if err == nil {
 		t.Fatal("want error for relative path, got nil")
+	}
+}
+
+func TestJSONStore_Get_Found(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{ID: "d1", Name: "web", Status: store.StatusDeploying})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	d, err := s.Get("d1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if d.ID != "d1" {
+		t.Errorf("want id d1, got %s", d.ID)
+	}
+}
+
+func TestJSONStore_Get_NotFound(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Get("nonexistent")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestJSONStore_Create_DuplicateName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{ID: "d1", Name: "web", Status: store.StatusDeploying})
+	if err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{ID: "d2", Name: "web", Status: store.StatusDeploying})
+	if !errors.Is(err, store.ErrDuplicateName) {
+		t.Errorf("want ErrDuplicateName, got %v", err)
+	}
+}
+
+func TestJSONStore_Update(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{ID: "d1", Name: "web", Status: store.StatusDeploying})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	updated, err := s.Update(store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated.Status != store.StatusHealthy {
+		t.Errorf("want status healthy, got %s", updated.Status)
+	}
+
+	d, _ := s.Get("d1")
+	if d.Status != store.StatusHealthy {
+		t.Errorf("want persisted status healthy, got %s", d.Status)
+	}
+}
+
+func TestJSONStore_Update_NotFound(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Update(store.Deployment{ID: "nonexistent", Name: "web"})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("want ErrNotFound, got %v", err)
 	}
 }

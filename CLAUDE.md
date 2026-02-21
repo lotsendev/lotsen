@@ -20,8 +20,8 @@ Dirigent is a Docker container orchestration tool for solo developers and small 
 
 ## Tech Stack
 
-- **Backend:** Go (Docker orchestrator)
-- **Frontend:** React (web GUI)
+- **Backend:** Go (Docker orchestrator + REST API)
+- **Frontend:** Bun + React + Vite (dashboard, runs as a Docker container)
 - **Infrastructure:** Docker, VPS
 
 ## Git Conventions
@@ -67,11 +67,65 @@ chore: upgrade Go to 1.23
 docs: add architecture overview to CLAUDE.md
 ```
 
-## Repository Status
+## Build and Run
 
-This project is in early development. As source code is added, update this file with:
+### Go (dirigent API)
 
-- Build commands (`go build`, `npm run build`, etc.)
-- How to run tests (`go test ./...`, `npm test`, etc.)
-- How to run linters
-- Architecture notes covering how the Go backend, React frontend, load balancer, and GitOps components interact
+```bash
+# Run the orchestration API (port 8080)
+go run ./cmd/dirigent
+
+# Build the binary
+go build -o dirigent ./cmd/dirigent
+
+# Run all tests
+go test ./...
+```
+
+### Dashboard (Bun + React + Vite)
+
+```bash
+cd dashboard
+
+# Install dependencies (first time)
+bun install
+
+# Development server — proxies /api/* to http://localhost:8080
+bun run dev
+
+# Production build (outputs to dashboard/dist/)
+bun run build
+
+# Run the production server (serves dist/ on :3000)
+bun run start
+```
+
+### Docker (production)
+
+```bash
+# Build the dashboard image
+docker build -t dirigent-dashboard ./dashboard
+
+# The dashboard container is managed by Dirigent in production
+```
+
+## Architecture
+
+```
+/
+├── cmd/
+│   └── dirigent/    Go orchestration engine + REST API (:8080)
+├── internal/        Shared Go packages (api handlers, store, etc.)
+├── dashboard/       Bun + React + Vite dashboard (ships as Docker image)
+│   ├── src/
+│   │   ├── main.tsx
+│   │   ├── App.tsx
+│   │   └── pages/   One file per page
+│   ├── server.ts    Bun SPA server for production (:3000)
+│   ├── Dockerfile
+│   └── dist/        Production build output (git-ignored)
+└── go.mod
+```
+
+- In **development**: run `go run ./cmd/dirigent` for the API, then `bun run dev` inside `dashboard/`. Vite proxies `/api/*` to `:8080`.
+- In **production**: the dashboard runs as a Docker container (managed by Dirigent) serving the Vite build via `server.ts` on `:3000`.

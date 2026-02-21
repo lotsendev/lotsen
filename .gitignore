@@ -1,0 +1,7 @@
+# Go
+dirigent
+
+# Node / Bun
+dashboard/node_modules/
+dashboard/dist/
+dashboard/*.tsbuildinfo

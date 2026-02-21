@@ -18,6 +18,43 @@ Dirigent is a Docker container orchestration tool for solo developers and small 
 - **Frontend:** React (web GUI)
 - **Infrastructure:** Docker, VPS
 
+## Git Conventions
+
+All commits in this repository must follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(optional scope): <short description>
+
+[optional body]
+```
+
+**Types:**
+
+| Type | When to use |
+|------|-------------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `docs` | Documentation only |
+| `refactor` | Code change that is neither a fix nor a feature |
+| `test` | Adding or correcting tests |
+| `chore` | Build process, tooling, dependency updates |
+| `perf` | Performance improvement |
+| `ci` | CI/CD configuration |
+
+**Rules:**
+- Description is lowercase, imperative mood, no trailing period
+- Scope is optional but recommended for larger codebases (e.g. `feat(auth): ...`)
+- Breaking changes append `!` after the type: `feat!: remove legacy endpoint`
+- Body is free-form and used to explain *why*, not *what*
+
+**Examples:**
+```
+feat(deploy): add zero-downtime rolling restart
+fix(proxy): correctly forward X-Forwarded-For header
+chore: upgrade Go to 1.23
+docs: add architecture overview to CLAUDE.md
+```
+
 ## Repository Status
 
 This project is in early development. As source code is added, update this file with:

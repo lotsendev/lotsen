@@ -58,3 +58,4 @@ Before presenting the solution, verify:
 - [ ] Tests cover happy path and key failure modes
 - [ ] No global mutable state
 - [ ] Acceptance criteria from the issue are met
+- [ ] Commit message follows Conventional Commits (`feat`, `fix`, `refactor`, etc.)

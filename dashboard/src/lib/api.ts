@@ -17,7 +17,16 @@ export async function getDeployments(): Promise<Deployment[]> {
   return res.json()
 }
 
-export async function createDeployment(data: { name: string; image: string }): Promise<Deployment> {
+export type CreateDeploymentInput = {
+  name: string
+  image: string
+  envs: Record<string, string>
+  ports: string[]
+  volumes: string[]
+  domain: string
+}
+
+export async function createDeployment(data: CreateDeploymentInput): Promise<Deployment> {
   const res = await fetch('/api/deployments', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

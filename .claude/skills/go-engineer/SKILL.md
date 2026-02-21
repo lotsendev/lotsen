@@ -60,3 +60,18 @@ Before presenting the solution, verify:
 - [ ] Acceptance criteria from the issue are met
 - [ ] Working on a feature branch, not `main`
 - [ ] Commit message follows Conventional Commits (`feat`, `fix`, `refactor`, etc.)
+
+**HTTP handlers**
+- [ ] Request body is capped with `http.MaxBytesReader` before decoding
+- [ ] Required fields are validated and return 400 before any side effects
+- [ ] Errors after `WriteHeader` are logged, not silently dropped
+
+**File I/O**
+- [ ] Atomic writes: encode → `Sync()` → `Close()` → `Rename()` (in that order)
+- [ ] Constructor validates that path is non-empty and absolute before doing anything else
+
+**Testing**
+- [ ] In-memory test doubles that hold shared state are protected with a mutex
+- [ ] Every handler has a test for the store-error path (not just happy path and not-found)
+- [ ] Constructors/loaders have a test for malformed or corrupted input
+- [ ] Documentation path params match the actual Go syntax (`{id}`, not `:id`)

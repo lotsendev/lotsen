@@ -1,5 +1,6 @@
 # Go
-dirigent
+/dirigent
+control-plane/dirigent
 
 # Node / Bun
 dashboard/node_modules/

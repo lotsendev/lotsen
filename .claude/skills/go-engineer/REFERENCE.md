@@ -93,6 +93,141 @@ func TestFindByID(t *testing.T) {
 
 Use interfaces to keep unit tests fast and dependency-free — no real databases, HTTP servers, or filesystems.
 
+In-memory test doubles that hold shared state must use a mutex, matching the concurrency contract of the real implementation:
+
+```go
+type memStore struct {
+    mu          sync.RWMutex
+    deployments map[string]Deployment
+}
+
+func (m *memStore) List() []Deployment {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    ...
+}
+```
+
+Test all error paths, not just happy paths and not-found. For each handler or operation backed by fallible I/O, add a test that injects a store error and asserts the correct HTTP status or error value:
+
+```go
+type errStore struct{}
+func (e *errStore) Create(_ Deployment) (Deployment, error) { return Deployment{}, errors.New("disk full") }
+func (e *errStore) Delete(_ string) error                   { return errors.New("disk full") }
+
+func TestDeleteDeployment_StoreError(t *testing.T) {
+    srv := newTestServer(&errStore{})
+    defer srv.Close()
+    req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/deployments/x", nil)
+    resp, _ := http.DefaultClient.Do(req)
+    if resp.StatusCode != http.StatusInternalServerError {
+        t.Fatalf("want 500, got %d", resp.StatusCode)
+    }
+}
+```
+
+Test that constructors and loaders reject malformed input:
+
+```go
+func TestJSONStore_CorruptedFile(t *testing.T) {
+    path := filepath.Join(t.TempDir(), "store.json")
+    os.WriteFile(path, []byte("not valid json"), 0o644)
+    if _, err := store.NewJSONStore(path); err == nil {
+        t.Fatal("want error for corrupted file")
+    }
+}
+```
+
+## HTTP handlers
+
+Always cap the request body before decoding to prevent memory exhaustion:
+
+```go
+r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
+if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+    http.Error(w, "invalid request body", http.StatusBadRequest)
+    return
+}
+```
+
+Validate required fields immediately after decoding — before any side effects:
+
+```go
+if body.Name == "" || body.Image == "" {
+    http.Error(w, "name and image are required", http.StatusBadRequest)
+    return
+}
+```
+
+When writing a response, you cannot return an error after `WriteHeader` has been called. Log it instead:
+
+```go
+func writeJSON(w http.ResponseWriter, status int, v any) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(status)
+    if err := json.NewEncoder(w).Encode(v); err != nil {
+        log.Printf("writeJSON: encode: %v", err)
+    }
+}
+```
+
+## File I/O
+
+Atomic write pattern — write to a temp file, sync, close, then rename. The rename is atomic on POSIX; the sync ensures data is on disk before the rename so a crash between the two cannot leave you with a zero-length file:
+
+```go
+tmp := path + ".tmp"
+f, err := os.Create(tmp)
+if err != nil { ... }
+
+if err := json.NewEncoder(f).Encode(data); err != nil {
+    f.Close(); os.Remove(tmp)
+    return fmt.Errorf("encode: %w", err)
+}
+if err := f.Sync(); err != nil {        // flush before rename
+    f.Close(); os.Remove(tmp)
+    return fmt.Errorf("sync: %w", err)
+}
+if err := f.Close(); err != nil {
+    os.Remove(tmp)
+    return fmt.Errorf("close: %w", err)
+}
+if err := os.Rename(tmp, path); err != nil {
+    os.Remove(tmp)
+    return fmt.Errorf("rename: %w", err)
+}
+```
+
+Validate constructor arguments at the boundary — fail fast rather than producing confusing errors deep inside:
+
+```go
+func NewJSONStore(path string) (*JSONStore, error) {
+    if path == "" {
+        return nil, fmt.Errorf("store: path must be non-empty")
+    }
+    if !filepath.IsAbs(path) {
+        return nil, fmt.Errorf("store: path must be absolute: %s", path)
+    }
+    ...
+}
+```
+
+## ID generation
+
+When generating random UUIDs without a library, set the version and variant bits to produce a valid UUID v4:
+
+```go
+func newID() (string, error) {
+    b := make([]byte, 16)
+    if _, err := rand.Read(b); err != nil {
+        return "", fmt.Errorf("newID: %w", err)
+    }
+    b[6] = (b[6] & 0x0f) | 0x40 // version 4
+    b[8] = (b[8] & 0x3f) | 0x80 // variant bits
+    return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
+}
+```
+
 ## Stdlib over third-party
 
 Before adding a dependency, check if stdlib covers it:

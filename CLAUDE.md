@@ -72,6 +72,8 @@ docs: add architecture overview to CLAUDE.md
 ### Go (dirigent API)
 
 ```bash
+cd control-plane
+
 # Run the orchestration API (port 8080)
 go run ./cmd/dirigent
 
@@ -113,9 +115,11 @@ docker build -t dirigent-dashboard ./dashboard
 
 ```
 /
-├── cmd/
-│   └── dirigent/    Go orchestration engine + REST API (:8080)
-├── internal/        Shared Go packages (api handlers, store, etc.)
+├── control-plane/   Go orchestration engine + REST API (:8080)
+│   ├── cmd/
+│   │   └── dirigent/
+│   ├── internal/    Shared Go packages (api handlers, store, etc.)
+│   └── go.mod
 ├── dashboard/       Bun + React + Vite dashboard (ships as Docker image)
 │   ├── src/
 │   │   ├── main.tsx
@@ -124,8 +128,7 @@ docker build -t dirigent-dashboard ./dashboard
 │   ├── server.ts    Bun SPA server for production (:3000)
 │   ├── Dockerfile
 │   └── dist/        Production build output (git-ignored)
-└── go.mod
 ```
 
-- In **development**: run `go run ./cmd/dirigent` for the API, then `bun run dev` inside `dashboard/`. Vite proxies `/api/*` to `:8080`.
+- In **development**: run `go run ./cmd/dirigent` inside `control-plane/` for the API, then `bun run dev` inside `dashboard/`. Vite proxies `/api/*` to `:8080`.
 - In **production**: the dashboard runs as a Docker container (managed by Dirigent) serving the Vite build via `server.ts` on `:3000`.

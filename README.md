@@ -1,22 +1,30 @@
 # Dirigent
 
-## What is dirigent?
+A lightweight Docker orchestration tool for solo developers and small teams running production workloads on a VPS — a simpler alternative to Kubernetes.
 
-Dirigent is the superior tool for solo developers/small teams to run docker containers for production use on VPS.
+## Features
 
-### Features:
-- One script installer, up and running fast.
-- GUI exposed as a website where the user can deploy/edit/remove docker containers.
-- Alternative to do deployments/orchetstration via gitops
-- Zero downtime docker deployments
-- Easily deploy/remove docker containers
-- Loadbalancer/Reverse proxy included
+- One-script installer, up and running fast
+- Web dashboard to deploy, edit, and remove Docker containers
+- GitOps-based deployments as an alternative workflow
+- Zero-downtime rolling deployments
+- Integrated load balancer / reverse proxy
 
-### Why is it needed today?
-- Deploying/managing docker containers on a VPS today is hard.
-- Kubernetes is overkill and expensive for solo/small teams.
+## Why?
 
-### Tech stacks
-- Golang for the docker orchestrator
-- React for the GUI.
+- Managing Docker containers on a VPS today is painful
+- Kubernetes is overkill and expensive for solo developers and small teams
 
+## Monorepo structure
+
+| Directory        | Description                                  |
+|------------------|----------------------------------------------|
+| `control-plane/` | Go orchestration engine + REST API (`:8080`) |
+| `dashboard/`     | React + Vite web dashboard (`:3000`)         |
+
+See each directory's README for development instructions.
+
+## Tech stack
+
+- **control-plane:** Go
+- **dashboard:** React, Vite, Bun

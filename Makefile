@@ -1,5 +1,7 @@
 .PHONY: setup dev build test clean
 
+AIR := $(shell go env GOPATH)/bin/air
+
 # Install development tools and dashboard dependencies.
 setup:
 	go install github.com/air-verse/air@latest
@@ -9,7 +11,7 @@ setup:
 # concurrently in a single terminal. Ctrl+C shuts down both processes cleanly.
 dev:
 	@trap 'kill 0' SIGINT; \
-	(cd control-plane && DIRIGENT_DATA=/tmp/dirigent.json air) & \
+	(cd control-plane && DIRIGENT_DATA=/tmp/dirigent.json $(AIR)) & \
 	(cd dashboard && bun run dev) & \
 	wait
 

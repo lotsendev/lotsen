@@ -8,7 +8,7 @@ import (
 
 	"github.com/ercadev/dirigent/orchestrator/internal/docker"
 	"github.com/ercadev/dirigent/orchestrator/internal/reconciler"
-	"github.com/ercadev/dirigent/orchestrator/internal/store"
+	"github.com/ercadev/dirigent/store"
 )
 
 // mockStore is a controllable in-memory store for testing.

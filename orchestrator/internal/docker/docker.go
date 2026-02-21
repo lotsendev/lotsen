@@ -15,7 +15,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"github.com/ercadev/dirigent/orchestrator/internal/store"
+	"github.com/ercadev/dirigent/store"
 )
 
 // ErrDockerUnavailable is returned when the Docker daemon cannot be reached.

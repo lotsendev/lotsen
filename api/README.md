@@ -1,6 +1,6 @@
-# control-plane
+# api
 
-The Dirigent orchestration engine and REST API, written in Go.
+The Dirigent REST API, written in Go. Reads and writes the shared JSON store.
 
 ## Requirements
 
@@ -9,7 +9,7 @@ The Dirigent orchestration engine and REST API, written in Go.
 ## Development
 
 ```bash
-# From the control-plane/ directory
+# From the api/ directory
 
 # Run the API server (port 8080)
 go run ./cmd/dirigent
@@ -39,6 +39,7 @@ DIRIGENT_DATA=/tmp/dirigent.json go run ./cmd/dirigent
 |----------|-----------------------------|--------------------------|
 | `GET`    | `/api/deployments`          | List all deployments     |
 | `POST`   | `/api/deployments`          | Create a deployment      |
+| `GET`    | `/api/deployments/{id}`     | Get a deployment         |
 | `DELETE` | `/api/deployments/{id}`     | Delete a deployment      |
 
 ### Deployment object
@@ -69,9 +70,10 @@ curl -X POST http://localhost:8080/api/deployments \
 ## Package structure
 
 ```
-control-plane/
+api/
 ├── cmd/dirigent/     Entry point
 └── internal/
-    ├── api/          HTTP handlers and Store interface
-    └── store/        JSON file-backed deployment store
+    └── api/          HTTP handlers and Store interface
 ```
+
+Deployment persistence is provided by the shared `store/` module at the repo root (`github.com/ercadev/dirigent/store`).

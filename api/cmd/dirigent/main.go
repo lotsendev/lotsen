@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/ercadev/dirigent/internal/api"
-	"github.com/ercadev/dirigent/internal/store"
+	"github.com/ercadev/dirigent/store"
 )
 
 const addr = ":8080"

@@ -15,7 +15,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/ercadev/dirigent/orchestrator/internal/docker"
-	"github.com/ercadev/dirigent/orchestrator/internal/store"
+	"github.com/ercadev/dirigent/store"
 )
 
 type mockClient struct {

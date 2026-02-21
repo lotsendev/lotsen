@@ -1,13 +1,27 @@
 package store_test
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/ercadev/dirigent/internal/store"
+	"github.com/ercadev/dirigent/store"
 )
+
+// seedStore writes deployments directly to the JSON file, bypassing the store.
+func seedStore(t *testing.T, path string, deployments []store.Deployment) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("seed: create file: %v", err)
+	}
+	defer f.Close()
+	if err := json.NewEncoder(f).Encode(deployments); err != nil {
+		t.Fatalf("seed: encode: %v", err)
+	}
+}
 
 func TestJSONStore_Persistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "deployments.json")
@@ -53,42 +67,24 @@ func TestJSONStore_Persistence(t *testing.T) {
 	}
 }
 
-func TestJSONStore_Delete(t *testing.T) {
+func TestJSONStore_List(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "deployments.json")
+	seedStore(t, path, []store.Deployment{
+		{ID: "d1", Name: "web", Status: store.StatusDeploying},
+		{ID: "d2", Name: "api", Status: store.StatusHealthy},
+	})
 
 	s, err := store.NewJSONStore(path)
 	if err != nil {
 		t.Fatalf("new store: %v", err)
-	}
-
-	_, err = s.Create(store.Deployment{ID: "d1", Name: "app", Status: store.StatusIdle})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	if err := s.Delete("d1"); err != nil {
-		t.Fatalf("delete: %v", err)
 	}
 
 	list, err := s.List()
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(list) != 0 {
-		t.Error("want empty list after delete")
-	}
-}
-
-func TestJSONStore_DeleteNotFound(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "deployments.json")
-
-	s, err := store.NewJSONStore(path)
-	if err != nil {
-		t.Fatalf("new store: %v", err)
-	}
-
-	if err := s.Delete("nonexistent"); err != store.ErrNotFound {
-		t.Errorf("want ErrNotFound, got %v", err)
+	if len(list) != 2 {
+		t.Errorf("want 2 deployments, got %d", len(list))
 	}
 }
 
@@ -227,5 +223,82 @@ func TestJSONStore_Update_NotFound(t *testing.T) {
 	_, err = s.Update(store.Deployment{ID: "nonexistent", Name: "web"})
 	if !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestJSONStore_Delete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{ID: "d1", Name: "app", Status: store.StatusIdle})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if err := s.Delete("d1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	list, err := s.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 0 {
+		t.Error("want empty list after delete")
+	}
+}
+
+func TestJSONStore_DeleteNotFound(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	if err := s.Delete("nonexistent"); err != store.ErrNotFound {
+		t.Errorf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestJSONStore_UpdateStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	seedStore(t, path, []store.Deployment{
+		{ID: "d1", Name: "web", Status: store.StatusDeploying},
+	})
+
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	if err := s.UpdateStatus("d1", store.StatusHealthy); err != nil {
+		t.Fatalf("update status: %v", err)
+	}
+
+	list, err := s.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 || list[0].Status != store.StatusHealthy {
+		t.Errorf("want status healthy, got %s", list[0].Status)
+	}
+}
+
+func TestJSONStore_UpdateStatus_MissingID_NoOp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	// Should not error for a missing ID.
+	if err := s.UpdateStatus("nonexistent", store.StatusHealthy); err != nil {
+		t.Errorf("want nil for missing id, got %v", err)
 	}
 }

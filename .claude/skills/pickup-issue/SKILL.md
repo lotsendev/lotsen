@@ -9,9 +9,8 @@ description: Reads a GitHub issue, determines whether it is frontend (React) or 
 
 ### 1. Read the issue
 
-```bash
-gh issue view <number> --repo ercadev/dirigent
-```
+Use `mcp__github__get_issue` with `owner=ercadev`, `repo=dirigent`, and the issue number.
+Also call `mcp__github__get_issue_comments` to read any discussion.
 
 Read the full body, acceptance criteria, and any comments.
 

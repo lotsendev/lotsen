@@ -1,15 +1,11 @@
 package main
 
 import (
-	"context"
 	"log"
 	"net/http"
 	"os"
 
-	dockerclient "github.com/docker/docker/client"
-
 	"github.com/ercadev/dirigent/internal/api"
-	"github.com/ercadev/dirigent/internal/orchestrator"
 	"github.com/ercadev/dirigent/internal/store"
 )
 
@@ -28,23 +24,8 @@ func main() {
 		log.Fatalf("dirigent: open store: %v", err)
 	}
 
-	dockerCli, err := dockerclient.NewClientWithOpts(
-		dockerclient.FromEnv,
-		dockerclient.WithAPIVersionNegotiation(),
-	)
-	if err != nil {
-		log.Fatalf("dirigent: create docker client: %v", err)
-	}
-	defer dockerCli.Close()
-
-	orch := orchestrator.New(dockerCli)
-
-	if err := orch.Ping(context.Background()); err != nil {
-		log.Printf("dirigent: warning: %v", err)
-	}
-
 	mux := http.NewServeMux()
-	api.New(s, orch).RegisterRoutes(mux)
+	api.New(s).RegisterRoutes(mux)
 
 	log.Printf("dirigent API listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {

@@ -38,7 +38,10 @@ func TestJSONStore_Persistence(t *testing.T) {
 		t.Fatalf("reopen store: %v", err)
 	}
 
-	list := s2.List()
+	list, err := s2.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
 	if len(list) != 1 {
 		t.Fatalf("want 1 deployment after reload, got %d", len(list))
 	}
@@ -67,7 +70,11 @@ func TestJSONStore_Delete(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 
-	if len(s.List()) != 0 {
+	list, err := s.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 0 {
 		t.Error("want empty list after delete")
 	}
 }
@@ -93,7 +100,11 @@ func TestJSONStore_EmptyFileOnFirstStart(t *testing.T) {
 		t.Fatalf("new store on missing file: %v", err)
 	}
 
-	if list := s.List(); len(list) != 0 {
+	list, err := s.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 0 {
 		t.Errorf("want empty list, got %d items", len(list))
 	}
 }
@@ -104,9 +115,15 @@ func TestJSONStore_CorruptedFile(t *testing.T) {
 		t.Fatalf("write corrupted file: %v", err)
 	}
 
-	_, err := store.NewJSONStore(path)
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	// Corrupted file is detected on first read.
+	_, err = s.List()
 	if err == nil {
-		t.Fatal("want error opening store with corrupted file, got nil")
+		t.Fatal("want error reading corrupted file, got nil")
 	}
 }
 

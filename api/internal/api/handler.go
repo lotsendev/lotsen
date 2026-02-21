@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -14,28 +13,21 @@ import (
 
 // Store is the persistence interface required by the API handlers.
 type Store interface {
-	List() []store.Deployment
+	List() ([]store.Deployment, error)
 	Get(id string) (store.Deployment, error)
 	Create(d store.Deployment) (store.Deployment, error)
 	Update(d store.Deployment) (store.Deployment, error)
 	Delete(id string) error
 }
 
-// Orchestrator is the container management interface required by the API handlers.
-type Orchestrator interface {
-	Ping(ctx context.Context) error
-	Start(ctx context.Context, d store.Deployment) error
-}
-
 // Handler holds the dependencies for the API layer.
 type Handler struct {
-	store        Store
-	orchestrator Orchestrator
+	store Store
 }
 
-// New creates a Handler backed by the given store and orchestrator.
-func New(s Store, o Orchestrator) *Handler {
-	return &Handler{store: s, orchestrator: o}
+// New creates a Handler backed by the given store.
+func New(s Store) *Handler {
+	return &Handler{store: s}
 }
 
 // RegisterRoutes wires all deployment endpoints into mux.
@@ -47,7 +39,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (h *Handler) listDeployments(w http.ResponseWriter, r *http.Request) {
-	deployments := h.store.List()
+	deployments, err := h.store.List()
+	if err != nil {
+		http.Error(w, "failed to list deployments", http.StatusInternalServerError)
+		return
+	}
 	if deployments == nil {
 		deployments = []store.Deployment{}
 	}
@@ -91,11 +87,6 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.orchestrator.Ping(r.Context()); err != nil {
-		http.Error(w, "docker daemon unreachable", http.StatusServiceUnavailable)
-		return
-	}
-
 	id, err := newID()
 	if err != nil {
 		http.Error(w, "failed to generate id", http.StatusInternalServerError)
@@ -134,24 +125,6 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, created)
-
-	go h.runDeployment(created)
-}
-
-// runDeployment starts the container for d and updates its status in the store.
-// It is intended to run in a background goroutine after the 201 response is sent.
-func (h *Handler) runDeployment(d store.Deployment) {
-	err := h.orchestrator.Start(context.Background(), d)
-	if err != nil {
-		log.Printf("deployment %s (%s): start failed: %v", d.ID, d.Name, err)
-		d.Status = store.StatusFailed
-	} else {
-		d.Status = store.StatusHealthy
-	}
-
-	if _, err := h.store.Update(d); err != nil {
-		log.Printf("deployment %s (%s): update status to %s: %v", d.ID, d.Name, d.Status, err)
-	}
 }
 
 func (h *Handler) deleteDeployment(w http.ResponseWriter, r *http.Request) {

@@ -2,18 +2,14 @@ package api_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/ercadev/dirigent/internal/api"
-	"github.com/ercadev/dirigent/internal/orchestrator"
 	"github.com/ercadev/dirigent/internal/store"
 )
 
@@ -27,14 +23,14 @@ func newMemStore() *memStore {
 	return &memStore{deployments: make(map[string]store.Deployment)}
 }
 
-func (m *memStore) List() []store.Deployment {
+func (m *memStore) List() ([]store.Deployment, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	result := make([]store.Deployment, 0, len(m.deployments))
 	for _, d := range m.deployments {
 		result = append(result, d)
 	}
-	return result
+	return result, nil
 }
 
 func (m *memStore) Get(id string) (store.Deployment, error) {
@@ -79,49 +75,14 @@ func (m *memStore) Delete(id string) error {
 	return nil
 }
 
-// noopOrchestrator succeeds silently — used in tests that don't care about orchestration.
-type noopOrchestrator struct{}
-
-func (n *noopOrchestrator) Ping(_ context.Context) error                        { return nil }
-func (n *noopOrchestrator) Start(_ context.Context, _ store.Deployment) error  { return nil }
-
-// failOrchestrator simulates a Docker daemon that is always unreachable.
-type failOrchestrator struct{}
-
-func (f *failOrchestrator) Ping(_ context.Context) error {
-	return fmt.Errorf("%w: connection refused", orchestrator.ErrDockerUnavailable)
-}
-func (f *failOrchestrator) Start(_ context.Context, _ store.Deployment) error {
-	return fmt.Errorf("%w: connection refused", orchestrator.ErrDockerUnavailable)
-}
-
-// startErrOrchestrator succeeds on Ping but fails on Start (Docker goes down between check and run).
-type startErrOrchestrator struct{ err error }
-
-func (s *startErrOrchestrator) Ping(_ context.Context) error                       { return nil }
-func (s *startErrOrchestrator) Start(_ context.Context, _ store.Deployment) error { return s.err }
-
-func newTestServer(s api.Store, o api.Orchestrator) *httptest.Server {
+func newTestServer(s api.Store) *httptest.Server {
 	mux := http.NewServeMux()
-	api.New(s, o).RegisterRoutes(mux)
+	api.New(s).RegisterRoutes(mux)
 	return httptest.NewServer(mux)
 }
 
-// waitFor polls condition every 10 ms until it returns true or 2 s elapse.
-func waitFor(t *testing.T, condition func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if condition() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("condition not met within timeout")
-}
-
 func TestListDeployments_Empty(t *testing.T) {
-	srv := newTestServer(newMemStore(), &noopOrchestrator{})
+	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/deployments")
@@ -148,7 +109,7 @@ func TestListDeployments_WithItems(t *testing.T) {
 	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusIdle}
 	s.deployments["d2"] = store.Deployment{ID: "d2", Name: "api", Status: store.StatusHealthy}
 
-	srv := newTestServer(s, &noopOrchestrator{})
+	srv := newTestServer(s)
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/deployments")
@@ -174,7 +135,7 @@ func TestGetDeployment_Found(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
 
-	srv := newTestServer(s, &noopOrchestrator{})
+	srv := newTestServer(s)
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/deployments/d1")
@@ -200,7 +161,7 @@ func TestGetDeployment_Found(t *testing.T) {
 }
 
 func TestGetDeployment_NotFound(t *testing.T) {
-	srv := newTestServer(newMemStore(), &noopOrchestrator{})
+	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/deployments/nonexistent")
@@ -215,7 +176,7 @@ func TestGetDeployment_NotFound(t *testing.T) {
 }
 
 func TestGetDeployment_StoreError(t *testing.T) {
-	srv := newTestServer(&errStore{}, &noopOrchestrator{})
+	srv := newTestServer(&errStore{})
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/deployments/any")
@@ -230,7 +191,7 @@ func TestGetDeployment_StoreError(t *testing.T) {
 }
 
 func TestCreateDeployment(t *testing.T) {
-	srv := newTestServer(newMemStore(), &noopOrchestrator{})
+	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
 	payload := map[string]any{
@@ -268,57 +229,11 @@ func TestCreateDeployment(t *testing.T) {
 	}
 }
 
-func TestCreateDeployment_AsyncStatusHealthy(t *testing.T) {
-	s := newMemStore()
-	srv := newTestServer(s, &noopOrchestrator{})
-	defer srv.Close()
-
-	body, _ := json.Marshal(map[string]string{"name": "web", "image": "nginx:latest"})
-	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("POST /api/deployments: %v", err)
-	}
-
-	var created store.Deployment
-	json.NewDecoder(resp.Body).Decode(&created)
-	resp.Body.Close()
-
-	if created.Status != store.StatusDeploying {
-		t.Errorf("want initial status deploying, got %s", created.Status)
-	}
-
-	waitFor(t, func() bool {
-		d, err := s.Get(created.ID)
-		return err == nil && d.Status == store.StatusHealthy
-	})
-}
-
-func TestCreateDeployment_AsyncStatusFailed(t *testing.T) {
-	s := newMemStore()
-	srv := newTestServer(s, &startErrOrchestrator{err: errors.New("image not found")})
-	defer srv.Close()
-
-	body, _ := json.Marshal(map[string]string{"name": "web", "image": "bad:image"})
-	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("POST /api/deployments: %v", err)
-	}
-
-	var created store.Deployment
-	json.NewDecoder(resp.Body).Decode(&created)
-	resp.Body.Close()
-
-	waitFor(t, func() bool {
-		d, err := s.Get(created.ID)
-		return err == nil && d.Status == store.StatusFailed
-	})
-}
-
 func TestCreateDeployment_DuplicateName(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
 
-	srv := newTestServer(s, &noopOrchestrator{})
+	srv := newTestServer(s)
 	defer srv.Close()
 
 	body, _ := json.Marshal(map[string]string{"name": "web", "image": "nginx:latest"})
@@ -333,24 +248,8 @@ func TestCreateDeployment_DuplicateName(t *testing.T) {
 	}
 }
 
-func TestCreateDeployment_DockerUnavailable(t *testing.T) {
-	srv := newTestServer(newMemStore(), &failOrchestrator{})
-	defer srv.Close()
-
-	body, _ := json.Marshal(map[string]string{"name": "web", "image": "nginx:latest"})
-	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("POST /api/deployments: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("want 503, got %d", resp.StatusCode)
-	}
-}
-
 func TestCreateDeployment_InvalidBody(t *testing.T) {
-	srv := newTestServer(newMemStore(), &noopOrchestrator{})
+	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
 	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewBufferString("not json"))
@@ -365,7 +264,7 @@ func TestCreateDeployment_InvalidBody(t *testing.T) {
 }
 
 func TestCreateDeployment_MissingFields(t *testing.T) {
-	srv := newTestServer(newMemStore(), &noopOrchestrator{})
+	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
 	cases := []map[string]string{
@@ -387,7 +286,7 @@ func TestCreateDeployment_MissingFields(t *testing.T) {
 }
 
 func TestCreateDeployment_StoreError(t *testing.T) {
-	srv := newTestServer(&errStore{}, &noopOrchestrator{})
+	srv := newTestServer(&errStore{})
 	defer srv.Close()
 
 	body, _ := json.Marshal(map[string]string{"name": "web", "image": "nginx"})
@@ -406,7 +305,7 @@ func TestDeleteDeployment(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusIdle}
 
-	srv := newTestServer(s, &noopOrchestrator{})
+	srv := newTestServer(s)
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/deployments/d1", nil)
@@ -425,7 +324,7 @@ func TestDeleteDeployment(t *testing.T) {
 }
 
 func TestDeleteDeployment_NotFound(t *testing.T) {
-	srv := newTestServer(newMemStore(), &noopOrchestrator{})
+	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/deployments/nonexistent", nil)
@@ -443,14 +342,22 @@ func TestDeleteDeployment_NotFound(t *testing.T) {
 // errStore always returns a generic error — used to test internal server error paths.
 type errStore struct{}
 
-func (e *errStore) List() []store.Deployment                            { return nil }
-func (e *errStore) Get(_ string) (store.Deployment, error)             { return store.Deployment{}, errors.New("disk full") }
-func (e *errStore) Create(_ store.Deployment) (store.Deployment, error) { return store.Deployment{}, errors.New("disk full") }
-func (e *errStore) Update(_ store.Deployment) (store.Deployment, error) { return store.Deployment{}, errors.New("disk full") }
-func (e *errStore) Delete(_ string) error                               { return errors.New("disk full") }
+func (e *errStore) List() ([]store.Deployment, error) {
+	return nil, errors.New("disk full")
+}
+func (e *errStore) Get(_ string) (store.Deployment, error) {
+	return store.Deployment{}, errors.New("disk full")
+}
+func (e *errStore) Create(_ store.Deployment) (store.Deployment, error) {
+	return store.Deployment{}, errors.New("disk full")
+}
+func (e *errStore) Update(_ store.Deployment) (store.Deployment, error) {
+	return store.Deployment{}, errors.New("disk full")
+}
+func (e *errStore) Delete(_ string) error { return errors.New("disk full") }
 
 func TestDeleteDeployment_StoreError(t *testing.T) {
-	srv := newTestServer(&errStore{}, &noopOrchestrator{})
+	srv := newTestServer(&errStore{})
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/deployments/any", nil)

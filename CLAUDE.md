@@ -89,7 +89,7 @@ make test
 make clean
 ```
 
-`make dev` runs the Go API via Air (hot reload on `:8080`) and the Vite dev server on `:5173`. Vite proxies `/api/*` to `:8080`. The API reads/writes state from `/tmp/dirigent.json` in dev mode.
+`make dev` runs the Go API via Air (hot reload on `:8080`), the orchestrator via Air, and the Vite dev server on `:5173`. Vite proxies `/api/*` to `:8080`. Both Go processes share state via `/tmp/dirigent.json` in dev mode.
 
 ### Dashboard (production build)
 
@@ -116,10 +116,15 @@ docker build -t dirigent-dashboard ./dashboard
 
 ```
 /
-├── control-plane/   Go orchestration engine + REST API (:8080)
+├── api/             Go REST API — reads/writes the JSON store (:8080)
 │   ├── cmd/
 │   │   └── dirigent/
-│   ├── internal/    Shared Go packages (api handlers, store, etc.)
+│   ├── internal/    Shared Go packages (api handlers, store)
+│   └── go.mod
+├── orchestrator/    Go reconciler — syncs store state with Docker
+│   ├── cmd/
+│   │   └── orchestrator/
+│   ├── internal/    docker/, store/, reconciler/ packages
 │   └── go.mod
 ├── dashboard/       Bun + React + Vite dashboard (ships as Docker image)
 │   ├── src/
@@ -131,5 +136,7 @@ docker build -t dirigent-dashboard ./dashboard
 │   └── dist/        Production build output (git-ignored)
 ```
 
-- In **development**: run `go run ./cmd/dirigent` inside `control-plane/` for the API, then `bun run dev` inside `dashboard/`. Vite proxies `/api/*` to `:8080`.
+Data flow: **dashboard → api → (json store) ← orchestrator → docker**
+
+- In **development**: run `go run ./cmd/dirigent` inside `api/` for the REST API and `go run ./cmd/orchestrator` inside `orchestrator/` for the reconciler, then `bun run dev` inside `dashboard/`. Vite proxies `/api/*` to `:8080`.
 - In **production**: the dashboard runs as a Docker container (managed by Dirigent) serving the Vite build via `server.ts` on `:3000`.

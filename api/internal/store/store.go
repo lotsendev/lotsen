@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 )
 
 // ErrNotFound is returned when a deployment with the given ID does not exist.
@@ -38,15 +39,14 @@ type Deployment struct {
 }
 
 // JSONStore persists deployments as a JSON array on disk.
-// It is safe for concurrent use.
+// It is safe for concurrent use within a process (sync.RWMutex) and across
+// processes (syscall.Flock on a .lock file).
 type JSONStore struct {
 	mu   sync.RWMutex
 	path string
-	data map[string]Deployment
 }
 
 // NewJSONStore opens or creates the JSON store at path.
-// Existing state is loaded into memory on startup.
 // path must be a non-empty absolute file path.
 func NewJSONStore(path string) (*JSONStore, error) {
 	if path == "" {
@@ -59,45 +59,78 @@ func NewJSONStore(path string) (*JSONStore, error) {
 		return nil, fmt.Errorf("store: create data dir: %w", err)
 	}
 
-	s := &JSONStore{
-		path: path,
-		data: make(map[string]Deployment),
-	}
-
-	if err := s.load(); err != nil {
-		return nil, err
-	}
-
-	return s, nil
+	return &JSONStore{path: path}, nil
 }
 
-func (s *JSONStore) load() error {
+// withLock acquires an exclusive OS-level file lock and the in-process mutex,
+// then calls fn. Both are released before returning.
+func (s *JSONStore) withLock(fn func() error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	lf, err := os.OpenFile(s.path+".lock", os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return fmt.Errorf("store: open lock file: %w", err)
+	}
+	defer lf.Close()
+
+	if err := syscall.Flock(int(lf.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("store: acquire lock: %w", err)
+	}
+	defer syscall.Flock(int(lf.Fd()), syscall.LOCK_UN) //nolint:errcheck
+
+	return fn()
+}
+
+// withRLock acquires a shared OS-level file lock and the in-process read mutex,
+// then calls fn. Both are released before returning.
+func (s *JSONStore) withRLock(fn func() error) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	lf, err := os.OpenFile(s.path+".lock", os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return fmt.Errorf("store: open lock file: %w", err)
+	}
+	defer lf.Close()
+
+	if err := syscall.Flock(int(lf.Fd()), syscall.LOCK_SH); err != nil {
+		return fmt.Errorf("store: acquire shared lock: %w", err)
+	}
+	defer syscall.Flock(int(lf.Fd()), syscall.LOCK_UN) //nolint:errcheck
+
+	return fn()
+}
+
+// read loads deployments from disk into a map. Caller must hold the lock.
+func (s *JSONStore) read() (map[string]Deployment, error) {
+	data := make(map[string]Deployment)
+
 	f, err := os.Open(s.path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return data, nil
 	}
 	if err != nil {
-		return fmt.Errorf("store: open %s: %w", s.path, err)
+		return nil, fmt.Errorf("store: open %s: %w", s.path, err)
 	}
 	defer f.Close()
 
 	var deployments []Deployment
 	if err := json.NewDecoder(f).Decode(&deployments); err != nil {
-		return fmt.Errorf("store: decode %s: %w", s.path, err)
+		return nil, fmt.Errorf("store: decode %s: %w", s.path, err)
 	}
 
 	for _, d := range deployments {
-		s.data[d.ID] = d
+		data[d.ID] = d
 	}
 
-	return nil
+	return data, nil
 }
 
-// persist writes the current state to disk atomically.
-// Callers must hold s.mu (write lock) before calling.
-func (s *JSONStore) persist() error {
-	deployments := make([]Deployment, 0, len(s.data))
-	for _, d := range s.data {
+// persist writes data to disk atomically. Caller must hold the lock.
+func (s *JSONStore) persist(data map[string]Deployment) error {
+	deployments := make([]Deployment, 0, len(data))
+	for _, d := range data {
 		deployments = append(deployments, d)
 	}
 
@@ -134,91 +167,95 @@ func (s *JSONStore) persist() error {
 }
 
 // List returns a snapshot of all deployments.
-func (s *JSONStore) List() []Deployment {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	result := make([]Deployment, 0, len(s.data))
-	for _, d := range s.data {
-		result = append(result, d)
-	}
-
-	return result
+func (s *JSONStore) List() ([]Deployment, error) {
+	var result []Deployment
+	err := s.withRLock(func() error {
+		data, err := s.read()
+		if err != nil {
+			return err
+		}
+		result = make([]Deployment, 0, len(data))
+		for _, d := range data {
+			result = append(result, d)
+		}
+		return nil
+	})
+	return result, err
 }
 
 // Get returns the deployment with the given ID.
 // Returns ErrNotFound if no such deployment exists.
 func (s *JSONStore) Get(id string) (Deployment, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	d, ok := s.data[id]
-	if !ok {
-		return Deployment{}, ErrNotFound
-	}
-	return d, nil
+	var result Deployment
+	err := s.withRLock(func() error {
+		data, err := s.read()
+		if err != nil {
+			return err
+		}
+		d, ok := data[id]
+		if !ok {
+			return ErrNotFound
+		}
+		result = d
+		return nil
+	})
+	return result, err
 }
 
 // Create persists a new deployment and returns it.
 // Returns ErrDuplicateName if a deployment with the same name already exists.
 func (s *JSONStore) Create(d Deployment) (Deployment, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, existing := range s.data {
-		if existing.Name == d.Name {
-			return Deployment{}, ErrDuplicateName
+	err := s.withLock(func() error {
+		data, err := s.read()
+		if err != nil {
+			return err
 		}
-	}
-
-	s.data[d.ID] = d
-
-	if err := s.persist(); err != nil {
-		delete(s.data, d.ID)
+		for _, existing := range data {
+			if existing.Name == d.Name {
+				return ErrDuplicateName
+			}
+		}
+		data[d.ID] = d
+		return s.persist(data)
+	})
+	if err != nil {
 		return Deployment{}, err
 	}
-
 	return d, nil
 }
 
 // Update replaces the stored deployment and persists to disk.
 // Returns ErrNotFound if no deployment with that ID exists.
 func (s *JSONStore) Update(d Deployment) (Deployment, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	prev, ok := s.data[d.ID]
-	if !ok {
-		return Deployment{}, ErrNotFound
-	}
-
-	s.data[d.ID] = d
-
-	if err := s.persist(); err != nil {
-		s.data[d.ID] = prev
+	err := s.withLock(func() error {
+		data, err := s.read()
+		if err != nil {
+			return err
+		}
+		if _, ok := data[d.ID]; !ok {
+			return ErrNotFound
+		}
+		data[d.ID] = d
+		return s.persist(data)
+	})
+	if err != nil {
 		return Deployment{}, err
 	}
-
 	return d, nil
 }
 
 // Delete removes the deployment with the given ID.
 // Returns ErrNotFound if no such deployment exists.
 func (s *JSONStore) Delete(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	prev, exists := s.data[id]
-	if !exists {
-		return ErrNotFound
-	}
-
-	delete(s.data, id)
-
-	if err := s.persist(); err != nil {
-		s.data[id] = prev
-		return err
-	}
-
-	return nil
+	return s.withLock(func() error {
+		data, err := s.read()
+		if err != nil {
+			return err
+		}
+		if _, exists := data[id]; !exists {
+			return ErrNotFound
+		}
+		delete(data, id)
+		return s.persist(data)
+	})
 }

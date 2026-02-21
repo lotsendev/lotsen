@@ -1,0 +1,65 @@
+# Dependencies & Build Artifacts
+node_modules/
+dist/
+build/
+target/
+bin/
+obj/
+vendor/
+
+# Environment & Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Logs & Temporary Files
+*.log
+logs/
+tmp/
+.cache/
+
+# Large Assets
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.mp4
+*.pdf
+*.zip
+*.tar.gz
+
+# IDE/Tool Metadata
+.vscode/
+.idea/
+.git/
+.terraform/
+
+# --- Frontend (Bun/React/Vite) ---
+node_modules/
+dist/
+.cache/
+bun.lockb
+*.log
+
+# --- Backend (Go) ---
+# Ignore the compiled binary and temporary state file
+dirigent
+/tmp/dirigent.json
+vendor/
+*.out
+*.test
+bin/
+
+# --- Docker & OS ---
+.dockerignore
+.git/
+.DS_Store
+Thumbs.db
+
+# --- Environment ---
+.env
+.env.*
+*.pem
+*.key

@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/ercadev/dirigent/orchestrator/internal/docker"
-	"github.com/ercadev/dirigent/orchestrator/internal/store"
+	"github.com/ercadev/dirigent/store"
 )
 
 // Docker is the container management interface required by the reconciler.

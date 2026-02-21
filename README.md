@@ -17,14 +17,18 @@ A lightweight Docker orchestration tool for solo developers and small teams runn
 
 ## Monorepo structure
 
-| Directory        | Description                                  |
-|------------------|----------------------------------------------|
-| `control-plane/` | Go orchestration engine + REST API (`:8080`) |
-| `dashboard/`     | React + Vite web dashboard (`:3000`)         |
+| Directory        | Description                                        |
+|------------------|----------------------------------------------------|
+| `api/`           | Go REST API — reads/writes the JSON store (`:8080`) |
+| `orchestrator/`  | Go reconciler — syncs store state with Docker      |
+| `store/`         | Shared Go module — deployment types + JSON store   |
+| `dashboard/`     | React + Vite web dashboard (`:3000`)               |
+
+The three Go services share a single `go.work` workspace at the repo root.
 
 ## Tech stack
 
-- **control-plane:** Go
+- **api / orchestrator / store:** Go
 - **dashboard:** React, Vite, Bun
 
 ## Local development

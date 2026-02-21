@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/ercadev/dirigent/internal/store"
+	"github.com/ercadev/dirigent/store"
 )
 
 // Store is the persistence interface required by the API handlers.

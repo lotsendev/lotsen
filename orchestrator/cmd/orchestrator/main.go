@@ -12,7 +12,7 @@ import (
 
 	"github.com/ercadev/dirigent/orchestrator/internal/docker"
 	"github.com/ercadev/dirigent/orchestrator/internal/reconciler"
-	"github.com/ercadev/dirigent/orchestrator/internal/store"
+	"github.com/ercadev/dirigent/store"
 )
 
 func dataPath() string {

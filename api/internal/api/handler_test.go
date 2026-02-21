@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/ercadev/dirigent/internal/api"
-	"github.com/ercadev/dirigent/internal/store"
+	"github.com/ercadev/dirigent/store"
 )
 
 // memStore is an in-memory store used only in tests.

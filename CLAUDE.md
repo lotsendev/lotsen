@@ -41,7 +41,13 @@ All commits in this repository must follow [Conventional Commits](https://www.co
 | `perf` | Performance improvement |
 | `ci` | CI/CD configuration |
 
-**Rules:**
+**Branch policy:**
+- `main` is protected — never commit directly to it
+- All work must happen on a feature branch: `git checkout -b feat/short-description`
+- Branch names should mirror the conventional commit type: `feat/`, `fix/`, `chore/`, etc.
+- Merge to `main` only via pull request
+
+**Commit rules:**
 - Description is lowercase, imperative mood, no trailing period
 - Scope is optional but recommended for larger codebases (e.g. `feat(auth): ...`)
 - Breaking changes append `!` after the type: `feat!: remove legacy endpoint`

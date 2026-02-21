@@ -1,7 +1,7 @@
-import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
-import { getDeployments, createDeployment, deleteDeployment, type DeploymentStatus } from '../lib/api'
+import { getDeployments, deleteDeployment, type DeploymentStatus } from '../lib/api'
+import CreateDeploymentForm from './CreateDeploymentForm'
 
 const STATUS_STYLES: Record<DeploymentStatus, string> = {
   idle: 'bg-gray-100 text-gray-600',
@@ -12,24 +12,10 @@ const STATUS_STYLES: Record<DeploymentStatus, string> = {
 
 export default function DeploymentList() {
   const queryClient = useQueryClient()
-  const [name, setName] = useState('')
-  const [image, setImage] = useState('')
-  const [formError, setFormError] = useState('')
 
   const { data: deployments, isLoading, isError } = useQuery({
     queryKey: ['deployments'],
     queryFn: getDeployments,
-  })
-
-  const createMutation = useMutation({
-    mutationFn: createDeployment,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deployments'] })
-      setName('')
-      setImage('')
-      setFormError('')
-    },
-    onError: (err: Error) => setFormError(err.message),
   })
 
   const deleteMutation = useMutation({
@@ -37,55 +23,11 @@ export default function DeploymentList() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['deployments'] }),
   })
 
-  function handleCreate(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim() || !image.trim()) {
-      setFormError('Name and image are required.')
-      return
-    }
-    createMutation.mutate({ name: name.trim(), image: image.trim() })
-  }
-
   return (
     <main className="max-w-4xl mx-auto px-6 py-10">
       <h1 className="text-2xl font-semibold text-gray-900 mb-8">Deployments</h1>
 
-      {/* Create form */}
-      <section className="mb-8 p-6 border border-gray-200 rounded-lg bg-white shadow-sm">
-        <h2 className="text-sm font-medium text-gray-700 mb-4">New deployment</h2>
-        <form onSubmit={handleCreate} className="flex gap-3 items-end">
-          <div className="flex flex-col gap-1 flex-1">
-            <label htmlFor="name" className="text-xs text-gray-500">Name</label>
-            <input
-              id="name"
-              type="text"
-              placeholder="my-app"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              className="h-9 rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
-          </div>
-          <div className="flex flex-col gap-1 flex-1">
-            <label htmlFor="image" className="text-xs text-gray-500">Image</label>
-            <input
-              id="image"
-              type="text"
-              placeholder="nginx:latest"
-              value={image}
-              onChange={e => setImage(e.target.value)}
-              className="h-9 rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={createMutation.isPending}
-            className="h-9 px-4 rounded-md bg-gray-900 text-white text-sm font-medium hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {createMutation.isPending ? 'Creating…' : 'Create'}
-          </button>
-        </form>
-        {formError && <p className="mt-2 text-xs text-red-600">{formError}</p>}
-      </section>
+      <CreateDeploymentForm />
 
       {/* Deployment table */}
       {isLoading && <p className="text-sm text-gray-500">Loading deployments…</p>}

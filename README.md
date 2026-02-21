@@ -16,7 +16,7 @@ Dirigent is the superior tool for solo developers/small teams to run docker cont
 - Deploying/managing docker containers on a VPS today is hard.
 - Kubernetes is overkill and expensive for solo/small teams.
 
-### Tech stack
+### Tech stacks
 - Golang for the docker orchestrator
 - React for the GUI.
 

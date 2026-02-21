@@ -1,10 +1,9 @@
 name: CI
 
 on:
-  push:
   pull_request:
+    types: [synchronize]
     branches: [main]
-
 jobs:
   go:
     name: Go

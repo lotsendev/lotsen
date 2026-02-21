@@ -83,12 +83,91 @@ esac
 
 step "Detected ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}"
 
-# ─── stub completion ──────────────────────────────────────────────────────────
+# ─── Docker installation ───────────────────────────────────────────────────────
+
+# install_docker installs Docker Engine via the official apt repository for the
+# detected OS. It assumes apt-get is available and OS_ID / VERSION_CODENAME are
+# set from /etc/os-release.
+install_docker() {
+    step "Installing prerequisites"
+    apt-get install -y -q ca-certificates curl gnupg
+
+    step "Adding Docker's official GPG key"
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL "https://download.docker.com/linux/${OS_ID}/gpg" \
+        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+
+    step "Adding Docker apt repository"
+    echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/${OS_ID} ${VERSION_CODENAME} stable" \
+        | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+    step "Updating apt package index"
+    apt-get update -qq
+
+    step "Installing Docker Engine"
+    apt-get install -y -q \
+        docker-ce docker-ce-cli containerd.io \
+        docker-buildx-plugin docker-compose-plugin
+}
+
+step "Checking for existing Docker installation"
+
+if command -v docker > /dev/null 2>&1; then
+    step "Docker already installed ($(docker --version | head -1)); skipping"
+else
+    install_docker
+    step "Docker installed ($(docker --version | head -1))"
+fi
+
+# ─── Dirigent binary ──────────────────────────────────────────────────────────
+
+DIRIGENT_BIN="/usr/local/bin/dirigent"
+
+# Normalise the machine architecture to the naming convention used in release
+# asset filenames (e.g. "linux-amd64", "linux-arm64").
+ARCH="$(uname -m)"
+case "${ARCH}" in
+    x86_64)  ARCH="amd64" ;;
+    aarch64) ARCH="arm64" ;;
+    *) error "Unsupported architecture: ${ARCH}. Supported: x86_64, aarch64." ;;
+esac
+
+DOWNLOAD_URL="https://github.com/ercadev/dirigent/releases/latest/download/dirigent-linux-${ARCH}"
+
+if [ -f "${DIRIGENT_BIN}" ]; then
+    step "Updating Dirigent binary at ${DIRIGENT_BIN} (linux/${ARCH})"
+else
+    step "Downloading Dirigent binary (linux/${ARCH})"
+fi
+
+curl -fsSL "${DOWNLOAD_URL}" -o "${DIRIGENT_BIN}"
+chmod 755 "${DIRIGENT_BIN}"
+
+step "Dirigent binary ready at ${DIRIGENT_BIN}"
+
+# ─── Docker network ───────────────────────────────────────────────────────────
+
+DIRIGENT_NETWORK="dirigent"
+
+step "Checking for Dirigent Docker network"
+
+if docker network inspect "${DIRIGENT_NETWORK}" > /dev/null 2>&1; then
+    step "Docker network '${DIRIGENT_NETWORK}' already exists; skipping"
+else
+    step "Creating Docker bridge network '${DIRIGENT_NETWORK}'"
+    docker network create --driver bridge "${DIRIGENT_NETWORK}"
+    step "Docker network '${DIRIGENT_NETWORK}' created"
+fi
+
+# ─── completion ───────────────────────────────────────────────────────────────
 
 echo ""
-echo "  Pre-flight checks passed."
-echo "  OS:   ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}"
-echo "  User: root"
-echo ""
-echo "  (Installation steps will follow here in subsequent issues.)"
+echo "  Dirigent installed successfully."
+echo "  OS:      ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}"
+echo "  Docker:  $(docker --version | head -1)"
+echo "  Binary:  ${DIRIGENT_BIN}"
+echo "  Network: ${DIRIGENT_NETWORK}"
 echo ""

@@ -64,7 +64,9 @@ Before presenting the solution, verify:
 
 - [ ] No direct `fetch`/`axios` calls outside of TanStack Query query/mutation functions
 - [ ] No new libraries introduced without user approval
-- [ ] Components are small and do one thing
+- [ ] Each component file is under ~80 lines of JSX — split if larger
+- [ ] Components contain only JSX and wiring — no validation logic, no data transforms, no multi-step state management
+- [ ] Any component with more than one `useState` has its state extracted into a named custom hook
 - [ ] Tailwind classes are not duplicated — extract a component instead of copying classes
 - [ ] shadcn/ui primitives are used before building custom equivalents
 - [ ] Loading and error states are handled for every query and mutation

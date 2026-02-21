@@ -7,7 +7,7 @@ Dirigent is the superior tool for solo developers/small teams to run docker cont
 ### Features:
 - One script installer, up and running fast.
 - GUI exposed as a website where the user can deploy/edit/remove docker containers.
-- Alternative to do deployments/orchetstration via gitops
+- Alternative to do deployments/orchestration via gitops
 - Zero downtime docker deployments
 - Easily deploy/remove docker containers
 - Loadbalancer/Reverse proxy included
@@ -18,5 +18,5 @@ Dirigent is the superior tool for solo developers/small teams to run docker cont
 
 ### Tech stacks
 - Golang for the docker orchestrator
-- React for the GUI.
+- Bun + React + Vite for the dashboard
 

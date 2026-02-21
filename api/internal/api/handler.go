@@ -20,6 +20,15 @@ type Store interface {
 	Delete(id string) error
 }
 
+type deploymentRequest struct {
+	Name    string            `json:"name"`
+	Image   string            `json:"image"`
+	Envs    map[string]string `json:"envs"`
+	Ports   []string          `json:"ports"`
+	Volumes []string          `json:"volumes"`
+	Domain  string            `json:"domain"`
+}
+
 // Handler holds the dependencies for the API layer.
 type Handler struct {
 	store Store
@@ -36,6 +45,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
 	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)
 	mux.HandleFunc("DELETE /api/deployments/{id}", h.deleteDeployment)
+	mux.HandleFunc("PATCH /api/deployments/{id}", h.patchDeployment)
 }
 
 func (h *Handler) listDeployments(w http.ResponseWriter, r *http.Request) {
@@ -67,14 +77,7 @@ func (h *Handler) getDeployment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Name    string            `json:"name"`
-		Image   string            `json:"image"`
-		Envs    map[string]string `json:"envs"`
-		Ports   []string          `json:"ports"`
-		Volumes []string          `json:"volumes"`
-		Domain  string            `json:"domain"`
-	}
+	var body deploymentRequest
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -140,6 +143,38 @@ func (h *Handler) deleteDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body deploymentRequest
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	deployment := store.Deployment{
+		ID:      id,
+		Name:    body.Name,
+		Image:   body.Image,
+		Envs:    body.Envs,
+		Ports:   body.Ports,
+		Volumes: body.Volumes,
+		Domain:  body.Domain,
+		Status:  store.StatusDeploying,
+	}
+	updated, err := h.store.Update(deployment)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "deployment not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "error updating deployment", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

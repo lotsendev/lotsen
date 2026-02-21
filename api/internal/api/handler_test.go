@@ -444,7 +444,9 @@ func TestDeploymentEvents_EmitsDeployingOnCreate(t *testing.T) {
 		t.Fatalf("POST /api/deployments: %v", err)
 	}
 	var created store.Deployment
-	json.NewDecoder(resp.Body).Decode(&created)
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
 	resp.Body.Close()
 
 	select {

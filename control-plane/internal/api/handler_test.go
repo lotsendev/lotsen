@@ -201,18 +201,20 @@ func TestDeleteDeployment_NotFound(t *testing.T) {
 // errStore is used to test internal server errors.
 type errStore struct{}
 
-func (e *errStore) List() []store.Deployment                              { return nil }
-func (e *errStore) Create(_ store.Deployment) (store.Deployment, error)   { return store.Deployment{}, errors.New("disk full") }
-func (e *errStore) Delete(_ string) error                                  { return errors.New("disk full") }
+func (e *errStore) List() []store.Deployment { return nil }
+func (e *errStore) Create(_ store.Deployment) (store.Deployment, error) {
+	return store.Deployment{}, errors.New("disk full")
+}
+func (e *errStore) Delete(_ string) error { return errors.New("disk full") }
 
 func TestCreateDeployment_MissingFields(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
 	cases := []map[string]string{
-		{"image": "nginx"},          // missing name
-		{"name": "web"},             // missing image
-		{},                          // both missing
+		{"image": "nginx"}, // missing name
+		{"name": "web"},    // missing image
+		{},                 // both missing
 	}
 	for _, payload := range cases {
 		body, _ := json.Marshal(payload)

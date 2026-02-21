@@ -10,6 +10,7 @@ import (
 
 	dockerclient "github.com/docker/docker/client"
 
+	"github.com/ercadev/dirigent/orchestrator/internal/apiclient"
 	"github.com/ercadev/dirigent/orchestrator/internal/docker"
 	"github.com/ercadev/dirigent/orchestrator/internal/reconciler"
 	"github.com/ercadev/dirigent/store"
@@ -50,7 +51,13 @@ func main() {
 		log.Printf("orchestrator: warning: docker unavailable at startup: %v", err)
 	}
 
-	r := reconciler.New(s, d)
+	apiURL := "http://localhost:8080"
+	if v := os.Getenv("DIRIGENT_API_URL"); v != "" {
+		apiURL = v
+	}
+	notifier := apiclient.New(apiURL)
+
+	r := reconciler.New(s, d, notifier)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

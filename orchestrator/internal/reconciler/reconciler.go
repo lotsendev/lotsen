@@ -22,15 +22,23 @@ type Store interface {
 	UpdateStatus(id string, status store.Status) error
 }
 
+// Notifier notifies the API of deployment status transitions so the event
+// broker can push real-time updates to SSE subscribers.
+type Notifier interface {
+	NotifyStatus(id string, status store.Status) error
+}
+
 // Reconciler syncs the desired state in the store with actual Docker containers.
 type Reconciler struct {
-	store  Store
-	docker Docker
+	store    Store
+	docker   Docker
+	notifier Notifier
 }
 
 // New creates a Reconciler backed by the given store and Docker client.
-func New(s Store, d Docker) *Reconciler {
-	return &Reconciler{store: s, docker: d}
+// n may be nil; if so, API notification is skipped.
+func New(s Store, d Docker, n Notifier) *Reconciler {
+	return &Reconciler{store: s, docker: d, notifier: n}
 }
 
 // Reconcile performs one reconciliation pass: reads desired state from the store,
@@ -103,5 +111,10 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 func (r *Reconciler) updateStatus(id string, status store.Status) {
 	if err := r.store.UpdateStatus(id, status); err != nil {
 		log.Printf("reconciler: update status %s → %s: %v", id, status, err)
+	}
+	if r.notifier != nil {
+		if err := r.notifier.NotifyStatus(id, status); err != nil {
+			log.Printf("reconciler: notify api status %s → %s: %v", id, status, err)
+		}
 	}
 }

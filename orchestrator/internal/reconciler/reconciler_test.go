@@ -11,6 +11,33 @@ import (
 	"github.com/ercadev/dirigent/store"
 )
 
+// mockNotifier records NotifyStatus calls and can be configured to fail.
+type mockNotifier struct {
+	mu      sync.Mutex
+	calls   []notifyCall
+	notifyErr error
+}
+
+type notifyCall struct {
+	id     string
+	status store.Status
+}
+
+func (m *mockNotifier) NotifyStatus(id string, status store.Status) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, notifyCall{id: id, status: status})
+	return m.notifyErr
+}
+
+func (m *mockNotifier) getCalls() []notifyCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]notifyCall, len(m.calls))
+	copy(out, m.calls)
+	return out
+}
+
 // mockStore is a controllable in-memory store for testing.
 type mockStore struct {
 	mu          sync.Mutex
@@ -89,7 +116,7 @@ func TestReconcile_DeployingNoContainer_StartsAndBecomesHealthy(t *testing.T) {
 		},
 	}
 	d := &mockDocker{}
-	r := reconciler.New(s, d)
+	r := reconciler.New(s, d, nil)
 
 	if err := r.Reconcile(context.Background()); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -110,7 +137,7 @@ func TestReconcile_DeployingNoContainer_StartFails_BecomesFailed(t *testing.T) {
 		},
 	}
 	d := &mockDocker{startErr: errors.New("image not found")}
-	r := reconciler.New(s, d)
+	r := reconciler.New(s, d, nil)
 
 	if err := r.Reconcile(context.Background()); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -132,7 +159,7 @@ func TestReconcile_DeployingWithRunningContainer_BecomesHealthy(t *testing.T) {
 			{ID: "c1", DeploymentID: "d1", Running: true},
 		},
 	}
-	r := reconciler.New(s, d)
+	r := reconciler.New(s, d, nil)
 
 	if err := r.Reconcile(context.Background()); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -154,7 +181,7 @@ func TestReconcile_DeployingWithStoppedContainer_BecomesFailed(t *testing.T) {
 			{ID: "c1", DeploymentID: "d1", Running: false},
 		},
 	}
-	r := reconciler.New(s, d)
+	r := reconciler.New(s, d, nil)
 
 	if err := r.Reconcile(context.Background()); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -172,7 +199,7 @@ func TestReconcile_HealthyNoContainer_BecomesFailed(t *testing.T) {
 		},
 	}
 	d := &mockDocker{}
-	r := reconciler.New(s, d)
+	r := reconciler.New(s, d, nil)
 
 	if err := r.Reconcile(context.Background()); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -190,7 +217,7 @@ func TestReconcile_OrphanContainer_StoppedAndRemoved(t *testing.T) {
 			{ID: "c1", DeploymentID: "orphan-id", Running: true},
 		},
 	}
-	r := reconciler.New(s, d)
+	r := reconciler.New(s, d, nil)
 
 	if err := r.Reconcile(context.Background()); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -208,7 +235,7 @@ func TestReconcile_FailedDeployment_Skipped(t *testing.T) {
 		},
 	}
 	d := &mockDocker{}
-	r := reconciler.New(s, d)
+	r := reconciler.New(s, d, nil)
 
 	if err := r.Reconcile(context.Background()); err != nil {
 		t.Fatalf("reconcile: %v", err)
@@ -219,5 +246,86 @@ func TestReconcile_FailedDeployment_Skipped(t *testing.T) {
 	}
 	if s.getStatus("d1") != store.StatusFailed {
 		t.Errorf("want status to remain failed, got %s", s.getStatus("d1"))
+	}
+}
+
+func TestReconcile_DeployingNoContainer_NotifiesHealthy(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "nginx:latest", Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{}
+	n := &mockNotifier{}
+	r := reconciler.New(s, d, n)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	calls := n.getCalls()
+	if len(calls) != 1 || calls[0].id != "d1" || calls[0].status != store.StatusHealthy {
+		t.Errorf("want notify(d1, healthy), got %v", calls)
+	}
+}
+
+func TestReconcile_DeployingStartFails_NotifiesFailed(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "bad:image", Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{startErr: errors.New("image not found")}
+	n := &mockNotifier{}
+	r := reconciler.New(s, d, n)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	calls := n.getCalls()
+	if len(calls) != 1 || calls[0].id != "d1" || calls[0].status != store.StatusFailed {
+		t.Errorf("want notify(d1, failed), got %v", calls)
+	}
+}
+
+func TestReconcile_HealthyContainerGone_NotifiesFailed(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Status: store.StatusHealthy},
+		},
+	}
+	d := &mockDocker{} // no containers
+	n := &mockNotifier{}
+	r := reconciler.New(s, d, n)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	calls := n.getCalls()
+	if len(calls) != 1 || calls[0].id != "d1" || calls[0].status != store.StatusFailed {
+		t.Errorf("want notify(d1, failed), got %v", calls)
+	}
+}
+
+func TestReconcile_NotifyAPIFailure_DoesNotCrash(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "nginx:latest", Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{}
+	n := &mockNotifier{notifyErr: errors.New("connection refused")}
+	r := reconciler.New(s, d, n)
+
+	// Must not return an error even when the notifier fails.
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	// Store should still be updated even though notification failed.
+	if s.getStatus("d1") != store.StatusHealthy {
+		t.Errorf("want status healthy, got %s", s.getStatus("d1"))
 	}
 }

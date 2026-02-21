@@ -2,6 +2,9 @@
 /dirigent
 control-plane/dirigent
 
+# Air hot reload
+control-plane/tmp/
+
 # Node / Bun
 dashboard/node_modules/
 dashboard/dist/

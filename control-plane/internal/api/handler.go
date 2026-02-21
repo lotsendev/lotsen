@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/ercadev/dirigent/internal/store"
@@ -52,8 +53,14 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		Domain  string            `json:"domain"`
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if body.Name == "" || body.Image == "" {
+		http.Error(w, "name and image are required", http.StatusBadRequest)
 		return
 	}
 
@@ -111,7 +118,9 @@ func (h *Handler) deleteDeployment(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("writeJSON: encode: %v", err)
+	}
 }
 
 func newID() (string, error) {
@@ -119,5 +128,7 @@ func newID() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("newID: %w", err)
 	}
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant bits
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
 }

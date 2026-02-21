@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -93,5 +94,29 @@ func TestJSONStore_EmptyFileOnFirstStart(t *testing.T) {
 
 	if list := s.List(); len(list) != 0 {
 		t.Errorf("want empty list, got %d items", len(list))
+	}
+}
+
+func TestJSONStore_CorruptedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	if err := os.WriteFile(path, []byte("not valid json {{{"), 0o644); err != nil {
+		t.Fatalf("write corrupted file: %v", err)
+	}
+
+	_, err := store.NewJSONStore(path)
+	if err == nil {
+		t.Fatal("want error opening store with corrupted file, got nil")
+	}
+}
+
+func TestJSONStore_InvalidPath(t *testing.T) {
+	_, err := store.NewJSONStore("")
+	if err == nil {
+		t.Fatal("want error for empty path, got nil")
+	}
+
+	_, err = store.NewJSONStore("relative/path.json")
+	if err == nil {
+		t.Fatal("want error for relative path, got nil")
 	}
 }

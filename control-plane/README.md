@@ -39,7 +39,7 @@ DIRIGENT_DATA=/tmp/dirigent.json go run ./cmd/dirigent
 |----------|-----------------------------|--------------------------|
 | `GET`    | `/api/deployments`          | List all deployments     |
 | `POST`   | `/api/deployments`          | Create a deployment      |
-| `DELETE` | `/api/deployments/:id`      | Delete a deployment      |
+| `DELETE` | `/api/deployments/{id}`     | Delete a deployment      |
 
 ### Deployment object
 

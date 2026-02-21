@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/ercadev/dirigent/internal/api"
@@ -14,6 +15,7 @@ import (
 
 // memStore is an in-memory store used only in tests.
 type memStore struct {
+	mu          sync.RWMutex
 	deployments map[string]store.Deployment
 }
 
@@ -22,6 +24,8 @@ func newMemStore() *memStore {
 }
 
 func (m *memStore) List() []store.Deployment {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	result := make([]store.Deployment, 0, len(m.deployments))
 	for _, d := range m.deployments {
 		result = append(result, d)
@@ -30,11 +34,15 @@ func (m *memStore) List() []store.Deployment {
 }
 
 func (m *memStore) Create(d store.Deployment) (store.Deployment, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.deployments[d.ID] = d
 	return d, nil
 }
 
 func (m *memStore) Delete(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if _, ok := m.deployments[id]; !ok {
 		return store.ErrNotFound
 	}
@@ -197,6 +205,28 @@ func (e *errStore) List() []store.Deployment                              { retu
 func (e *errStore) Create(_ store.Deployment) (store.Deployment, error)   { return store.Deployment{}, errors.New("disk full") }
 func (e *errStore) Delete(_ string) error                                  { return errors.New("disk full") }
 
+func TestCreateDeployment_MissingFields(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	cases := []map[string]string{
+		{"image": "nginx"},          // missing name
+		{"name": "web"},             // missing image
+		{},                          // both missing
+	}
+	for _, payload := range cases {
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST /api/deployments: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("payload %v: want 400, got %d", payload, resp.StatusCode)
+		}
+	}
+}
+
 func TestCreateDeployment_StoreError(t *testing.T) {
 	srv := newTestServer(&errStore{})
 	defer srv.Close()
@@ -205,6 +235,22 @@ func TestCreateDeployment_StoreError(t *testing.T) {
 	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeleteDeployment_StoreError(t *testing.T) {
+	srv := newTestServer(&errStore{})
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/deployments/any", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE /api/deployments/any: %v", err)
 	}
 	defer resp.Body.Close()
 

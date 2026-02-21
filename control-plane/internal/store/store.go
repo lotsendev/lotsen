@@ -44,7 +44,14 @@ type JSONStore struct {
 
 // NewJSONStore opens or creates the JSON store at path.
 // Existing state is loaded into memory on startup.
+// path must be a non-empty absolute file path.
 func NewJSONStore(path string) (*JSONStore, error) {
+	if path == "" {
+		return nil, fmt.Errorf("store: path must be non-empty")
+	}
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("store: path must be absolute: %s", path)
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("store: create data dir: %w", err)
 	}
@@ -102,6 +109,12 @@ func (s *JSONStore) persist() error {
 		f.Close()
 		os.Remove(tmp)
 		return fmt.Errorf("store: encode: %w", err)
+	}
+
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("store: sync temp file: %w", err)
 	}
 
 	if err := f.Close(); err != nil {

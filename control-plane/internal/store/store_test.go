@@ -18,11 +18,11 @@ func TestJSONStore_Persistence(t *testing.T) {
 	}
 
 	created, err := s1.Create(store.Deployment{
-		ID:    "abc123",
-		Name:  "web",
-		Image: "nginx:latest",
-		Envs:  map[string]string{"PORT": "80"},
-		Ports: []string{"80:80"},
+		ID:     "abc123",
+		Name:   "web",
+		Image:  "nginx:latest",
+		Envs:   map[string]string{"PORT": "80"},
+		Ports:  []string{"80:80"},
 		Status: store.StatusIdle,
 	})
 	if err != nil {

@@ -67,11 +67,55 @@ chore: upgrade Go to 1.23
 docs: add architecture overview to CLAUDE.md
 ```
 
-## Repository Status
+## Build and Run
 
-This project is in early development. As source code is added, update this file with:
+### Backend (Go)
 
-- Build commands (`go build`, `npm run build`, etc.)
-- How to run tests (`go test ./...`, `npm test`, etc.)
-- How to run linters
-- Architecture notes covering how the Go backend, React frontend, load balancer, and GitOps components interact
+```bash
+# Run the server (serves gui/dist/ on :8080)
+go run .
+
+# Build a production binary
+go build -o dirigent .
+
+# Run tests
+go test ./...
+```
+
+### Frontend (React + Vite)
+
+```bash
+cd gui
+
+# Install dependencies (first time)
+npm install
+
+# Development server with API proxy to :8080
+npm run dev
+
+# Production build (outputs to gui/dist/)
+npm run build
+```
+
+### Full production workflow
+
+```bash
+cd gui && npm run build && cd .. && go run .
+```
+
+## Architecture
+
+```
+/
+├── main.go          Go HTTP server (:8080) — API routes + SPA static file serving
+├── go.mod
+└── gui/             Vite + React frontend
+    ├── src/
+    │   ├── main.tsx
+    │   ├── App.tsx
+    │   └── pages/   One file per page (DeploymentList, etc.)
+    └── dist/        Production build output (git-ignored), served by Go
+```
+
+- In **development**: run `go run .` for the API and `npm run dev` in `gui/` for the UI. Vite proxies `/api/*` to `:8080`.
+- In **production**: build the frontend (`npm run build`), then run `go run .` which serves `gui/dist/` as a SPA with an `index.html` fallback for client-side routes.

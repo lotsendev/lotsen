@@ -83,12 +83,49 @@ esac
 
 step "Detected ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}"
 
-# ─── stub completion ──────────────────────────────────────────────────────────
+# ─── Docker installation ───────────────────────────────────────────────────────
+
+# install_docker installs Docker Engine via the official apt repository for the
+# detected OS. It assumes apt-get is available and OS_ID / VERSION_CODENAME are
+# set from /etc/os-release.
+install_docker() {
+    step "Installing prerequisites"
+    apt-get install -y -q ca-certificates curl gnupg
+
+    step "Adding Docker's official GPG key"
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL "https://download.docker.com/linux/${OS_ID}/gpg" \
+        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+
+    step "Adding Docker apt repository"
+    echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/${OS_ID} ${VERSION_CODENAME} stable" \
+        | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+    step "Updating apt package index"
+    apt-get update -qq
+
+    step "Installing Docker Engine"
+    apt-get install -y -q \
+        docker-ce docker-ce-cli containerd.io \
+        docker-buildx-plugin docker-compose-plugin
+}
+
+step "Checking for existing Docker installation"
+
+if command -v docker > /dev/null 2>&1; then
+    step "Docker already installed ($(docker --version | head -1)); skipping"
+else
+    install_docker
+    step "Docker installed ($(docker --version | head -1))"
+fi
+
+# ─── completion ───────────────────────────────────────────────────────────────
 
 echo ""
-echo "  Pre-flight checks passed."
-echo "  OS:   ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}"
-echo "  User: root"
-echo ""
-echo "  (Installation steps will follow here in subsequent issues.)"
+echo "  Dirigent pre-install complete."
+echo "  OS:     ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}"
+echo "  Docker: $(docker --version | head -1)"
 echo ""

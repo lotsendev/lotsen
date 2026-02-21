@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
 import { getDeployments, deleteDeployment, type DeploymentStatus } from '../lib/api'
-import CreateDeploymentForm from './CreateDeploymentForm'
+import CreateDeploymentForm from '../deployments/CreateDeploymentForm'
 
 const STATUS_STYLES: Record<DeploymentStatus, string> = {
   idle: 'bg-gray-100 text-gray-600',

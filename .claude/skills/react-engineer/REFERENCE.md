@@ -19,6 +19,41 @@ features/
 
 Avoid grouping by type (`components/`, `hooks/`, `utils/` at the root) — it scatters related code across the tree.
 
+## Custom hooks
+
+Extract all non-trivial state and business logic out of components and into named custom hooks. A component body should contain only JSX and the minimal wiring to connect it to its hook.
+
+**When to extract a hook:**
+- More than one or two `useState` calls in the same component
+- Any validation, transformation, or derived state logic
+- Any `useMutation` or `useQuery` call with meaningful `onSuccess`/`onError` handlers
+
+```ts
+// Bad: business logic living in the component
+export default function CreateForm() {
+  const [name, setName] = useState('')
+  const [errors, setErrors] = useState({})
+  function validate() { /* ... */ }
+  function handleSubmit() { /* ... */ }
+  return <form onSubmit={handleSubmit}>...</form>
+}
+
+// Good: component is pure JSX wiring
+export default function CreateForm() {
+  const { name, setName, errors, handleSubmit, isPending } = useCreateForm()
+  return <form onSubmit={handleSubmit}>...</form>
+}
+```
+
+Co-locate the hook with its component in the same feature directory:
+
+```
+deployments/
+  CreateDeploymentForm.tsx       # JSX only, ~50–80 lines
+  useCreateDeploymentForm.ts     # all state, validation, mutation
+  useDynamicRows.ts              # generic reusable hook
+```
+
 ## TanStack Query
 
 Define queries and mutations in a dedicated `*.queries.ts` file, not inline in components.

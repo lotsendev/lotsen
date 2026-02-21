@@ -20,8 +20,8 @@ Dirigent is a Docker container orchestration tool for solo developers and small 
 
 ## Tech Stack
 
-- **Backend:** Go (Docker orchestrator)
-- **Frontend:** React (web GUI)
+- **Backend:** Go (Docker orchestrator + REST API)
+- **Frontend:** Bun + React + Vite (dashboard, runs as a Docker container)
 - **Infrastructure:** Docker, VPS
 
 ## Git Conventions
@@ -69,63 +69,63 @@ docs: add architecture overview to CLAUDE.md
 
 ## Build and Run
 
-### Go binaries
+### Go (dirigent API)
 
 ```bash
-# Build both binaries
-go build ./...
-
 # Run the orchestration API (port 8080)
 go run ./cmd/dirigent
 
-# Run the GUI static file server (port 3000)
-go run ./cmd/web
+# Build the binary
+go build -o dirigent ./cmd/dirigent
 
 # Run all tests
 go test ./...
 ```
 
-### Frontend (React + Vite)
+### Dashboard (Bun + React + Vite)
 
 ```bash
-cd gui
+cd dashboard
 
 # Install dependencies (first time)
-npm install
+bun install
 
 # Development server — proxies /api/* to http://localhost:8080
-npm run dev
+bun run dev
 
-# Production build (outputs to gui/dist/)
-npm run build
+# Production build (outputs to dashboard/dist/)
+bun run build
+
+# Run the production server (serves dist/ on :3000)
+bun run start
 ```
 
-### Full production workflow
+### Docker (production)
 
 ```bash
-cd gui && npm run build && cd ..
-go run ./cmd/dirigent &   # API on :8080
-go run ./cmd/web          # GUI on :3000
+# Build the dashboard image
+docker build -t dirigent-dashboard ./dashboard
+
+# The dashboard container is managed by Dirigent in production
 ```
 
 ## Architecture
 
-This is a monorepo with two Go binaries and one React frontend.
-
 ```
 /
 ├── cmd/
-│   ├── dirigent/    Orchestration engine + REST API (:8080)
-│   └── web/         Static file server for the React GUI (:3000)
+│   └── dirigent/    Go orchestration engine + REST API (:8080)
 ├── internal/        Shared Go packages (api handlers, store, etc.)
-├── gui/             Vite + React + TypeScript frontend
+├── dashboard/       Bun + React + Vite dashboard (ships as Docker image)
 │   ├── src/
 │   │   ├── main.tsx
 │   │   ├── App.tsx
 │   │   └── pages/   One file per page
+│   ├── server.ts    Bun SPA server for production (:3000)
+│   ├── Dockerfile
 │   └── dist/        Production build output (git-ignored)
 └── go.mod
 ```
 
-- In **development**: run `go run ./cmd/dirigent` for the API, then `npm run dev` inside `gui/`. Vite proxies `/api/*` to `:8080`.
-- In **production**: build the frontend, run both `cmd/dirigent` (API) and `cmd/web` (serves `gui/dist/` with SPA fallback).
+- In **development**: run `go run ./cmd/dirigent` for the API, then `bun run dev` inside `dashboard/`. Vite proxies `/api/*` to `:8080`.
+- In **production**: the dashboard runs as a Docker container (managed by Dirigent) serving the Vite build via `server.ts` on `:3000`.

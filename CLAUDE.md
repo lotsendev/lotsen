@@ -69,16 +69,19 @@ docs: add architecture overview to CLAUDE.md
 
 ## Build and Run
 
-### Backend (Go)
+### Go binaries
 
 ```bash
-# Run the server (serves gui/dist/ on :8080)
-go run .
+# Build both binaries
+go build ./...
 
-# Build a production binary
-go build -o dirigent .
+# Run the orchestration API (port 8080)
+go run ./cmd/dirigent
 
-# Run tests
+# Run the GUI static file server (port 3000)
+go run ./cmd/web
+
+# Run all tests
 go test ./...
 ```
 
@@ -90,7 +93,7 @@ cd gui
 # Install dependencies (first time)
 npm install
 
-# Development server with API proxy to :8080
+# Development server — proxies /api/* to http://localhost:8080
 npm run dev
 
 # Production build (outputs to gui/dist/)
@@ -100,22 +103,29 @@ npm run build
 ### Full production workflow
 
 ```bash
-cd gui && npm run build && cd .. && go run .
+cd gui && npm run build && cd ..
+go run ./cmd/dirigent &   # API on :8080
+go run ./cmd/web          # GUI on :3000
 ```
 
 ## Architecture
 
+This is a monorepo with two Go binaries and one React frontend.
+
 ```
 /
-├── main.go          Go HTTP server (:8080) — API routes + SPA static file serving
-├── go.mod
-└── gui/             Vite + React frontend
-    ├── src/
-    │   ├── main.tsx
-    │   ├── App.tsx
-    │   └── pages/   One file per page (DeploymentList, etc.)
-    └── dist/        Production build output (git-ignored), served by Go
+├── cmd/
+│   ├── dirigent/    Orchestration engine + REST API (:8080)
+│   └── web/         Static file server for the React GUI (:3000)
+├── internal/        Shared Go packages (api handlers, store, etc.)
+├── gui/             Vite + React + TypeScript frontend
+│   ├── src/
+│   │   ├── main.tsx
+│   │   ├── App.tsx
+│   │   └── pages/   One file per page
+│   └── dist/        Production build output (git-ignored)
+└── go.mod
 ```
 
-- In **development**: run `go run .` for the API and `npm run dev` in `gui/` for the UI. Vite proxies `/api/*` to `:8080`.
-- In **production**: build the frontend (`npm run build`), then run `go run .` which serves `gui/dist/` as a SPA with an `index.html` fallback for client-side routes.
+- In **development**: run `go run ./cmd/dirigent` for the API, then `npm run dev` inside `gui/`. Vite proxies `/api/*` to `:8080`.
+- In **production**: build the frontend, run both `cmd/dirigent` (API) and `cmd/web` (serves `gui/dist/` with SPA fallback).

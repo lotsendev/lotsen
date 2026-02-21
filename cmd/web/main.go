@@ -7,28 +7,20 @@ import (
 	"path/filepath"
 )
 
-const addr = ":8080"
+const addr = ":3000"
 
 func main() {
 	mux := http.NewServeMux()
 
-	// API routes — registered here so later slices can extend the mux.
-	mux.HandleFunc("/api/", apiNotFound)
-
-	// All other requests are handled by the SPA: serve a file from
-	// gui/dist if it exists, otherwise fall back to index.html so
-	// the React router can handle client-side navigation.
+	// Serve the React production build. Any path that does not map to an
+	// existing file falls back to index.html so the React router can handle
+	// client-side navigation.
 	mux.Handle("/", spaHandler("gui/dist"))
 
-	log.Printf("dirigent listening on %s", addr)
+	log.Printf("dirigent web listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatalf("dirigent: %v", err)
+		log.Fatalf("web: %v", err)
 	}
-}
-
-// apiNotFound is a placeholder until real API handlers are registered.
-func apiNotFound(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not found", http.StatusNotFound)
 }
 
 // spaHandler returns an http.Handler that serves static files from dir.

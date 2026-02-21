@@ -37,7 +37,18 @@ Think before coding. Define:
 
 For non-trivial changes, present the plan to the user before implementing.
 
-### 4. Implement
+### 4. Create a feature branch
+
+Before writing any code, create a branch off an up-to-date `main`:
+
+```bash
+git checkout main && git pull origin main
+git checkout -b <type>/<short-description>
+```
+
+Use the issue type and a short kebab-case description (e.g. `feat/add-health-endpoint`).
+
+### 5. Implement
 
 Write the code following the principles in [REFERENCE.md](REFERENCE.md):
 
@@ -46,7 +57,7 @@ Write the code following the principles in [REFERENCE.md](REFERENCE.md):
 - Keep functions short and focused on one thing
 - Handle every error explicitly — never silently discard
 
-### 5. Review
+### 6. Review
 
 Before presenting the solution, verify:
 

@@ -49,7 +49,18 @@ Think before coding. Define:
 
 For non-trivial changes, present the plan to the user before implementing.
 
-### 4. Implement
+### 4. Create a feature branch
+
+Before writing any code, create a branch off an up-to-date `main`:
+
+```bash
+git checkout main && git pull origin main
+git checkout -b <type>/<short-description>
+```
+
+Use the issue type and a short kebab-case description (e.g. `feat/add-deploy-button`).
+
+### 5. Implement
 
 Write the code following the principles in [REFERENCE.md](REFERENCE.md):
 
@@ -58,7 +69,7 @@ Write the code following the principles in [REFERENCE.md](REFERENCE.md):
 - Use TanStack Query for all API calls — never fetch directly in components
 - Use Zustand only for state that truly needs to be shared across distant components
 
-### 5. Review
+### 6. Review
 
 Before presenting the solution, verify:
 

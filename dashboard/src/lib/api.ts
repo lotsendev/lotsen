@@ -9,6 +9,13 @@ export type Deployment = {
   volumes: string[]
   domain: string
   status: DeploymentStatus
+  error?: string
+}
+
+export type StatusEvent = {
+  deploymentId: string
+  status: DeploymentStatus
+  error?: string
 }
 
 export async function getDeployments(): Promise<Deployment[]> {

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
 import { getDeployments, deleteDeployment, type DeploymentStatus } from '../lib/api'
 import CreateDeploymentForm from '../deployments/CreateDeploymentForm'
+import { useDeploymentSSE } from '../deployments/useDeploymentSSE'
 
 const STATUS_STYLES: Record<DeploymentStatus, string> = {
   idle: 'bg-gray-100 text-gray-600',
@@ -12,6 +13,7 @@ const STATUS_STYLES: Record<DeploymentStatus, string> = {
 
 export default function DeploymentList() {
   const queryClient = useQueryClient()
+  useDeploymentSSE()
 
   const { data: deployments, isLoading, isError } = useQuery({
     queryKey: ['deployments'],
@@ -55,6 +57,9 @@ export default function DeploymentList() {
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[d.status]}`}>
                       {d.status}
                     </span>
+                    {d.status === 'failed' && d.error && (
+                      <p className="mt-1 text-xs text-red-600">{d.error}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button

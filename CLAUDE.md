@@ -69,31 +69,32 @@ docs: add architecture overview to CLAUDE.md
 
 ## Build and Run
 
-### Go (dirigent API)
+### Local development (Makefile)
 
 ```bash
-cd control-plane
+# First-time setup: install Air and dashboard dependencies
+make setup
 
-# Run the orchestration API (port 8080)
-go run ./cmd/dirigent
+# Start the full stack (Go API + Vite dashboard) in one terminal
+# Ctrl+C shuts down both processes cleanly
+make dev
 
-# Build the binary
-go build -o dirigent ./cmd/dirigent
+# Compile the Go binary → ./dirigent
+make build
 
-# Run all tests
-go test ./...
+# Run Go tests
+make test
+
+# Remove build artifacts
+make clean
 ```
 
-### Dashboard (Bun + React + Vite)
+`make dev` runs the Go API via Air (hot reload on `:8080`) and the Vite dev server on `:5173`. Vite proxies `/api/*` to `:8080`. The API reads/writes state from `/tmp/dirigent.json` in dev mode.
+
+### Dashboard (production build)
 
 ```bash
 cd dashboard
-
-# Install dependencies (first time)
-bun install
-
-# Development server — proxies /api/* to http://localhost:8080
-bun run dev
 
 # Production build (outputs to dashboard/dist/)
 bun run build

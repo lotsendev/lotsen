@@ -9,7 +9,7 @@ description: Senior Go engineer that reads GitHub issues, plans architecture, an
 
 ### 1. Read the issue
 
-Fetch the issue with `gh issue view <number>`. Read all comments. Internalize:
+Fetch the issue with `mcp__github__get_issue` (`owner=ercadev`, `repo=dirigent`). Read all comments via `mcp__github__get_issue_comments`. Internalize:
 
 - What problem is being solved (not just what to build)
 - Acceptance criteria

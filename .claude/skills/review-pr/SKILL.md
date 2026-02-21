@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Reviews GitHub pull requests by fetching PR diffs, summarizing changes, checking for security, style, test coverage, and conventional commit issues, then posting structured feedback as GitHub review comments via the gh CLI. Use when the user asks to review a PR, check a pull request, give feedback on GitHub changes, or mentions a PR number.
+description: Reviews GitHub pull requests by fetching PR diffs, summarizing changes, checking for security, style, test coverage, and conventional commit issues, then posting structured feedback as GitHub review comments via the GitHub MCP. Use when the user asks to review a PR, check a pull request, give feedback on GitHub changes, or mentions a PR number.
 ---
 
 # PR Review
@@ -14,11 +14,14 @@ description: Reviews GitHub pull requests by fetching PR diffs, summarizing chan
 
 ## Workflow
 
-1. **Fetch PR data** — run `scripts/fetch-pr.sh [number]` to get metadata, diff, and changed files
+1. **Fetch PR data** — use the GitHub MCP tools to get metadata, diff, and changed files:
+   - `mcp__github__get_pull_request` — title, body, author, state, base/head branches, labels, additions/deletions
+   - `mcp__github__get_pull_request_files` — list of changed files
+   - `mcp__github__get_pull_request_diff` — full diff
 2. **Summarize** — write a plain-English summary of what the PR does and why
 3. **Check for issues** — work through the checklist below
 4. **Draft feedback** — group findings by file or theme; separate critical from minor
-5. **Post review** — submit via `gh pr review` (see commands below)
+5. **Post review** — submit via the GitHub MCP tools (see commands below)
 
 ## Review checklist
 
@@ -32,29 +35,21 @@ description: Reviews GitHub pull requests by fetching PR diffs, summarizing chan
 
 ## Posting to GitHub
 
+Use `mcp__github__create_pull_request_review` with `owner=ercadev`, `repo=dirigent`, and the PR number.
+
 ### Approve
-```bash
-gh pr review <number> --approve --body "<summary>"
-```
+Set `event=APPROVE` and `body="<summary>"`.
 
 ### Request changes
-```bash
-gh pr review <number> --request-changes --body "<summary>"
-```
+Set `event=REQUEST_CHANGES` and `body="<summary>"`.
 
 ### Comment only
-```bash
-gh pr review <number> --comment --body "<summary>"
-```
+Set `event=COMMENT` and `body="<summary>"`.
 
-### Inline file comment
-```bash
-gh api repos/{owner}/{repo}/pulls/<number>/comments \
-  --method POST \
-  -f body="<comment>" \
-  -f path="<file>" \
-  -f line=<line>
-```
+### With inline comments
+1. `mcp__github__create_pending_pull_request_review` — open a pending review
+2. `mcp__github__add_pull_request_review_comment_to_pending_review` — add each inline comment (`path`, `line`, `body`)
+3. `mcp__github__submit_pending_pull_request_review` — submit with `event` and top-level `body`
 
 ## Output format
 

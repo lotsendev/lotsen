@@ -70,6 +70,17 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
+			now := time.Now().UTC()
+			dockerReachable := true
+			if err := d.Ping(ctx); err != nil {
+				dockerReachable = false
+				log.Printf("orchestrator: docker unreachable: %v", err)
+			}
+
+			if err := notifier.NotifyHeartbeat(dockerReachable, now); err != nil {
+				log.Printf("orchestrator: notify heartbeat: %v", err)
+			}
+
 			if err := r.Reconcile(ctx); err != nil {
 				log.Printf("orchestrator: reconcile: %v", err)
 			}

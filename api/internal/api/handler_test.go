@@ -139,6 +139,96 @@ func newTestServerWithBroker(s api.Store, b *events.Broker) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
+type statusProviderStub struct {
+	snapshot api.SystemStatusSnapshot
+	err      error
+}
+
+func (s *statusProviderStub) Snapshot(_ context.Context) (api.SystemStatusSnapshot, error) {
+	if s.err != nil {
+		return api.SystemStatusSnapshot{}, s.err
+	}
+	return s.snapshot, nil
+}
+
+func newTestServerWithStatusProvider(s api.Store, provider api.SystemStatusProvider) *httptest.Server {
+	mux := http.NewServeMux()
+	api.NewWithSystemStatus(s, events.NewBroker(), provider).RegisterRoutes(mux)
+	return httptest.NewServer(mux)
+}
+
+func TestSystemStatus_Healthy(t *testing.T) {
+	lastUpdated := time.Date(2026, time.February, 22, 10, 0, 0, 0, time.UTC)
+	provider := &statusProviderStub{
+		snapshot: api.SystemStatusSnapshot{
+			API: api.APISystemStatus{
+				State:       api.SystemStatusStateHealthy,
+				LastUpdated: lastUpdated,
+			},
+		},
+	}
+
+	srv := newTestServerWithStatusProvider(newMemStore(), provider)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/system-status")
+	if err != nil {
+		t.Fatalf("GET /api/system-status: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var body api.SystemStatusSnapshot
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.API.State != api.SystemStatusStateHealthy {
+		t.Errorf("want api state healthy, got %s", body.API.State)
+	}
+	if !body.API.LastUpdated.Equal(lastUpdated) {
+		t.Errorf("want lastUpdated %s, got %s", lastUpdated, body.API.LastUpdated)
+	}
+	if body.Error != "" {
+		t.Errorf("want empty error, got %q", body.Error)
+	}
+}
+
+func TestSystemStatus_UnavailableOnProviderError(t *testing.T) {
+	provider := &statusProviderStub{err: errors.New("status backend down")}
+
+	srv := newTestServerWithStatusProvider(newMemStore(), provider)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/system-status")
+	if err != nil {
+		t.Fatalf("GET /api/system-status: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", resp.StatusCode)
+	}
+
+	var body api.SystemStatusSnapshot
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.API.State != api.SystemStatusStateUnavailable {
+		t.Errorf("want api state unavailable, got %s", body.API.State)
+	}
+	if body.API.LastUpdated.IsZero() {
+		t.Error("want non-zero lastUpdated")
+	}
+	if body.Error != "system status unavailable" {
+		t.Errorf("want error system status unavailable, got %q", body.Error)
+	}
+}
+
 func TestListDeployments_Empty(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()

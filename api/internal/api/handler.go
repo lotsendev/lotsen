@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/ercadev/dirigent/internal/events"
@@ -51,7 +53,10 @@ type Handler struct {
 	store        Store
 	events       EventBus
 	statusSource SystemStatusProvider
+	heartbeats   OrchestratorHeartbeatIngestor
 }
+
+const defaultOrchestratorStaleAfter = 30 * time.Second
 
 // New creates a Handler backed by the given store and event bus.
 func New(s Store, eb EventBus) *Handler {
@@ -62,16 +67,19 @@ func New(s Store, eb EventBus) *Handler {
 // If statusSource is nil, a default provider is used.
 func NewWithSystemStatus(s Store, eb EventBus, statusSource SystemStatusProvider) *Handler {
 	if statusSource == nil {
-		statusSource = newDefaultSystemStatusProvider(time.Now)
+		statusSource = newDefaultSystemStatusProvider(time.Now, orchestratorStaleAfterFromEnv())
 	}
 
-	return &Handler{store: s, events: eb, statusSource: statusSource}
+	heartbeatIngestor, _ := statusSource.(OrchestratorHeartbeatIngestor)
+
+	return &Handler{store: s, events: eb, statusSource: statusSource, heartbeats: heartbeatIngestor}
 }
 
 // RegisterRoutes wires all deployment endpoints into mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/deployments", h.listDeployments)
 	mux.HandleFunc("GET /api/system-status", h.systemStatus)
+	mux.HandleFunc("POST /api/system-status/orchestrator-heartbeat", h.recordOrchestratorHeartbeat)
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
 	mux.HandleFunc("GET /api/deployments/events", h.deploymentEvents)
 	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)
@@ -79,6 +87,36 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/deployments/{id}", h.deleteDeployment)
 	mux.HandleFunc("PATCH /api/deployments/{id}/status", h.updateDeploymentStatus)
 	mux.HandleFunc("PATCH /api/deployments/{id}", h.patchDeployment)
+}
+
+func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if h.heartbeats == nil {
+		http.Error(w, "system status unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
+
+	var body struct {
+		At *time.Time `json:"at"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	heartbeatAt := time.Time{}
+	if body.At != nil {
+		heartbeatAt = body.At.UTC()
+	}
+
+	if err := h.heartbeats.RecordOrchestratorHeartbeat(r.Context(), heartbeatAt); err != nil {
+		http.Error(w, "failed to record heartbeat", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) listDeployments(w http.ResponseWriter, r *http.Request) {
@@ -373,4 +411,19 @@ func newID() (string, error) {
 	b[6] = (b[6] & 0x0f) | 0x40 // version 4
 	b[8] = (b[8] & 0x3f) | 0x80 // variant bits
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
+}
+
+func orchestratorStaleAfterFromEnv() time.Duration {
+	raw := os.Getenv("DIRIGENT_ORCHESTRATOR_STALE_AFTER")
+	if raw == "" {
+		return defaultOrchestratorStaleAfter
+	}
+
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		log.Printf("invalid DIRIGENT_ORCHESTRATOR_STALE_AFTER=%q; using default %s", raw, defaultOrchestratorStaleAfter)
+		return defaultOrchestratorStaleAfter
+	}
+
+	return d
 }

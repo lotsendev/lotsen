@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -11,6 +12,8 @@ type SystemStatusState string
 
 const (
 	SystemStatusStateHealthy     SystemStatusState = "healthy"
+	SystemStatusStateDegraded    SystemStatusState = "degraded"
+	SystemStatusStateStale       SystemStatusState = "stale"
 	SystemStatusStateUnavailable SystemStatusState = "unavailable"
 )
 
@@ -20,10 +23,17 @@ type APISystemStatus struct {
 	LastUpdated time.Time         `json:"lastUpdated"`
 }
 
+// OrchestratorSystemStatus carries orchestrator liveness and freshness information.
+type OrchestratorSystemStatus struct {
+	State       SystemStatusState `json:"state"`
+	LastUpdated time.Time         `json:"lastUpdated,omitempty"`
+}
+
 // SystemStatusSnapshot is the typed dashboard-facing system-status contract.
 type SystemStatusSnapshot struct {
-	API   APISystemStatus `json:"api"`
-	Error string          `json:"error,omitempty"`
+	API          APISystemStatus          `json:"api"`
+	Orchestrator OrchestratorSystemStatus `json:"orchestrator"`
+	Error        string                   `json:"error,omitempty"`
 }
 
 // SystemStatusProvider returns an aggregated system-status snapshot.
@@ -31,21 +41,74 @@ type SystemStatusProvider interface {
 	Snapshot(ctx context.Context) (SystemStatusSnapshot, error)
 }
 
-type defaultSystemStatusProvider struct {
-	now func() time.Time
+// OrchestratorHeartbeatIngestor accepts orchestrator heartbeat updates.
+type OrchestratorHeartbeatIngestor interface {
+	RecordOrchestratorHeartbeat(ctx context.Context, at time.Time) error
 }
 
-func newDefaultSystemStatusProvider(now func() time.Time) SystemStatusProvider {
-	return &defaultSystemStatusProvider{now: now}
+type defaultSystemStatusProvider struct {
+	now              func() time.Time
+	staleAfter       time.Duration
+	lastHeartbeatMu  sync.RWMutex
+	lastHeartbeatUTC time.Time
+}
+
+func newDefaultSystemStatusProvider(now func() time.Time, staleAfter time.Duration) SystemStatusProvider {
+	return &defaultSystemStatusProvider{now: now, staleAfter: staleAfter}
 }
 
 func (p *defaultSystemStatusProvider) Snapshot(_ context.Context) (SystemStatusSnapshot, error) {
+	orchestrator := p.orchestratorStatus()
+
 	return SystemStatusSnapshot{
 		API: APISystemStatus{
 			State:       SystemStatusStateHealthy,
 			LastUpdated: p.now().UTC(),
 		},
+		Orchestrator: orchestrator,
 	}, nil
+}
+
+func (p *defaultSystemStatusProvider) RecordOrchestratorHeartbeat(_ context.Context, at time.Time) error {
+	if at.IsZero() {
+		at = p.now()
+	}
+
+	p.lastHeartbeatMu.Lock()
+	p.lastHeartbeatUTC = at.UTC()
+	p.lastHeartbeatMu.Unlock()
+
+	return nil
+}
+
+func (p *defaultSystemStatusProvider) orchestratorStatus() OrchestratorSystemStatus {
+	p.lastHeartbeatMu.RLock()
+	lastHeartbeat := p.lastHeartbeatUTC
+	p.lastHeartbeatMu.RUnlock()
+
+	if lastHeartbeat.IsZero() {
+		return OrchestratorSystemStatus{State: SystemStatusStateUnavailable}
+	}
+
+	age := p.now().UTC().Sub(lastHeartbeat)
+	if age < 0 {
+		age = 0
+	}
+
+	degradedAfter := p.staleAfter / 2
+	state := SystemStatusStateStale
+
+	switch {
+	case age <= degradedAfter:
+		state = SystemStatusStateHealthy
+	case age <= p.staleAfter:
+		state = SystemStatusStateDegraded
+	}
+
+	return OrchestratorSystemStatus{
+		State:       state,
+		LastUpdated: lastHeartbeat,
+	}
 }
 
 func (h *Handler) systemStatus(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +119,8 @@ func (h *Handler) systemStatus(w http.ResponseWriter, r *http.Request) {
 				State:       SystemStatusStateUnavailable,
 				LastUpdated: time.Now().UTC(),
 			},
-			Error: "system status unavailable",
+			Orchestrator: OrchestratorSystemStatus{State: SystemStatusStateUnavailable},
+			Error:        "system status unavailable",
 		})
 		return
 	}

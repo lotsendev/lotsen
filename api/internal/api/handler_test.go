@@ -257,6 +257,12 @@ func TestSystemStatus_UnavailableOnProviderError(t *testing.T) {
 	if body.Docker.State != api.SystemStatusStateUnavailable {
 		t.Errorf("want docker state unavailable, got %s", body.Docker.State)
 	}
+	if body.Host.CPU.State != api.SystemStatusStateUnavailable {
+		t.Errorf("want cpu state unavailable, got %s", body.Host.CPU.State)
+	}
+	if body.Host.RAM.State != api.SystemStatusStateUnavailable {
+		t.Errorf("want ram state unavailable, got %s", body.Host.RAM.State)
+	}
 }
 
 func TestRecordOrchestratorHeartbeat_UpdatesSystemStatus(t *testing.T) {
@@ -364,6 +370,85 @@ func TestRecordOrchestratorHeartbeat_UpdatesDockerConnectivity(t *testing.T) {
 	}
 	if body.Docker.LastUpdated.IsZero() {
 		t.Fatal("want non-zero docker lastUpdated")
+	}
+}
+
+func TestRecordOrchestratorHeartbeat_UpdatesHostMetrics(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	reqBody := `{"host":{"cpu":{"usagePercent":41.7},"ram":{"usagePercent":68.9}}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/system-status/orchestrator-heartbeat", bytes.NewBufferString(reqBody))
+	if err != nil {
+		t.Fatalf("POST heartbeat request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/system-status/orchestrator-heartbeat: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", resp.StatusCode)
+	}
+
+	statusResp, err := http.Get(srv.URL + "/api/system-status")
+	if err != nil {
+		t.Fatalf("GET /api/system-status: %v", err)
+	}
+	defer statusResp.Body.Close()
+
+	if statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", statusResp.StatusCode)
+	}
+
+	var body api.SystemStatusSnapshot
+	if err := json.NewDecoder(statusResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.Host.CPU.State != api.SystemStatusStateHealthy {
+		t.Fatalf("want cpu state healthy, got %s", body.Host.CPU.State)
+	}
+	if body.Host.CPU.UsagePercent != 41.7 {
+		t.Fatalf("want cpu usage 41.7, got %v", body.Host.CPU.UsagePercent)
+	}
+	if body.Host.CPU.LastUpdated.IsZero() {
+		t.Fatal("want non-zero cpu lastUpdated")
+	}
+
+	if body.Host.RAM.State != api.SystemStatusStateHealthy {
+		t.Fatalf("want ram state healthy, got %s", body.Host.RAM.State)
+	}
+	if body.Host.RAM.UsagePercent != 68.9 {
+		t.Fatalf("want ram usage 68.9, got %v", body.Host.RAM.UsagePercent)
+	}
+	if body.Host.RAM.LastUpdated.IsZero() {
+		t.Fatal("want non-zero ram lastUpdated")
+	}
+}
+
+func TestRecordOrchestratorHeartbeat_RejectsInvalidHostMetricPercent(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	reqBody := `{"host":{"cpu":{"usagePercent":101}}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/system-status/orchestrator-heartbeat", bytes.NewBufferString(reqBody))
+	if err != nil {
+		t.Fatalf("POST heartbeat request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/system-status/orchestrator-heartbeat: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
 	}
 }
 

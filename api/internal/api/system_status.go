@@ -35,11 +35,25 @@ type DockerSystemStatus struct {
 	LastUpdated time.Time         `json:"lastUpdated,omitempty"`
 }
 
+// HostMetricSystemStatus carries a host metric signal value and freshness information.
+type HostMetricSystemStatus struct {
+	State        SystemStatusState `json:"state"`
+	UsagePercent float64           `json:"usagePercent,omitempty"`
+	LastUpdated  time.Time         `json:"lastUpdated,omitempty"`
+}
+
+// HostSystemStatus carries host-level runtime utilization signals.
+type HostSystemStatus struct {
+	CPU HostMetricSystemStatus `json:"cpu"`
+	RAM HostMetricSystemStatus `json:"ram"`
+}
+
 // SystemStatusSnapshot is the typed dashboard-facing system-status contract.
 type SystemStatusSnapshot struct {
 	API          APISystemStatus          `json:"api"`
 	Orchestrator OrchestratorSystemStatus `json:"orchestrator"`
 	Docker       DockerSystemStatus       `json:"docker"`
+	Host         HostSystemStatus         `json:"host"`
 	Error        string                   `json:"error,omitempty"`
 }
 
@@ -58,6 +72,16 @@ type DockerConnectivityIngestor interface {
 	RecordDockerConnectivity(ctx context.Context, reachable bool, at time.Time) error
 }
 
+// CPUUtilizationIngestor accepts host CPU utilization observations.
+type CPUUtilizationIngestor interface {
+	RecordCPUUtilization(ctx context.Context, usagePercent float64, at time.Time) error
+}
+
+// RAMUtilizationIngestor accepts host RAM utilization observations.
+type RAMUtilizationIngestor interface {
+	RecordRAMUtilization(ctx context.Context, usagePercent float64, at time.Time) error
+}
+
 type defaultSystemStatusProvider struct {
 	now              func() time.Time
 	staleAfter       time.Duration
@@ -65,11 +89,20 @@ type defaultSystemStatusProvider struct {
 	lastHeartbeatUTC time.Time
 	dockerSignalMu   sync.RWMutex
 	dockerSignal     dockerConnectivitySignal
+	hostSignalMu     sync.RWMutex
+	cpuSignal        hostMetricSignal
+	ramSignal        hostMetricSignal
 }
 
 type dockerConnectivitySignal struct {
 	lastCheckedUTC time.Time
 	reachable      bool
+	hasSignal      bool
+}
+
+type hostMetricSignal struct {
+	lastCheckedUTC time.Time
+	usagePercent   float64
 	hasSignal      bool
 }
 
@@ -87,6 +120,10 @@ func (p *defaultSystemStatusProvider) Snapshot(_ context.Context) (SystemStatusS
 		},
 		Orchestrator: orchestrator,
 		Docker:       p.dockerStatus(),
+		Host: HostSystemStatus{
+			CPU: p.cpuStatus(),
+			RAM: p.ramStatus(),
+		},
 	}, nil
 }
 
@@ -168,6 +205,70 @@ func (p *defaultSystemStatusProvider) dockerStatus() DockerSystemStatus {
 	}
 }
 
+func (p *defaultSystemStatusProvider) RecordCPUUtilization(_ context.Context, usagePercent float64, at time.Time) error {
+	if at.IsZero() {
+		at = p.now()
+	}
+
+	p.hostSignalMu.Lock()
+	p.cpuSignal = hostMetricSignal{
+		lastCheckedUTC: at.UTC(),
+		usagePercent:   usagePercent,
+		hasSignal:      true,
+	}
+	p.hostSignalMu.Unlock()
+
+	return nil
+}
+
+func (p *defaultSystemStatusProvider) RecordRAMUtilization(_ context.Context, usagePercent float64, at time.Time) error {
+	if at.IsZero() {
+		at = p.now()
+	}
+
+	p.hostSignalMu.Lock()
+	p.ramSignal = hostMetricSignal{
+		lastCheckedUTC: at.UTC(),
+		usagePercent:   usagePercent,
+		hasSignal:      true,
+	}
+	p.hostSignalMu.Unlock()
+
+	return nil
+}
+
+func (p *defaultSystemStatusProvider) cpuStatus() HostMetricSystemStatus {
+	p.hostSignalMu.RLock()
+	signal := p.cpuSignal
+	p.hostSignalMu.RUnlock()
+
+	if !signal.hasSignal {
+		return HostMetricSystemStatus{State: SystemStatusStateUnavailable}
+	}
+
+	return HostMetricSystemStatus{
+		State:        SystemStatusStateHealthy,
+		UsagePercent: signal.usagePercent,
+		LastUpdated:  signal.lastCheckedUTC,
+	}
+}
+
+func (p *defaultSystemStatusProvider) ramStatus() HostMetricSystemStatus {
+	p.hostSignalMu.RLock()
+	signal := p.ramSignal
+	p.hostSignalMu.RUnlock()
+
+	if !signal.hasSignal {
+		return HostMetricSystemStatus{State: SystemStatusStateUnavailable}
+	}
+
+	return HostMetricSystemStatus{
+		State:        SystemStatusStateHealthy,
+		UsagePercent: signal.usagePercent,
+		LastUpdated:  signal.lastCheckedUTC,
+	}
+}
+
 func (h *Handler) systemStatus(w http.ResponseWriter, r *http.Request) {
 	snapshot, err := h.statusSource.Snapshot(r.Context())
 	if err != nil {
@@ -178,7 +279,11 @@ func (h *Handler) systemStatus(w http.ResponseWriter, r *http.Request) {
 			},
 			Orchestrator: OrchestratorSystemStatus{State: SystemStatusStateUnavailable},
 			Docker:       DockerSystemStatus{State: SystemStatusStateUnavailable},
-			Error:        "system status unavailable",
+			Host: HostSystemStatus{
+				CPU: HostMetricSystemStatus{State: SystemStatusStateUnavailable},
+				RAM: HostMetricSystemStatus{State: SystemStatusStateUnavailable},
+			},
+			Error: "system status unavailable",
 		})
 		return
 	}

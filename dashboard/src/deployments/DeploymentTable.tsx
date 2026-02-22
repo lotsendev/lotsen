@@ -7,9 +7,10 @@ type Props = {
   isLoading: boolean
   isError: boolean
   deleteMutation: UseMutationResult<void, Error, string>
+  onEdit: (deployment: Deployment) => void
 }
 
-export function DeploymentTable({ deployments, isLoading, isError, deleteMutation }: Props) {
+export function DeploymentTable({ deployments, isLoading, isError, deleteMutation, onEdit }: Props) {
   if (isLoading) return <p className="text-sm text-gray-500">Loading deployments…</p>
   if (isError) return <p className="text-sm text-red-600">Failed to load deployments.</p>
   if (!deployments?.length) return <p className="text-sm text-gray-500">No deployments yet.</p>
@@ -32,6 +33,7 @@ export function DeploymentTable({ deployments, isLoading, isError, deleteMutatio
               deployment={d}
               onDelete={id => deleteMutation.mutate(id)}
               isDeleting={deleteMutation.isPending}
+              onEdit={onEdit}
             />
           ))}
         </tbody>

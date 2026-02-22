@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 
 	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -38,6 +39,7 @@ type Client interface {
 	ContainerList(ctx context.Context, options container.ListOptions) ([]dockertypes.Container, error)
 	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
 	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
+	ContainerRename(ctx context.Context, containerID string, newName string) error
 }
 
 // Docker manages container lifecycle for Dirigent deployments.
@@ -160,6 +162,90 @@ func (d *Docker) StopAndRemove(ctx context.Context, containerID string) error {
 			return fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
 		}
 		return fmt.Errorf("docker: remove container %s: %w", containerID, err)
+	}
+
+	return nil
+}
+
+// StartAndReplace implements a start-then-stop redeploy strategy: it pulls the new
+// image, starts a temporary container, verifies it reaches running state, then stops
+// and removes the old container before renaming the new one to the deployment name.
+// If the new container fails to reach running state the old container is left intact
+// and an error is returned.
+func (d *Docker) StartAndReplace(ctx context.Context, dep store.Deployment, oldContainerID string) error {
+	if _, err := d.client.Ping(ctx); err != nil {
+		return fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
+	}
+
+	rc, err := d.client.ImagePull(ctx, dep.Image, image.PullOptions{})
+	if err != nil {
+		if dockerclient.IsErrConnectionFailed(err) {
+			return fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
+		}
+		return fmt.Errorf("docker: pull image %s: %w", dep.Image, err)
+	}
+	_, _ = io.Copy(io.Discard, rc)
+	rc.Close()
+
+	env := envsToSlice(dep.Envs)
+
+	exposedPorts, portBindings, err := parsePorts(dep.Ports)
+	if err != nil {
+		return fmt.Errorf("docker: parse ports: %w", err)
+	}
+
+	cfg := &container.Config{
+		Image:        dep.Image,
+		Env:          env,
+		ExposedPorts: exposedPorts,
+		Labels: map[string]string{
+			"dirigent.managed": "true",
+			"dirigent.id":      dep.ID,
+		},
+	}
+	hostCfg := &container.HostConfig{
+		PortBindings: portBindings,
+		Binds:        dep.Volumes,
+	}
+
+	nextName := dep.Name + "-next"
+	resp, err := d.client.ContainerCreate(ctx, cfg, hostCfg, nil, nil, nextName)
+	if err != nil {
+		if dockerclient.IsErrConnectionFailed(err) {
+			return fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
+		}
+		return fmt.Errorf("docker: create container %s: %w", nextName, err)
+	}
+
+	if err := d.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+		if dockerclient.IsErrConnectionFailed(err) {
+			return fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
+		}
+		return fmt.Errorf("docker: start container %s: %w", resp.ID, err)
+	}
+
+	// Verify the new container reached running state.
+	f := filters.NewArgs(filters.Arg("id", resp.ID))
+	running, err := d.client.ContainerList(ctx, container.ListOptions{All: false, Filters: f})
+	if err != nil {
+		_ = d.client.ContainerStop(ctx, resp.ID, container.StopOptions{})
+		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+		return fmt.Errorf("docker: inspect new container %s: %w", resp.ID, err)
+	}
+	if len(running) == 0 {
+		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+		return fmt.Errorf("docker: new container %s did not reach running state", resp.ID)
+	}
+
+	// New container is healthy; tear down the old one.
+	if err := d.StopAndRemove(ctx, oldContainerID); err != nil {
+		log.Printf("docker: remove old container %s: %v", oldContainerID, err)
+	}
+
+	// Rename new container to the canonical deployment name.
+	if err := d.client.ContainerRename(ctx, resp.ID, dep.Name); err != nil {
+		log.Printf("docker: rename %s to %s: %v", resp.ID, dep.Name, err)
 	}
 
 	return nil

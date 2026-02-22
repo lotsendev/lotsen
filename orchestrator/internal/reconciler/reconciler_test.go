@@ -77,11 +77,13 @@ func (m *mockStore) getStatus(id string) store.Status {
 
 // mockDocker is a controllable Docker client for testing.
 type mockDocker struct {
-	mu         sync.Mutex
-	containers []docker.ManagedContainer
-	startErr   error
-	started    []string
-	removed    []string
+	mu                    sync.Mutex
+	containers            []docker.ManagedContainer
+	startErr              error
+	startAndReplaceErr    error
+	started               []string
+	replaced              []string // old container IDs passed to StartAndReplace
+	removed               []string
 }
 
 func (m *mockDocker) Start(_ context.Context, d store.Deployment) error {
@@ -91,6 +93,17 @@ func (m *mockDocker) Start(_ context.Context, d store.Deployment) error {
 		return m.startErr
 	}
 	m.started = append(m.started, d.ID)
+	return nil
+}
+
+func (m *mockDocker) StartAndReplace(_ context.Context, d store.Deployment, oldContainerID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.startAndReplaceErr != nil {
+		return m.startAndReplaceErr
+	}
+	m.started = append(m.started, d.ID)
+	m.replaced = append(m.replaced, oldContainerID)
 	return nil
 }
 
@@ -148,10 +161,10 @@ func TestReconcile_DeployingNoContainer_StartFails_BecomesFailed(t *testing.T) {
 	}
 }
 
-func TestReconcile_DeployingWithRunningContainer_BecomesHealthy(t *testing.T) {
+func TestReconcile_DeployingWithRunningContainer_RedeploysAndBecomesHealthy(t *testing.T) {
 	s := &mockStore{
 		deployments: []store.Deployment{
-			{ID: "d1", Name: "web", Status: store.StatusDeploying},
+			{ID: "d1", Name: "web", Image: "nginx:2", Status: store.StatusDeploying},
 		},
 	}
 	d := &mockDocker{
@@ -165,8 +178,39 @@ func TestReconcile_DeployingWithRunningContainer_BecomesHealthy(t *testing.T) {
 		t.Fatalf("reconcile: %v", err)
 	}
 
+	// StartAndReplace must have been called with the old container ID.
+	if len(d.replaced) != 1 || d.replaced[0] != "c1" {
+		t.Errorf("want StartAndReplace called with c1, got %v", d.replaced)
+	}
 	if s.getStatus("d1") != store.StatusHealthy {
 		t.Errorf("want status healthy, got %s", s.getStatus("d1"))
+	}
+}
+
+func TestReconcile_Redeploy_FailedNewContainer_KeepsOldAndBecomesFailed(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "nginx:bad", Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{
+		containers: []docker.ManagedContainer{
+			{ID: "c1", DeploymentID: "d1", Running: true},
+		},
+		startAndReplaceErr: errors.New("new container did not reach running state"),
+	}
+	r := reconciler.New(s, d, nil)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	// Old container must not have been removed.
+	if len(d.removed) != 0 {
+		t.Errorf("want old container untouched, got removed: %v", d.removed)
+	}
+	if s.getStatus("d1") != store.StatusFailed {
+		t.Errorf("want status failed, got %s", s.getStatus("d1"))
 	}
 }
 

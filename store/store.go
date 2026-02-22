@@ -244,6 +244,51 @@ func (s *JSONStore) Update(d Deployment) (Deployment, error) {
 	return d, nil
 }
 
+// Patch merges the non-zero fields of patch into the stored deployment and persists atomically.
+// Only image, envs, ports, volumes, domain, and status are merged; id and name are immutable.
+// Returns ErrNotFound if no deployment with that ID exists.
+func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
+	var result Deployment
+	err := s.withLock(func() error {
+		data, err := s.read()
+		if err != nil {
+			return err
+		}
+		d, ok := data[id]
+		if !ok {
+			return ErrNotFound
+		}
+		if patch.Image != "" {
+			d.Image = patch.Image
+		}
+		if patch.Envs != nil {
+			d.Envs = patch.Envs
+		}
+		if patch.Ports != nil {
+			d.Ports = patch.Ports
+		}
+		if patch.Volumes != nil {
+			d.Volumes = patch.Volumes
+		}
+		if patch.Domain != "" {
+			d.Domain = patch.Domain
+		}
+		if patch.Status != "" {
+			d.Status = patch.Status
+		}
+		data[id] = d
+		if err := s.persist(data); err != nil {
+			return err
+		}
+		result = d
+		return nil
+	})
+	if err != nil {
+		return Deployment{}, err
+	}
+	return result, nil
+}
+
 // Delete removes the deployment with the given ID.
 // Returns ErrNotFound if no such deployment exists.
 func (s *JSONStore) Delete(id string) error {

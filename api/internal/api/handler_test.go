@@ -80,12 +80,50 @@ func (m *memStore) Delete(id string) error {
 	return nil
 }
 
+func (m *memStore) Patch(id string, patch store.Deployment) (store.Deployment, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, ok := m.deployments[id]
+	if !ok {
+		return store.Deployment{}, store.ErrNotFound
+	}
+	if patch.Image != "" {
+		d.Image = patch.Image
+	}
+	if patch.Envs != nil {
+		d.Envs = patch.Envs
+	}
+	if patch.Ports != nil {
+		d.Ports = patch.Ports
+	}
+	if patch.Volumes != nil {
+		d.Volumes = patch.Volumes
+	}
+	if patch.Domain != "" {
+		d.Domain = patch.Domain
+	}
+	if patch.Status != "" {
+		d.Status = patch.Status
+	}
+	m.deployments[id] = d
+	return d, nil
+}
+
 // failUpdateStore wraps memStore but always fails on Update.
 type failUpdateStore struct {
 	*memStore
 }
 
 func (f *failUpdateStore) Update(_ store.Deployment) (store.Deployment, error) {
+	return store.Deployment{}, errors.New("disk full")
+}
+
+// failPatchStore wraps memStore but always fails on Patch.
+type failPatchStore struct {
+	*memStore
+}
+
+func (f *failPatchStore) Patch(_ string, _ store.Deployment) (store.Deployment, error) {
 	return store.Deployment{}, errors.New("disk full")
 }
 
@@ -372,6 +410,9 @@ func (e *errStore) Create(_ store.Deployment) (store.Deployment, error) {
 	return store.Deployment{}, errors.New("disk full")
 }
 func (e *errStore) Update(_ store.Deployment) (store.Deployment, error) {
+	return store.Deployment{}, errors.New("disk full")
+}
+func (e *errStore) Patch(_ string, _ store.Deployment) (store.Deployment, error) {
 	return store.Deployment{}, errors.New("disk full")
 }
 func (e *errStore) Delete(_ string) error { return errors.New("disk full") }
@@ -696,5 +737,147 @@ func TestUpdateDeploymentStatus_InvalidBody(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestPatchDeployment(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{
+		ID:     "d1",
+		Name:   "web",
+		Image:  "nginx:1",
+		Envs:   map[string]string{"PORT": "80"},
+		Ports:  []string{"80:80"},
+		Status: store.StatusHealthy,
+	}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"image": "nginx:2"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/d1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("want 202, got %d", resp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if updated.Image != "nginx:2" {
+		t.Errorf("want image nginx:2, got %s", updated.Image)
+	}
+	if updated.Status != store.StatusDeploying {
+		t.Errorf("want status deploying, got %s", updated.Status)
+	}
+	// Unpatched fields must be preserved.
+	if updated.Name != "web" {
+		t.Errorf("want name web, got %s", updated.Name)
+	}
+	if updated.Envs["PORT"] != "80" {
+		t.Errorf("want PORT=80 preserved, got %v", updated.Envs)
+	}
+}
+
+func TestPatchDeployment_NotFound(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"image": "nginx:2"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/nonexistent", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/nonexistent: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestPatchDeployment_StoreError(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
+
+	srv := newTestServer(&failPatchStore{s})
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"image": "nginx:2"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/d1 store error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestPatchDeployment_InvalidBody(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1", bytes.NewBufferString("not json"))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/d1 invalid body: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestPatchDeployment_EmitsDeployingEvent(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Image: "nginx:1", Status: store.StatusHealthy}
+
+	broker := events.NewBroker()
+	srv := newTestServerWithBroker(s, broker)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	evtCh := readSSEEvents(ctx, t, srv.URL+"/api/deployments/events")
+	time.Sleep(50 * time.Millisecond)
+
+	body, _ := json.Marshal(map[string]string{"image": "nginx:2"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/d1: %v", err)
+	}
+	resp.Body.Close()
+
+	select {
+	case event := <-evtCh:
+		if event.DeploymentID != "d1" {
+			t.Errorf("want deploymentId d1, got %s", event.DeploymentID)
+		}
+		if event.Status != string(store.StatusDeploying) {
+			t.Errorf("want status deploying, got %s", event.Status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: no SSE event received after PATCH")
 	}
 }

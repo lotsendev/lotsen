@@ -12,6 +12,7 @@ import (
 // Docker is the container management interface required by the reconciler.
 type Docker interface {
 	Start(ctx context.Context, d store.Deployment) error
+	StartAndReplace(ctx context.Context, d store.Deployment, oldContainerID string) error
 	ListManagedContainers(ctx context.Context) ([]docker.ManagedContainer, error)
 	StopAndRemove(ctx context.Context, containerID string) error
 }
@@ -73,7 +74,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		switch d.Status {
 		case store.StatusDeploying:
 			if !hasContainer {
-				// Start the container.
+				// Fresh deploy: no container exists yet — start one.
 				if err := r.docker.Start(ctx, d); err != nil {
 					log.Printf("reconciler: start %s (%s): %v", d.ID, d.Name, err)
 					r.updateStatus(d.ID, store.StatusFailed)
@@ -81,7 +82,13 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 					r.updateStatus(d.ID, store.StatusHealthy)
 				}
 			} else if c.Running {
-				r.updateStatus(d.ID, store.StatusHealthy)
+				// Container already running — this is a redeploy; apply start-then-stop.
+				if err := r.docker.StartAndReplace(ctx, d, c.ID); err != nil {
+					log.Printf("reconciler: redeploy %s (%s): %v", d.ID, d.Name, err)
+					r.updateStatus(d.ID, store.StatusFailed)
+				} else {
+					r.updateStatus(d.ID, store.StatusHealthy)
+				}
 			} else {
 				r.updateStatus(d.ID, store.StatusFailed)
 			}

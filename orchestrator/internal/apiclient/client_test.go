@@ -12,6 +12,8 @@ import (
 
 func TestClient_NotifyHeartbeat(t *testing.T) {
 	checkedAt := time.Date(2026, time.February, 22, 14, 0, 0, 0, time.UTC)
+	cpu := 41.7
+	ram := 68.9
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -27,6 +29,16 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 				Reachable bool      `json:"reachable"`
 				CheckedAt time.Time `json:"checkedAt"`
 			} `json:"docker"`
+			Host *struct {
+				CPU *struct {
+					UsagePercent float64   `json:"usagePercent"`
+					CheckedAt    time.Time `json:"checkedAt"`
+				} `json:"cpu"`
+				RAM *struct {
+					UsagePercent float64   `json:"usagePercent"`
+					CheckedAt    time.Time `json:"checkedAt"`
+				} `json:"ram"`
+			} `json:"host"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -41,13 +53,56 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 		if !body.Docker.CheckedAt.Equal(checkedAt) {
 			t.Fatalf("want checkedAt %s, got %s", checkedAt, body.Docker.CheckedAt)
 		}
+		if body.Host == nil || body.Host.CPU == nil || body.Host.RAM == nil {
+			t.Fatal("want host cpu and ram metrics in heartbeat")
+		}
+		if body.Host.CPU.UsagePercent != cpu {
+			t.Fatalf("want cpu usage %v, got %v", cpu, body.Host.CPU.UsagePercent)
+		}
+		if !body.Host.CPU.CheckedAt.Equal(checkedAt) {
+			t.Fatalf("want cpu checkedAt %s, got %s", checkedAt, body.Host.CPU.CheckedAt)
+		}
+		if body.Host.RAM.UsagePercent != ram {
+			t.Fatalf("want ram usage %v, got %v", ram, body.Host.RAM.UsagePercent)
+		}
+		if !body.Host.RAM.CheckedAt.Equal(checkedAt) {
+			t.Fatalf("want ram checkedAt %s, got %s", checkedAt, body.Host.RAM.CheckedAt)
+		}
 
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(false, checkedAt); err != nil {
+	if err := client.NotifyHeartbeat(false, checkedAt, &cpu, &ram); err != nil {
+		t.Fatalf("NotifyHeartbeat: %v", err)
+	}
+}
+
+func TestClient_NotifyHeartbeat_WithoutHostMetrics(t *testing.T) {
+	checkedAt := time.Date(2026, time.February, 22, 14, 0, 0, 0, time.UTC)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Host *struct {
+				CPU any `json:"cpu"`
+				RAM any `json:"ram"`
+			} `json:"host"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body.Host != nil {
+			t.Fatal("want host omitted when no host metrics are available")
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	client := New(srv.URL)
+	if err := client.NotifyHeartbeat(false, checkedAt, nil, nil); err != nil {
 		t.Fatalf("NotifyHeartbeat: %v", err)
 	}
 }
@@ -59,7 +114,7 @@ func TestClient_NotifyHeartbeat_UnexpectedResponse(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(true, time.Time{}); err == nil {
+	if err := client.NotifyHeartbeat(true, time.Time{}, nil, nil); err == nil {
 		t.Fatal("want error for non-204 heartbeat response")
 	}
 }

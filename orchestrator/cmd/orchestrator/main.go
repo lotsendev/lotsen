@@ -12,6 +12,7 @@ import (
 
 	"github.com/ercadev/dirigent/orchestrator/internal/apiclient"
 	"github.com/ercadev/dirigent/orchestrator/internal/docker"
+	"github.com/ercadev/dirigent/orchestrator/internal/hostmetrics"
 	"github.com/ercadev/dirigent/orchestrator/internal/reconciler"
 	"github.com/ercadev/dirigent/store"
 )
@@ -56,6 +57,7 @@ func main() {
 		apiURL = v
 	}
 	notifier := apiclient.New(apiURL)
+	metrics := hostmetrics.NewCollector()
 
 	r := reconciler.New(s, d, notifier)
 
@@ -72,12 +74,26 @@ func main() {
 		case <-ticker.C:
 			now := time.Now().UTC()
 			dockerReachable := true
+			var cpuUsagePercent *float64
+			var ramUsagePercent *float64
 			if err := d.Ping(ctx); err != nil {
 				dockerReachable = false
 				log.Printf("orchestrator: docker unreachable: %v", err)
 			}
 
-			if err := notifier.NotifyHeartbeat(dockerReachable, now); err != nil {
+			if usage, ok, err := metrics.CPUUsagePercent(); err != nil {
+				log.Printf("orchestrator: collect cpu telemetry: %v", err)
+			} else if ok {
+				cpuUsagePercent = &usage
+			}
+
+			if usage, ok, err := metrics.RAMUsagePercent(); err != nil {
+				log.Printf("orchestrator: collect ram telemetry: %v", err)
+			} else if ok {
+				ramUsagePercent = &usage
+			}
+
+			if err := notifier.NotifyHeartbeat(dockerReachable, now, cpuUsagePercent, ramUsagePercent); err != nil {
 				log.Printf("orchestrator: notify heartbeat: %v", err)
 			}
 

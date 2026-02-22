@@ -18,6 +18,7 @@ type Store interface {
 	Get(id string) (store.Deployment, error)
 	Create(d store.Deployment) (store.Deployment, error)
 	Update(d store.Deployment) (store.Deployment, error)
+	Patch(id string, patch store.Deployment) (store.Deployment, error)
 	Delete(id string) error
 }
 
@@ -29,6 +30,14 @@ type EventBus interface {
 
 type deploymentRequest struct {
 	Name    string            `json:"name"`
+	Image   string            `json:"image"`
+	Envs    map[string]string `json:"envs"`
+	Ports   []string          `json:"ports"`
+	Volumes []string          `json:"volumes"`
+	Domain  string            `json:"domain"`
+}
+
+type patchDeploymentRequest struct {
 	Image   string            `json:"image"`
 	Envs    map[string]string `json:"envs"`
 	Ports   []string          `json:"ports"`
@@ -210,18 +219,15 @@ func (h *Handler) updateDeploymentStatus(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var body deploymentRequest
 
+	var body patchDeploymentRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
-
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	deployment := store.Deployment{
-		ID:      id,
-		Name:    body.Name,
+	patch := store.Deployment{
 		Image:   body.Image,
 		Envs:    body.Envs,
 		Ports:   body.Ports,
@@ -229,16 +235,23 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		Domain:  body.Domain,
 		Status:  store.StatusDeploying,
 	}
-	updated, err := h.store.Update(deployment)
+
+	updated, err := h.store.Patch(id, patch)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			http.Error(w, "deployment not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, "error updating deployment", http.StatusBadRequest)
+		http.Error(w, "failed to update deployment", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, updated)
+
+	h.events.Publish(events.StatusEvent{
+		DeploymentID: id,
+		Status:       string(store.StatusDeploying),
+	})
+
+	writeJSON(w, http.StatusAccepted, updated)
 }
 
 // deploymentEvents streams deployment status-change events as SSE.

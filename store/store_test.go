@@ -289,6 +289,82 @@ func TestJSONStore_UpdateStatus(t *testing.T) {
 	}
 }
 
+func TestJSONStore_Patch_MergesFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{
+		ID:      "d1",
+		Name:    "web",
+		Image:   "nginx:1",
+		Envs:    map[string]string{"PORT": "80"},
+		Ports:   []string{"80:80"},
+		Volumes: []string{"/data:/data"},
+		Domain:  "example.com",
+		Status:  store.StatusHealthy,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Patch only image and status; all other fields must be preserved.
+	updated, err := s.Patch("d1", store.Deployment{
+		Image:  "nginx:2",
+		Status: store.StatusDeploying,
+	})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+
+	if updated.Image != "nginx:2" {
+		t.Errorf("want image nginx:2, got %s", updated.Image)
+	}
+	if updated.Status != store.StatusDeploying {
+		t.Errorf("want status deploying, got %s", updated.Status)
+	}
+	// Unspecified fields must be retained.
+	if updated.Name != "web" {
+		t.Errorf("want name web, got %s", updated.Name)
+	}
+	if updated.Envs["PORT"] != "80" {
+		t.Errorf("want PORT=80, got %v", updated.Envs)
+	}
+	if len(updated.Ports) != 1 || updated.Ports[0] != "80:80" {
+		t.Errorf("want ports [80:80], got %v", updated.Ports)
+	}
+	if len(updated.Volumes) != 1 || updated.Volumes[0] != "/data:/data" {
+		t.Errorf("want volumes [/data:/data], got %v", updated.Volumes)
+	}
+	if updated.Domain != "example.com" {
+		t.Errorf("want domain example.com, got %s", updated.Domain)
+	}
+
+	// Verify persistence.
+	reloaded, err := s.Get("d1")
+	if err != nil {
+		t.Fatalf("get after patch: %v", err)
+	}
+	if reloaded.Image != "nginx:2" {
+		t.Errorf("want persisted image nginx:2, got %s", reloaded.Image)
+	}
+}
+
+func TestJSONStore_Patch_NotFound(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Patch("nonexistent", store.Deployment{Image: "nginx:2"})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("want ErrNotFound, got %v", err)
+	}
+}
+
 func TestJSONStore_UpdateStatus_MissingID_NoOp(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "deployments.json")
 

@@ -28,8 +28,10 @@ type mockClient struct {
 	listErr         error
 	stopErr         error
 	removeErr       error
+	renameErr       error
 	stopped         []string
 	removed         []string
+	renamed         []string
 }
 
 func (m *mockClient) Ping(_ context.Context) (dockertypes.Ping, error) {
@@ -63,6 +65,11 @@ func (m *mockClient) ContainerStop(_ context.Context, id string, _ container.Sto
 func (m *mockClient) ContainerRemove(_ context.Context, id string, _ container.RemoveOptions) error {
 	m.removed = append(m.removed, id)
 	return m.removeErr
+}
+
+func (m *mockClient) ContainerRename(_ context.Context, id string, _ string) error {
+	m.renamed = append(m.renamed, id)
+	return m.renameErr
 }
 
 func deployment() store.Deployment {
@@ -152,6 +159,58 @@ func TestDocker_StopAndRemove(t *testing.T) {
 	}
 	if len(mock.removed) != 1 || mock.removed[0] != "c1" {
 		t.Errorf("want c1 removed, got %v", mock.removed)
+	}
+}
+
+func TestDocker_StartAndReplace_OK(t *testing.T) {
+	mock := &mockClient{
+		containerCreate: container.CreateResponse{ID: "new-c1"},
+		// ContainerList returns the new container as running.
+		listContainers: []dockertypes.Container{
+			{ID: "new-c1", State: "running"},
+		},
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	if err := d.StartAndReplace(context.Background(), dep, "old-c1"); err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+
+	// Old container must be stopped and removed.
+	if len(mock.stopped) != 1 || mock.stopped[0] != "old-c1" {
+		t.Errorf("want old-c1 stopped, got %v", mock.stopped)
+	}
+	if len(mock.removed) != 1 || mock.removed[0] != "old-c1" {
+		t.Errorf("want old-c1 removed, got %v", mock.removed)
+	}
+
+	// New container must be renamed to the deployment name.
+	if len(mock.renamed) != 1 || mock.renamed[0] != "new-c1" {
+		t.Errorf("want new-c1 renamed, got %v", mock.renamed)
+	}
+}
+
+func TestDocker_StartAndReplace_NewContainerNotRunning(t *testing.T) {
+	mock := &mockClient{
+		containerCreate: container.CreateResponse{ID: "new-c1"},
+		// Empty list means the new container is not running.
+		listContainers: []dockertypes.Container{},
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	err := d.StartAndReplace(context.Background(), dep, "old-c1")
+	if err == nil {
+		t.Fatal("want error when new container is not running, got nil")
+	}
+
+	// Old container must NOT have been touched.
+	if len(mock.stopped) != 0 {
+		t.Errorf("want old container untouched, got stopped: %v", mock.stopped)
+	}
+	if len(mock.removed) != 1 || mock.removed[0] != "new-c1" {
+		t.Errorf("want only new container cleaned up, got removed: %v", mock.removed)
 	}
 }
 

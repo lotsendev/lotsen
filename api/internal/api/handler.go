@@ -62,6 +62,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
 	mux.HandleFunc("GET /api/deployments/events", h.deploymentEvents)
 	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)
+	mux.HandleFunc("PUT /api/deployments/{id}", h.updateDeployment)
 	mux.HandleFunc("DELETE /api/deployments/{id}", h.deleteDeployment)
 	mux.HandleFunc("PATCH /api/deployments/{id}/status", h.updateDeploymentStatus)
 	mux.HandleFunc("PATCH /api/deployments/{id}", h.patchDeployment)
@@ -152,6 +153,60 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 	})
 
 	writeJSON(w, http.StatusCreated, created)
+}
+
+func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body deploymentRequest
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if body.Name == "" || body.Image == "" {
+		http.Error(w, "name and image are required", http.StatusBadRequest)
+		return
+	}
+
+	if body.Envs == nil {
+		body.Envs = map[string]string{}
+	}
+	if body.Ports == nil {
+		body.Ports = []string{}
+	}
+	if body.Volumes == nil {
+		body.Volumes = []string{}
+	}
+
+	d := store.Deployment{
+		ID:      id,
+		Name:    body.Name,
+		Image:   body.Image,
+		Envs:    body.Envs,
+		Ports:   body.Ports,
+		Volumes: body.Volumes,
+		Domain:  body.Domain,
+		Status:  store.StatusDeploying,
+	}
+
+	updated, err := h.store.Update(d)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "deployment not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to update deployment", http.StatusInternalServerError)
+		return
+	}
+
+	h.events.Publish(events.StatusEvent{
+		DeploymentID: updated.ID,
+		Status:       string(store.StatusDeploying),
+	})
+
+	writeJSON(w, http.StatusOK, updated)
 }
 
 func (h *Handler) deleteDeployment(w http.ResponseWriter, r *http.Request) {

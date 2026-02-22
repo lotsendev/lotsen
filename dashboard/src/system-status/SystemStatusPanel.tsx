@@ -67,22 +67,42 @@ export function SystemStatusPanel() {
 
           <section className="space-y-2 p-4">
             <p className="font-semibold text-foreground">Orchestrator liveness</p>
-            <p className="text-xs text-muted-foreground/90">Worker heartbeat and freshness from the host agent.</p>
-            <p>
-              State: <Badge variant={STATE_VARIANT[status.orchestrator.state]}>{status.orchestrator.state}</Badge>
+            <p className="text-xs text-muted-foreground/90">
+              Worker heartbeat and Docker connectivity statuses from the host agent.
             </p>
-            <p>
-              Last heartbeat:{' '}
-              <span className="font-medium text-foreground">
-                {formatTimestamp(status.orchestrator.lastUpdated)}
-              </span>
-            </p>
-            <p>
-              Freshness:{' '}
-              <span className="font-medium text-foreground">
-                {formatFreshness(status.orchestrator.lastUpdated)}
-              </span>
-            </p>
+            <ul className="space-y-1.5">
+              <li>
+                State: <Badge variant={STATE_VARIANT[status.orchestrator.state]}>{status.orchestrator.state}</Badge>
+              </li>
+              <li>
+                Last heartbeat:{' '}
+                <span className="font-medium text-foreground">
+                  {formatTimestamp(status.orchestrator.lastUpdated)}
+                </span>
+              </li>
+              <li>
+                Freshness:{' '}
+                <span className="font-medium text-foreground">
+                  {formatFreshness(status.orchestrator.lastUpdated)}
+                </span>
+              </li>
+              <li className="pt-1">
+                Docker state: <Badge variant={STATE_VARIANT[status.docker.state]}>{status.docker.state}</Badge>
+              </li>
+              <li>
+                Last checked:{' '}
+                <span className="font-medium text-foreground">{formatTimestamp(status.docker.lastUpdated)}</span>
+              </li>
+              <li>
+                Signal:{' '}
+                <span className="font-medium text-foreground">
+                  {status.docker.state === 'healthy' && 'Docker is reachable from orchestrator'}
+                  {status.docker.state === 'degraded' && 'Docker check failed at last probe'}
+                  {status.docker.state === 'stale' && 'Docker signal is stale'}
+                  {status.docker.state === 'unavailable' && 'No Docker connectivity telemetry yet'}
+                </span>
+              </li>
+            </ul>
           </section>
         </div>
       )}

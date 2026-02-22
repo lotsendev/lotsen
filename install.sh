@@ -3,9 +3,12 @@
 # Dirigent installer
 #
 # Usage:
-#   curl -fsSL https://get.dirigent.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/ercadev/dirigent-releases/main/install.sh | sudo bash
 #   -- or --
 #   sudo bash install.sh
+#
+# To pin a specific version:
+#   DIRIGENT_VERSION=v0.2.0 curl -fsSL ... | sudo bash
 #
 # Supported operating systems:
 #   Ubuntu 22.04 (Jammy) and later
@@ -62,7 +65,6 @@ OS_MAJOR="${OS_VERSION_ID%%.*}"   # e.g. "22" from "22.04", "11" from "11"
 
 case "${OS_ID}" in
     ubuntu)
-        # Extract the major version component for comparison (22 from 22.04).
         OS_MAJOR_INT="${OS_VERSION_ID%%.*}"
         if [ "${OS_MAJOR_INT}" -lt 22 ]; then
             error "Ubuntu ${OS_VERSION_ID} is not supported.
@@ -83,7 +85,30 @@ esac
 
 step "Detected ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}"
 
-# ─── Docker installation ───────────────────────────────────────────────────────
+# ─── pre-flight: architecture detection ──────────────────────────────────────
+
+ARCH="$(uname -m)"
+case "${ARCH}" in
+    x86_64)  ARCH="amd64" ;;
+    aarch64) ARCH="arm64" ;;
+    *) error "Unsupported architecture: ${ARCH}. Supported: x86_64, aarch64." ;;
+esac
+
+step "Detected architecture: ${ARCH}"
+
+# ─── version resolution ───────────────────────────────────────────────────────
+
+DIRIGENT_VERSION="${DIRIGENT_VERSION:-latest}"
+
+if [ "${DIRIGENT_VERSION}" = "latest" ]; then
+    RELEASE_BASE="https://github.com/ercadev/dirigent-releases/releases/latest/download"
+else
+    RELEASE_BASE="https://github.com/ercadev/dirigent-releases/releases/download/${DIRIGENT_VERSION}"
+fi
+
+step "Using release: ${DIRIGENT_VERSION}"
+
+# ─── Docker installation ──────────────────────────────────────────────────────
 
 # install_docker installs Docker Engine via the official apt repository for the
 # detected OS. It assumes apt-get is available and OS_ID / VERSION_CODENAME are
@@ -124,33 +149,96 @@ else
     STEP_DOCKER="installed"
 fi
 
-# ─── Dirigent binary ──────────────────────────────────────────────────────────
+# ─── Bun installation ─────────────────────────────────────────────────────────
 
-DIRIGENT_BIN="/usr/local/bin/dirigent"
+# install_bun downloads the Bun runtime binary directly from GitHub releases
+# and places it at /usr/local/bin/bun, making it available system-wide.
+install_bun() {
+    # Bun uses different arch names than Go.
+    local bun_arch
+    case "${ARCH}" in
+        amd64) bun_arch="x64" ;;
+        arm64) bun_arch="aarch64" ;;
+    esac
 
-# Normalise the machine architecture to the naming convention used in release
-# asset filenames (e.g. "linux-amd64", "linux-arm64").
-ARCH="$(uname -m)"
-case "${ARCH}" in
-    x86_64)  ARCH="amd64" ;;
-    aarch64) ARCH="arm64" ;;
-    *) error "Unsupported architecture: ${ARCH}. Supported: x86_64, aarch64." ;;
-esac
+    local bun_tmp
+    bun_tmp=$(mktemp -d)
 
-DOWNLOAD_URL="https://github.com/ercadev/dirigent-releases/releases/latest/download/dirigent-linux-${ARCH}"
+    step "Installing unzip (required to extract Bun)"
+    apt-get install -y -q unzip
 
-if [ -f "${DIRIGENT_BIN}" ]; then
-    step "Updating Dirigent binary at ${DIRIGENT_BIN} (linux/${ARCH})"
-    STEP_BINARY="updated"
+    step "Downloading Bun runtime (linux/${ARCH})"
+    curl -fsSL \
+        "https://github.com/oven-sh/bun/releases/latest/download/bun-linux-${bun_arch}.zip" \
+        -o "${bun_tmp}/bun.zip"
+
+    unzip -q "${bun_tmp}/bun.zip" -d "${bun_tmp}"
+    install -m 755 "${bun_tmp}/bun-linux-${bun_arch}/bun" /usr/local/bin/bun
+
+    rm -rf "${bun_tmp}"
+}
+
+step "Checking for existing Bun installation"
+
+if command -v bun > /dev/null 2>&1; then
+    step "Bun already installed ($(bun --version)); skipping"
+    STEP_BUN="already installed"
 else
-    step "Downloading Dirigent binary (linux/${ARCH})"
-    STEP_BINARY="installed"
+    install_bun
+    step "Bun installed ($(bun --version))"
+    STEP_BUN="installed"
 fi
 
-curl -fsSL "${DOWNLOAD_URL}" -o "${DIRIGENT_BIN}"
-chmod 755 "${DIRIGENT_BIN}"
+# ─── stop existing services (upgrade flow) ────────────────────────────────────
 
-step "Dirigent binary ready at ${DIRIGENT_BIN}"
+# Stop all services before replacing any files so binaries are never swapped
+# out from under a running process.
+SERVICES="dirigent-api dirigent-orchestrator dirigent-proxy dirigent-dashboard"
+
+step "Stopping any running Dirigent services"
+
+for svc in ${SERVICES}; do
+    if systemctl is-active --quiet "${svc}" 2>/dev/null; then
+        step "Stopping ${svc}"
+        systemctl stop "${svc}"
+    fi
+done
+
+# ─── download Go binaries ─────────────────────────────────────────────────────
+
+download_binary() {
+    local artifact="$1"
+    local dest="$2"
+    step "Downloading ${artifact}"
+    curl -fsSL "${RELEASE_BASE}/${artifact}" -o "${dest}"
+    chmod 755 "${dest}"
+}
+
+download_binary "dirigent-linux-${ARCH}"              /usr/local/bin/dirigent-api
+download_binary "dirigent-orchestrator-linux-${ARCH}" /usr/local/bin/dirigent-orchestrator
+download_binary "dirigent-proxy-linux-${ARCH}"        /usr/local/bin/dirigent-proxy
+
+# ─── download and install dashboard ──────────────────────────────────────────
+
+DASHBOARD_DIR="/opt/dirigent/dashboard"
+
+step "Installing dashboard to ${DASHBOARD_DIR}"
+mkdir -p "${DASHBOARD_DIR}"
+curl -fsSL "${RELEASE_BASE}/dashboard.tar.gz" | tar -xz -C "${DASHBOARD_DIR}"
+
+step "Installing dashboard production dependencies"
+(cd "${DASHBOARD_DIR}" && bun install --production)
+
+# ─── data directory ───────────────────────────────────────────────────────────
+
+DATA_DIR="/var/lib/dirigent"
+
+if [ ! -d "${DATA_DIR}" ]; then
+    step "Creating data directory ${DATA_DIR}"
+    mkdir -p "${DATA_DIR}"
+else
+    step "Data directory ${DATA_DIR} already exists; skipping"
+fi
 
 # ─── Docker network ───────────────────────────────────────────────────────────
 
@@ -168,23 +256,21 @@ else
     STEP_NETWORK="created"
 fi
 
-# ─── systemd service ──────────────────────────────────────────────────────────
+# ─── systemd units ────────────────────────────────────────────────────────────
 
-DIRIGENT_PORT="8080"
-DIRIGENT_UNIT="/etc/systemd/system/dirigent.service"
+step "Writing systemd unit files"
 
-step "Writing systemd unit file to ${DIRIGENT_UNIT}"
-
-cat > "${DIRIGENT_UNIT}" << EOF
+cat > /etc/systemd/system/dirigent-api.service << EOF
 [Unit]
-Description=Dirigent container orchestrator
+Description=Dirigent API
 Documentation=https://github.com/ercadev/dirigent
 After=network.target docker.service
 Requires=docker.service
 
 [Service]
 Type=simple
-ExecStart=${DIRIGENT_BIN}
+ExecStart=/usr/local/bin/dirigent-api
+Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
 Restart=on-failure
 RestartSec=5
 
@@ -192,47 +278,112 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+cat > /etc/systemd/system/dirigent-orchestrator.service << EOF
+[Unit]
+Description=Dirigent orchestrator
+Documentation=https://github.com/ercadev/dirigent
+After=network.target docker.service dirigent-api.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/dirigent-orchestrator
+Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
+Environment=DIRIGENT_API_URL=http://localhost:8080
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/dirigent-proxy.service << EOF
+[Unit]
+Description=Dirigent reverse proxy
+Documentation=https://github.com/ercadev/dirigent
+After=network.target docker.service dirigent-api.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/dirigent-proxy
+Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/dirigent-dashboard.service << EOF
+[Unit]
+Description=Dirigent dashboard
+Documentation=https://github.com/ercadev/dirigent
+After=network.target dirigent-api.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bun ${DASHBOARD_DIR}/server.ts
+Environment=PORT=3000
+Environment=DIRIGENT_API_URL=http://localhost:8080
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ─── enable and start services ────────────────────────────────────────────────
+
 step "Reloading systemd daemon"
 systemctl daemon-reload
 
-step "Enabling Dirigent service"
-systemctl enable dirigent
+for svc in ${SERVICES}; do
+    step "Enabling and starting ${svc}"
+    systemctl enable "${svc}"
+    systemctl start "${svc}"
+done
 
-if systemctl is-active --quiet dirigent; then
-    step "Dirigent service already running; restarting to apply any changes"
-    systemctl restart dirigent
-    STEP_SERVICE="restarted"
-else
-    step "Starting Dirigent service"
-    systemctl start dirigent
-    STEP_SERVICE="started"
-fi
+# ─── verify services ──────────────────────────────────────────────────────────
 
-step "Verifying Dirigent service is active"
-if ! systemctl is-active --quiet dirigent; then
-    error "Dirigent service failed to start. Check logs with: journalctl -u dirigent -n 50"
-fi
+step "Verifying all services are active"
+
+for svc in ${SERVICES}; do
+    if ! systemctl is-active --quiet "${svc}"; then
+        error "${svc} failed to start. Check logs with: journalctl -u ${svc} -n 50"
+    fi
+done
 
 # ─── completion ───────────────────────────────────────────────────────────────
 
-# Resolve the primary non-loopback IP so we can print a usable GUI URL.
 SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 if [ -z "${SERVER_IP}" ]; then
     SERVER_IP="<server-ip>"
 fi
 
 echo ""
-echo "  ┌─────────────────────────────────────────────────────────┐"
-echo "  │  Dirigent is ready                                      │"
-echo "  └─────────────────────────────────────────────────────────┘"
+echo "  ┌─────────────────────────────────────────────────────────────────────────┐"
+echo "  │  Dirigent is ready                                                      │"
+echo "  └─────────────────────────────────────────────────────────────────────────┘"
 echo ""
-echo "  GUI:     http://${SERVER_IP}:${DIRIGENT_PORT}"
+echo "  Services:"
+printf "    %-30s %s\n" "dirigent-api          :8080"  "$(systemctl is-active dirigent-api)"
+printf "    %-30s %s\n" "dirigent-orchestrator  —"     "$(systemctl is-active dirigent-orchestrator)"
+printf "    %-30s %s\n" "dirigent-proxy        :80"    "$(systemctl is-active dirigent-proxy)"
+printf "    %-30s %s\n" "dirigent-dashboard    :3000"  "$(systemctl is-active dirigent-dashboard)"
+echo ""
+echo "  Dashboard:  http://${SERVER_IP}:3000"
+echo "  API:        http://${SERVER_IP}:8080"
+echo "  Proxy:      http://${SERVER_IP}:80"
+echo ""
+echo "  Note: The dashboard runs directly on :3000 rather than through the :80"
+echo "  reverse proxy. This keeps it accessible even when no deployments are"
+echo "  configured — the proxy only routes traffic to your deployed containers."
 echo ""
 echo "  Setup summary:"
 echo "    Docker        ${STEP_DOCKER}"
-echo "    Binary        ${STEP_BINARY} → ${DIRIGENT_BIN}"
-echo "    Network       ${STEP_NETWORK} → ${DIRIGENT_NETWORK}"
-echo "    Service       ${STEP_SERVICE} → dirigent.service"
-echo ""
-echo "  Open the GUI in your browser and start deploying containers."
+echo "    Bun           ${STEP_BUN}"
+echo "    Network       ${STEP_NETWORK}"
+echo "    Data dir      ${DATA_DIR}"
+echo "    Version       ${DIRIGENT_VERSION}"
 echo ""

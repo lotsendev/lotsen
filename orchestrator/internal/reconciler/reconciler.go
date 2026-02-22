@@ -21,13 +21,12 @@ type Docker interface {
 type Store interface {
 	List() ([]store.Deployment, error)
 	Patch(id string, patch store.Deployment) (store.Deployment, error)
-	UpdateStatus(id string, status store.Status) error
 }
 
 // Notifier notifies the API of deployment status transitions so the event
 // broker can push real-time updates to SSE subscribers.
 type Notifier interface {
-	NotifyStatus(id string, status store.Status) error
+	NotifyStatus(id string, status store.Status, errorMessage string) error
 }
 
 // Reconciler syncs the desired state in the store with actual Docker containers.
@@ -79,7 +78,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				runtimePorts, err := r.docker.Start(ctx, d)
 				if err != nil {
 					log.Printf("reconciler: start %s (%s): %v", d.ID, d.Name, err)
-					r.updateStatus(d.ID, store.StatusFailed)
+					r.updateStatus(d.ID, store.StatusFailed, err.Error())
 				} else {
 					r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy)
 				}
@@ -88,17 +87,17 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				runtimePorts, err := r.docker.StartAndReplace(ctx, d, c.ID)
 				if err != nil {
 					log.Printf("reconciler: redeploy %s (%s): %v", d.ID, d.Name, err)
-					r.updateStatus(d.ID, store.StatusFailed)
+					r.updateStatus(d.ID, store.StatusFailed, err.Error())
 				} else {
 					r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy)
 				}
 			} else {
-				r.updateStatus(d.ID, store.StatusFailed)
+				r.updateStatus(d.ID, store.StatusFailed, "container is not running")
 			}
 
 		case store.StatusHealthy:
 			if !hasContainer || !c.Running {
-				r.updateStatus(d.ID, store.StatusFailed)
+				r.updateStatus(d.ID, store.StatusFailed, "container is not running")
 			}
 
 		case store.StatusFailed, store.StatusIdle:
@@ -118,27 +117,27 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	return nil
 }
 
-func (r *Reconciler) updateStatus(id string, status store.Status) {
-	if err := r.store.UpdateStatus(id, status); err != nil {
+func (r *Reconciler) updateStatus(id string, status store.Status, errorMessage string) {
+	if _, err := r.store.Patch(id, store.Deployment{Status: status, Error: errorMessage}); err != nil {
 		log.Printf("reconciler: update status %s → %s: %v", id, status, err)
 	}
-	r.notifyStatus(id, status)
+	r.notifyStatus(id, status, errorMessage)
 }
 
 func (r *Reconciler) updatePortsAndStatus(id string, ports []string, status store.Status) {
-	patch := store.Deployment{Status: status}
+	patch := store.Deployment{Status: status, Error: ""}
 	if ports != nil {
 		patch.Ports = ports
 	}
 	if _, err := r.store.Patch(id, patch); err != nil {
 		log.Printf("reconciler: patch deployment %s: %v", id, err)
 	}
-	r.notifyStatus(id, status)
+	r.notifyStatus(id, status, "")
 }
 
-func (r *Reconciler) notifyStatus(id string, status store.Status) {
+func (r *Reconciler) notifyStatus(id string, status store.Status, errorMessage string) {
 	if r.notifier != nil {
-		if err := r.notifier.NotifyStatus(id, status); err != nil {
+		if err := r.notifier.NotifyStatus(id, status, errorMessage); err != nil {
 			log.Printf("reconciler: notify api status %s → %s: %v", id, status, err)
 		}
 	}

@@ -36,6 +36,7 @@ type Deployment struct {
 	Volumes []string          `json:"volumes"`
 	Domain  string            `json:"domain"`
 	Status  Status            `json:"status"`
+	Error   string            `json:"error,omitempty"`
 }
 
 // JSONStore persists deployments as a JSON array on disk.
@@ -245,7 +246,7 @@ func (s *JSONStore) Update(d Deployment) (Deployment, error) {
 }
 
 // Patch merges the non-zero fields of patch into the stored deployment and persists atomically.
-// Only image, envs, ports, volumes, domain, and status are merged; id and name are immutable.
+// Only image, envs, ports, volumes, domain, status, and error are merged; id and name are immutable.
 // Returns ErrNotFound if no deployment with that ID exists.
 func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 	var result Deployment
@@ -275,6 +276,9 @@ func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 		}
 		if patch.Status != "" {
 			d.Status = patch.Status
+			d.Error = patch.Error
+		} else if patch.Error != "" {
+			d.Error = patch.Error
 		}
 		data[id] = d
 		if err := s.persist(data); err != nil {

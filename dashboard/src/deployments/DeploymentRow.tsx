@@ -13,6 +13,8 @@ type Props = {
 }
 
 export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: Props) {
+  const detailsLabel = d.status === 'failed' ? 'Investigate' : 'Details'
+
   return (
     <TableRow className="bg-card">
       <TableCell className="py-3 font-medium text-foreground">
@@ -33,7 +35,7 @@ export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: P
         <div className="flex items-center justify-end gap-1">
           <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
             <Link to="/deployments/$deploymentId" params={{ deploymentId: d.id }}>
-              Details
+              {detailsLabel}
             </Link>
           </Button>
           <Button

@@ -951,6 +951,45 @@ func TestUpdateDeploymentStatus(t *testing.T) {
 	if updated.Status != store.StatusHealthy {
 		t.Errorf("want status healthy, got %s", updated.Status)
 	}
+	if updated.Error != "" {
+		t.Errorf("want empty error, got %q", updated.Error)
+	}
+}
+
+func TestUpdateDeploymentStatus_FailedStoresError(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusDeploying}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{
+		"status": "failed",
+		"error":  "image not found",
+	})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1/status", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/d1/status: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if updated.Status != store.StatusFailed {
+		t.Errorf("want status failed, got %s", updated.Status)
+	}
+	if updated.Error != "image not found" {
+		t.Errorf("want error image not found, got %q", updated.Error)
+	}
 }
 
 func TestUpdateDeploymentStatus_InvalidStatus(t *testing.T) {

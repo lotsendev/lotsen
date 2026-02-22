@@ -23,7 +23,7 @@ describe('DeploymentLogsPanel', () => {
   })
 
   it('renders incoming SSE lines and closes stream on unmount', () => {
-    const { unmount } = render(<DeploymentLogsPanel deploymentId="dep-1" />)
+    const { unmount } = render(<DeploymentLogsPanel deploymentId="dep-1" status="healthy" />)
 
     expect(screen.getByText('Waiting for log output...')).toBeInTheDocument()
     expect(MockEventSource.instances[0]?.url).toBe('/api/deployments/dep-1/logs')
@@ -42,5 +42,13 @@ describe('DeploymentLogsPanel', () => {
 
     unmount()
     expect(MockEventSource.instances[0]?.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows failed empty state when no lines are available', () => {
+    render(<DeploymentLogsPanel deploymentId="dep-2" status="failed" error="container exited with code 1" />)
+
+    expect(screen.getByText(/No container logs were captured/)).toHaveTextContent(
+      'No container logs were captured for this failed deployment. Last error: container exited with code 1',
+    )
   })
 })

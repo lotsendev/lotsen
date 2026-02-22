@@ -21,12 +21,13 @@ type mockNotifier struct {
 type notifyCall struct {
 	id     string
 	status store.Status
+	error  string
 }
 
-func (m *mockNotifier) NotifyStatus(id string, status store.Status) error {
+func (m *mockNotifier) NotifyStatus(id string, status store.Status, errorMessage string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.calls = append(m.calls, notifyCall{id: id, status: status})
+	m.calls = append(m.calls, notifyCall{id: id, status: status, error: errorMessage})
 	return m.notifyErr
 }
 
@@ -410,6 +411,9 @@ func TestReconcile_DeployingStartFails_NotifiesFailed(t *testing.T) {
 	calls := n.getCalls()
 	if len(calls) != 1 || calls[0].id != "d1" || calls[0].status != store.StatusFailed {
 		t.Errorf("want notify(d1, failed), got %v", calls)
+	}
+	if calls[0].error == "" {
+		t.Error("want notify call to include failure reason")
 	}
 }
 

@@ -192,10 +192,17 @@ fi
 # ─── stop existing services (upgrade flow) ────────────────────────────────────
 
 # Stop all services before replacing any files so binaries are never swapped
-# out from under a running process.
+# out from under a running process. Also stop and disable the legacy monolithic
+# service from older installs so it does not hold port 8080.
 SERVICES="dirigent-api dirigent-orchestrator dirigent-proxy dirigent-dashboard"
 
 step "Stopping any running Dirigent services"
+
+if systemctl is-active --quiet dirigent 2>/dev/null; then
+    step "Stopping legacy dirigent.service"
+    systemctl stop dirigent
+    systemctl disable dirigent 2>/dev/null || true
+fi
 
 for svc in ${SERVICES}; do
     if systemctl is-active --quiet "${svc}" 2>/dev/null; then

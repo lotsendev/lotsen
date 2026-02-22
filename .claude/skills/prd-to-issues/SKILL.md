@@ -1,3 +1,8 @@
+---
+name: prd-to-issues
+description: Product manages breaking down a PRD to issues
+---
+
 # PRD to Issues
 
 Break a PRD into independently-grabbable GitHub issues using vertical slices (tracer bullets).

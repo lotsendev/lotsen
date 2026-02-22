@@ -9,3 +9,5 @@ control-plane/tmp/
 dashboard/node_modules/
 dashboard/dist/
 dashboard/*.tsbuildinfo
+
+**/*/tmp/*

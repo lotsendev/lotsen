@@ -2,9 +2,9 @@ import { useRef, useState } from 'react'
 
 export type Row = { id: number }
 
-export function useDynamicRows<T extends Row>(factory: (id: number) => T) {
-  const nextId = useRef(0)
-  const [rows, setRows] = useState<T[]>([])
+export function useDynamicRows<T extends Row>(factory: (id: number) => T, initialRows: T[] = []) {
+  const nextId = useRef(initialRows.length > 0 ? Math.max(...initialRows.map(r => r.id)) + 1 : 0)
+  const [rows, setRows] = useState<T[]>(initialRows)
 
   const add = () => {
     const id = nextId.current++

@@ -43,6 +43,25 @@ export async function createDeployment(data: CreateDeploymentInput): Promise<Dep
   return res.json()
 }
 
+export type UpdateDeploymentInput = {
+  name: string
+  image: string
+  envs: Record<string, string>
+  ports: string[]
+  volumes: string[]
+  domain: string
+}
+
+export async function updateDeployment(id: string, data: UpdateDeploymentInput): Promise<Deployment> {
+  const res = await fetch(`/api/deployments/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Failed to update deployment')
+  return res.json()
+}
+
 export async function deleteDeployment(id: string): Promise<void> {
   const res = await fetch(`/api/deployments/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Failed to delete deployment')

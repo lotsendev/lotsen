@@ -46,13 +46,12 @@ function DashboardLayout() {
         <SidebarHeader className="px-4 pt-6">
           <div className="mb-2 flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-foreground text-background">
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground">
                 <Rocket className="h-4 w-4" />
               </div>
-              <div>
-                <p className="text-base font-semibold leading-tight">Dirigent</p>
-                <p className="text-sm text-muted-foreground">Dashboard</p>
-              </div>
+              <p className="font-[family-name:var(--font-display)] text-lg font-bold tracking-tight text-foreground">
+                dirigent
+              </p>
             </div>
             <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={toggleTheme} aria-label="Toggle theme">
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -60,7 +59,7 @@ function DashboardLayout() {
           </div>
         </SidebarHeader>
         <SidebarContent className="px-4 pb-4 pt-1">
-          <nav aria-label="Dashboard sections" className="rounded-2xl border bg-card p-3">
+          <nav aria-label="Dashboard sections" className="p-1">
             <SidebarGroup className="p-0">
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -92,7 +91,7 @@ function DashboardLayout() {
         {isDeploymentDetailPage ? (
           <div className="mx-auto w-full max-w-5xl space-y-4">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
+              <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">{pageTitle}</h1>
               <p className="text-sm text-muted-foreground">{pageDescription}</p>
             </div>
             <Outlet />

@@ -11,3 +11,5 @@ dashboard/dist/
 dashboard/*.tsbuildinfo
 
 **/*/tmp/*
+
+**/*/node_modules

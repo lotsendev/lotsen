@@ -17,7 +17,11 @@ export type FormErrors = {
 
 const EMPTY_ERRORS: FormErrors = { envs: {}, ports: {}, volumes: {} }
 
-export function useCreateDeploymentForm() {
+type UseCreateDeploymentFormOptions = {
+  onSuccess?: () => void
+}
+
+export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions = {}) {
   const queryClient = useQueryClient()
 
   const [name, setName] = useState('')
@@ -40,6 +44,7 @@ export function useCreateDeploymentForm() {
       portRows.reset()
       volumeRows.reset()
       setErrors(EMPTY_ERRORS)
+      options.onSuccess?.()
     },
     onError: (err: Error) => setErrors(prev => ({ ...prev, form: err.message })),
   })

@@ -29,10 +29,18 @@ describe('SystemStatusPanel', () => {
     expect(screen.getByText('Loading system status…')).toBeInTheDocument()
   })
 
-  it('renders API signal and timestamp for healthy status', async () => {
+  it('renders healthy API and orchestrator states', async () => {
     const lastUpdated = '2026-02-22T11:30:00.000Z'
     vi.mocked(api.getSystemStatus).mockResolvedValue({
       api: {
+        state: 'healthy',
+        lastUpdated,
+      },
+      orchestrator: {
+        state: 'healthy',
+        lastUpdated,
+      },
+      docker: {
         state: 'healthy',
         lastUpdated,
       },
@@ -40,11 +48,63 @@ describe('SystemStatusPanel', () => {
 
     renderWithQuery(<SystemStatusPanel />)
 
-    await waitFor(() => expect(screen.getByText('healthy')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText('healthy')).toHaveLength(2))
     expect(screen.getByText('API signal')).toBeInTheDocument()
-    expect(screen.getByText('State:')).toBeInTheDocument()
+    expect(screen.getByText('Orchestrator liveness')).toBeInTheDocument()
+    expect(screen.getAllByText('State:')).toHaveLength(2)
     expect(screen.getByText('Last updated:')).toBeInTheDocument()
-    expect(screen.getByText(new Date(lastUpdated).toLocaleString())).toBeInTheDocument()
+    expect(screen.getByText('Last heartbeat:')).toBeInTheDocument()
+    expect(screen.getByText('Freshness:')).toBeInTheDocument()
+    expect(screen.getAllByText(new Date(lastUpdated).toLocaleString())).toHaveLength(2)
+  })
+
+  it('renders degraded orchestrator state', async () => {
+    const apiUpdated = '2026-02-22T11:30:00.000Z'
+    const orchestratorUpdated = '2026-02-22T11:20:00.000Z'
+    vi.mocked(api.getSystemStatus).mockResolvedValue({
+      api: {
+        state: 'healthy',
+        lastUpdated: apiUpdated,
+      },
+      orchestrator: {
+        state: 'degraded',
+        lastUpdated: orchestratorUpdated,
+      },
+      docker: {
+        state: 'healthy',
+        lastUpdated: apiUpdated,
+      },
+    })
+
+    renderWithQuery(<SystemStatusPanel />)
+
+    await waitFor(() => expect(screen.getByText('degraded')).toBeInTheDocument())
+    expect(screen.getByText(new Date(orchestratorUpdated).toLocaleString())).toBeInTheDocument()
+  })
+
+  it('renders stale orchestrator state and freshness', async () => {
+    const apiUpdated = '2026-02-22T12:00:00.000Z'
+    const orchestratorUpdated = '2026-02-22T11:40:00.000Z'
+    vi.mocked(api.getSystemStatus).mockResolvedValue({
+      api: {
+        state: 'healthy',
+        lastUpdated: apiUpdated,
+      },
+      orchestrator: {
+        state: 'stale',
+        lastUpdated: orchestratorUpdated,
+      },
+      docker: {
+        state: 'healthy',
+        lastUpdated: apiUpdated,
+      },
+    })
+
+    renderWithQuery(<SystemStatusPanel />)
+
+    await waitFor(() => expect(screen.getByText('stale')).toBeInTheDocument())
+    expect(screen.getByText(/ago|just now/)).toBeInTheDocument()
+
   })
 
   it('renders fetch failure UI when endpoint errors', async () => {

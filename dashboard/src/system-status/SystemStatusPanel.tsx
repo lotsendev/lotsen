@@ -1,8 +1,21 @@
 import { useSystemStatus } from './useSystemStatus'
 import { Badge } from '../components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import type { SystemStatusState } from '../lib/api'
 
-function formatTimestamp(timestamp: string) {
+type BadgeVariant = 'secondary' | 'info' | 'success' | 'destructive' | 'warning'
+
+const STATE_VARIANT: Record<SystemStatusState, BadgeVariant> = {
+  healthy: 'success',
+  degraded: 'warning',
+  stale: 'destructive',
+  unavailable: 'secondary',
+}
+
+function formatTimestamp(timestamp?: string) {
+  if (!timestamp) {
+    return 'No signal yet'
+  }
+
   const date = new Date(timestamp)
   if (Number.isNaN(date.getTime())) {
     return 'Unknown'
@@ -10,35 +23,69 @@ function formatTimestamp(timestamp: string) {
   return date.toLocaleString()
 }
 
+function formatFreshness(timestamp?: string) {
+  if (!timestamp) {
+    return 'No heartbeat observed'
+  }
+
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown'
+  }
+
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+  if (diffSeconds < 60) return 'just now'
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`
+  return `${Math.floor(diffSeconds / 86400)}d ago`
+}
+
 export function SystemStatusPanel() {
   const { status, isLoading, isError } = useSystemStatus()
 
   return (
-    <Card className="bg-card/70">
-      <CardHeader>
-        <CardTitle>API signal</CardTitle>
-        <CardDescription>Current API health and latest update timestamp.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isLoading && <p className="text-sm text-muted-foreground">Loading system status…</p>}
+    <section className="space-y-4">
+      {isLoading && <p className="text-sm text-muted-foreground">Loading system status…</p>}
 
-        {isError && (
-          <p className="text-sm text-destructive">Unable to fetch system status right now.</p>
-        )}
+      {isError && (
+        <p className="text-sm text-destructive">Unable to fetch system status right now.</p>
+      )}
 
-        {status && !isLoading && !isError && (
-          <div className="space-y-2 text-sm text-muted-foreground">
+      {status && !isLoading && !isError && (
+        <div className="divide-y rounded-lg bg-muted/20 text-sm text-muted-foreground">
+          <section className="space-y-2 p-4">
+            <p className="font-semibold text-foreground">API signal</p>
+            <p className="text-xs text-muted-foreground/90">Control plane availability and response health.</p>
             <p>
-              State:{' '}
-              <Badge variant={status.api.state === 'healthy' ? 'success' : 'destructive'}>{status.api.state}</Badge>
+              State: <Badge variant={STATE_VARIANT[status.api.state]}>{status.api.state}</Badge>
             </p>
             <p>
               Last updated:{' '}
               <span className="font-medium text-foreground">{formatTimestamp(status.api.lastUpdated)}</span>
             </p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          </section>
+
+          <section className="space-y-2 p-4">
+            <p className="font-semibold text-foreground">Orchestrator liveness</p>
+            <p className="text-xs text-muted-foreground/90">Worker heartbeat and freshness from the host agent.</p>
+            <p>
+              State: <Badge variant={STATE_VARIANT[status.orchestrator.state]}>{status.orchestrator.state}</Badge>
+            </p>
+            <p>
+              Last heartbeat:{' '}
+              <span className="font-medium text-foreground">
+                {formatTimestamp(status.orchestrator.lastUpdated)}
+              </span>
+            </p>
+            <p>
+              Freshness:{' '}
+              <span className="font-medium text-foreground">
+                {formatFreshness(status.orchestrator.lastUpdated)}
+              </span>
+            </p>
+          </section>
+        </div>
+      )}
+    </section>
   )
 }

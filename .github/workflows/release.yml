@@ -167,6 +167,7 @@ jobs:
             --title "${{ github.ref_name }}" \
             --generate-notes \
             --latest \
+            --clobber \
             dirigent-linux-amd64 \
             dirigent-linux-arm64 \
             dirigent-orchestrator-linux-amd64 \

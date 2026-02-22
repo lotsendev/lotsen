@@ -19,11 +19,22 @@ type Client struct {
 type heartbeatRequest struct {
 	At     time.Time            `json:"at"`
 	Docker heartbeatDockerState `json:"docker"`
+	Host   *heartbeatHostState  `json:"host,omitempty"`
 }
 
 type heartbeatDockerState struct {
 	Reachable bool      `json:"reachable"`
 	CheckedAt time.Time `json:"checkedAt"`
+}
+
+type heartbeatHostState struct {
+	CPU *heartbeatHostMetric `json:"cpu,omitempty"`
+	RAM *heartbeatHostMetric `json:"ram,omitempty"`
+}
+
+type heartbeatHostMetric struct {
+	UsagePercent float64   `json:"usagePercent"`
+	CheckedAt    time.Time `json:"checkedAt"`
 }
 
 // New creates a Client that targets the given API base URL (e.g. "http://localhost:8080").
@@ -65,13 +76,15 @@ func (c *Client) NotifyStatus(id string, status store.Status) error {
 }
 
 // NotifyHeartbeat calls POST /api/system-status/orchestrator-heartbeat so the
-// API can update orchestrator liveness and Docker connectivity signals.
-func (c *Client) NotifyHeartbeat(dockerReachable bool, checkedAt time.Time) error {
+// API can update orchestrator liveness, Docker connectivity, and host metrics.
+func (c *Client) NotifyHeartbeat(dockerReachable bool, checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64) error {
 	if checkedAt.IsZero() {
 		checkedAt = time.Now().UTC()
 	} else {
 		checkedAt = checkedAt.UTC()
 	}
+
+	host := buildHeartbeatHostState(checkedAt, cpuUsagePercent, ramUsagePercent)
 
 	body, err := json.Marshal(heartbeatRequest{
 		At: checkedAt,
@@ -79,6 +92,7 @@ func (c *Client) NotifyHeartbeat(dockerReachable bool, checkedAt time.Time) erro
 			Reachable: dockerReachable,
 			CheckedAt: checkedAt,
 		},
+		Host: host,
 	})
 	if err != nil {
 		return fmt.Errorf("apiclient: marshal heartbeat body: %w", err)
@@ -101,4 +115,21 @@ func (c *Client) NotifyHeartbeat(dockerReachable bool, checkedAt time.Time) erro
 	}
 
 	return nil
+}
+
+func buildHeartbeatHostState(checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64) *heartbeatHostState {
+	host := &heartbeatHostState{}
+
+	if cpuUsagePercent != nil {
+		host.CPU = &heartbeatHostMetric{UsagePercent: *cpuUsagePercent, CheckedAt: checkedAt}
+	}
+	if ramUsagePercent != nil {
+		host.RAM = &heartbeatHostMetric{UsagePercent: *ramUsagePercent, CheckedAt: checkedAt}
+	}
+
+	if host.CPU == nil && host.RAM == nil {
+		return nil
+	}
+
+	return host
 }

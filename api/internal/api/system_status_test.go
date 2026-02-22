@@ -19,6 +19,14 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 	if !ok {
 		t.Fatal("default provider must implement DockerConnectivityIngestor")
 	}
+	cpuIngestor, ok := provider.(CPUUtilizationIngestor)
+	if !ok {
+		t.Fatal("default provider must implement CPUUtilizationIngestor")
+	}
+	ramIngestor, ok := provider.(RAMUtilizationIngestor)
+	if !ok {
+		t.Fatal("default provider must implement RAMUtilizationIngestor")
+	}
 
 	snapshot, err := provider.Snapshot(context.Background())
 	if err != nil {
@@ -29,6 +37,12 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 	}
 	if snapshot.Docker.State != SystemStatusStateUnavailable {
 		t.Fatalf("want docker unavailable before first signal, got %s", snapshot.Docker.State)
+	}
+	if snapshot.Host.CPU.State != SystemStatusStateUnavailable {
+		t.Fatalf("want cpu unavailable before first signal, got %s", snapshot.Host.CPU.State)
+	}
+	if snapshot.Host.RAM.State != SystemStatusStateUnavailable {
+		t.Fatalf("want ram unavailable before first signal, got %s", snapshot.Host.RAM.State)
 	}
 
 	if err := ingestor.RecordOrchestratorHeartbeat(context.Background(), base); err != nil {
@@ -94,5 +108,44 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 	}
 	if !snapshot.Docker.LastUpdated.Equal(base.Add(3 * time.Second)) {
 		t.Fatalf("want docker lastUpdated %s, got %s", base.Add(3*time.Second), snapshot.Docker.LastUpdated)
+	}
+
+	if err := cpuIngestor.RecordCPUUtilization(context.Background(), 42.5, base.Add(4*time.Second)); err != nil {
+		t.Fatalf("RecordCPUUtilization: %v", err)
+	}
+
+	snapshot, err = provider.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot after cpu signal: %v", err)
+	}
+	if snapshot.Host.CPU.State != SystemStatusStateHealthy {
+		t.Fatalf("want cpu state healthy, got %s", snapshot.Host.CPU.State)
+	}
+	if snapshot.Host.CPU.UsagePercent != 42.5 {
+		t.Fatalf("want cpu usage 42.5, got %v", snapshot.Host.CPU.UsagePercent)
+	}
+	if !snapshot.Host.CPU.LastUpdated.Equal(base.Add(4 * time.Second)) {
+		t.Fatalf("want cpu lastUpdated %s, got %s", base.Add(4*time.Second), snapshot.Host.CPU.LastUpdated)
+	}
+	if snapshot.Host.RAM.State != SystemStatusStateUnavailable {
+		t.Fatalf("want ram state unavailable without signal, got %s", snapshot.Host.RAM.State)
+	}
+
+	if err := ramIngestor.RecordRAMUtilization(context.Background(), 73.2, base.Add(5*time.Second)); err != nil {
+		t.Fatalf("RecordRAMUtilization: %v", err)
+	}
+
+	snapshot, err = provider.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot after ram signal: %v", err)
+	}
+	if snapshot.Host.RAM.State != SystemStatusStateHealthy {
+		t.Fatalf("want ram state healthy, got %s", snapshot.Host.RAM.State)
+	}
+	if snapshot.Host.RAM.UsagePercent != 73.2 {
+		t.Fatalf("want ram usage 73.2, got %v", snapshot.Host.RAM.UsagePercent)
+	}
+	if !snapshot.Host.RAM.LastUpdated.Equal(base.Add(5 * time.Second)) {
+		t.Fatalf("want ram lastUpdated %s, got %s", base.Add(5*time.Second), snapshot.Host.RAM.LastUpdated)
 	}
 }

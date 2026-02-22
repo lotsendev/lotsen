@@ -67,6 +67,8 @@ type Handler struct {
 	statusSource SystemStatusProvider
 	heartbeats   OrchestratorHeartbeatIngestor
 	docker       DockerConnectivityIngestor
+	cpu          CPUUtilizationIngestor
+	ram          RAMUtilizationIngestor
 }
 
 const defaultOrchestratorStaleAfter = 30 * time.Second
@@ -85,8 +87,10 @@ func NewWithSystemStatus(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 
 	heartbeatIngestor, _ := statusSource.(OrchestratorHeartbeatIngestor)
 	dockerIngestor, _ := statusSource.(DockerConnectivityIngestor)
+	cpuIngestor, _ := statusSource.(CPUUtilizationIngestor)
+	ramIngestor, _ := statusSource.(RAMUtilizationIngestor)
 
-	return &Handler{store: s, events: eb, dockerLogs: dl, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor}
+	return &Handler{store: s, events: eb, dockerLogs: dl, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor, cpu: cpuIngestor, ram: ramIngestor}
 }
 
 // RegisterRoutes wires all deployment endpoints into mux.
@@ -118,6 +122,16 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 			Reachable *bool      `json:"reachable"`
 			CheckedAt *time.Time `json:"checkedAt"`
 		} `json:"docker"`
+		Host *struct {
+			CPU *struct {
+				UsagePercent *float64   `json:"usagePercent"`
+				CheckedAt    *time.Time `json:"checkedAt"`
+			} `json:"cpu"`
+			RAM *struct {
+				UsagePercent *float64   `json:"usagePercent"`
+				CheckedAt    *time.Time `json:"checkedAt"`
+			} `json:"ram"`
+		} `json:"host"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
@@ -152,7 +166,57 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 		}
 	}
 
+	if body.Host != nil {
+		if body.Host.CPU != nil && body.Host.CPU.UsagePercent != nil {
+			if h.cpu == nil {
+				http.Error(w, "system status unavailable", http.StatusServiceUnavailable)
+				return
+			}
+
+			if !isValidUsagePercent(*body.Host.CPU.UsagePercent) {
+				http.Error(w, "invalid host metrics", http.StatusBadRequest)
+				return
+			}
+
+			cpuCheckedAt := heartbeatAt
+			if body.Host.CPU.CheckedAt != nil {
+				cpuCheckedAt = body.Host.CPU.CheckedAt.UTC()
+			}
+
+			if err := h.cpu.RecordCPUUtilization(r.Context(), *body.Host.CPU.UsagePercent, cpuCheckedAt); err != nil {
+				http.Error(w, "failed to record cpu utilization", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if body.Host.RAM != nil && body.Host.RAM.UsagePercent != nil {
+			if h.ram == nil {
+				http.Error(w, "system status unavailable", http.StatusServiceUnavailable)
+				return
+			}
+
+			if !isValidUsagePercent(*body.Host.RAM.UsagePercent) {
+				http.Error(w, "invalid host metrics", http.StatusBadRequest)
+				return
+			}
+
+			ramCheckedAt := heartbeatAt
+			if body.Host.RAM.CheckedAt != nil {
+				ramCheckedAt = body.Host.RAM.CheckedAt.UTC()
+			}
+
+			if err := h.ram.RecordRAMUtilization(r.Context(), *body.Host.RAM.UsagePercent, ramCheckedAt); err != nil {
+				http.Error(w, "failed to record ram utilization", http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func isValidUsagePercent(v float64) bool {
+	return v >= 0 && v <= 100
 }
 
 func (h *Handler) listDeployments(w http.ResponseWriter, r *http.Request) {

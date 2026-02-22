@@ -535,7 +535,7 @@ export default function Landing() {
       <section
         style={{
           padding: '100px 32px',
-          backgroundColor: 'var(--clr-navy)',
+          backgroundColor: 'var(--clr-dark)',
           position: 'relative',
           overflow: 'hidden',
         }}

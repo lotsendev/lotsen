@@ -29,7 +29,7 @@ export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: P
       </TableCell>
       <TableCell className="py-3 font-mono text-xs text-muted-foreground">{d.image}</TableCell>
       <TableCell className="py-3">
-        <StatusBadge status={d.status} error={d.error} />
+        <StatusBadge status={d.status} />
       </TableCell>
       <TableCell className="py-3 text-right">
         <div className="flex items-center justify-end gap-1">

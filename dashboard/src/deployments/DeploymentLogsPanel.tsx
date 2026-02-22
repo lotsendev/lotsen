@@ -32,7 +32,7 @@ export function DeploymentLogsPanel({ deploymentId, status, error }: Props) {
       <CardContent>
         <pre
           ref={logContainerRef}
-          className="h-80 overflow-y-auto rounded-lg border bg-muted/30 p-4 font-mono text-xs leading-5 text-foreground"
+          className="h-80 overflow-y-auto rounded-lg border bg-muted/30 p-4 font-mono text-xs leading-5 text-foreground whitespace-pre-wrap break-all"
         >
           {lines.length ? lines.join('\n') : emptyState}
         </pre>

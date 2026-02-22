@@ -16,7 +16,7 @@ export function CardHeader({ className, ...props }: ComponentProps<'div'>) {
 }
 
 export function CardTitle({ className, ...props }: ComponentProps<'h3'>) {
-  return <h3 data-slot="card-title" className={cn('leading-none font-semibold', className)} {...props} />
+  return <h3 data-slot="card-title" className={cn('leading-none font-semibold font-[family-name:var(--font-display)] tracking-tight', className)} {...props} />
 }
 
 export function CardDescription({ className, ...props }: ComponentProps<'p'>) {

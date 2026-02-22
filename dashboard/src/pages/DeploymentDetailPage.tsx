@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
+import { AlertTriangle, ArrowLeft } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { DeploymentLogsPanel } from '../deployments/DeploymentLogsPanel'
@@ -57,6 +57,16 @@ export function DeploymentDetailPage() {
         </Link>
       </Button>
 
+      {deployment.error && (
+        <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="space-y-0.5">
+            <p className="text-sm font-medium">Container exited with error</p>
+            <p className="font-mono text-xs opacity-80">{deployment.error}</p>
+          </div>
+        </div>
+      )}
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle>{deployment.name}</CardTitle>
@@ -68,7 +78,7 @@ export function DeploymentDetailPage() {
             <span className="font-mono text-xs text-muted-foreground">{deployment.id}</span>
           </p>
           <p>
-            Status: <StatusBadge status={deployment.status} error={deployment.error} />
+            Status: <StatusBadge status={deployment.status} />
           </p>
           <p className="sm:col-span-2">
             Image: <span className="font-mono text-xs text-muted-foreground">{deployment.image}</span>
@@ -79,9 +89,6 @@ export function DeploymentDetailPage() {
               {deployment.domain || 'No domain configured'}
             </span>
           </p>
-          {deployment.error ? (
-            <p className="sm:col-span-2 text-sm text-destructive">Last error: {deployment.error}</p>
-          ) : null}
         </CardContent>
       </Card>
 

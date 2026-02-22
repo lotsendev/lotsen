@@ -1,0 +1,175 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  ci-go:
+    name: CI / Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: false
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum', 'orchestrator/go.sum', 'proxy/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Test API
+        working-directory: api
+        run: go test ./...
+
+      - name: Test orchestrator
+        working-directory: orchestrator
+        run: go test ./...
+
+      - name: Test proxy
+        working-directory: proxy
+        run: go test ./...
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          working-directory: api
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          working-directory: orchestrator
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          working-directory: proxy
+
+  ci-react:
+    name: CI / React
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/cache@v4
+        with:
+          path: dashboard/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('dashboard/bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+  build:
+    name: Build artifacts
+    needs: [ci-go, ci-react]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: false
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum', 'orchestrator/go.sum', 'proxy/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/cache@v4
+        with:
+          path: dashboard/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('dashboard/bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Build API binaries
+        working-directory: api
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o ../dirigent-linux-amd64 ./cmd/dirigent
+          GOOS=linux GOARCH=arm64 go build -o ../dirigent-linux-arm64 ./cmd/dirigent
+
+      - name: Build orchestrator binaries
+        working-directory: orchestrator
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o ../dirigent-orchestrator-linux-amd64 ./cmd/orchestrator
+          GOOS=linux GOARCH=arm64 go build -o ../dirigent-orchestrator-linux-arm64 ./cmd/orchestrator
+
+      - name: Build proxy binaries
+        working-directory: proxy
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o ../dirigent-proxy-linux-amd64 ./cmd/proxy
+          GOOS=linux GOARCH=arm64 go build -o ../dirigent-proxy-linux-arm64 ./cmd/proxy
+
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: bun install --frozen-lockfile
+
+      - name: Build dashboard
+        working-directory: dashboard
+        run: bun run build
+
+      - name: Package dashboard
+        run: tar -czf dashboard.tar.gz -C dashboard dist server.ts package.json
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            dirigent-linux-amd64
+            dirigent-linux-arm64
+            dirigent-orchestrator-linux-amd64
+            dirigent-orchestrator-linux-arm64
+            dirigent-proxy-linux-amd64
+            dirigent-proxy-linux-arm64
+            dashboard.tar.gz
+
+  release:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --repo ${{ github.repository }} \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            --latest \
+            dirigent-linux-amd64 \
+            dirigent-linux-arm64 \
+            dirigent-orchestrator-linux-amd64 \
+            dirigent-orchestrator-linux-arm64 \
+            dirigent-proxy-linux-amd64 \
+            dirigent-proxy-linux-arm64 \
+            dashboard.tar.gz

@@ -437,6 +437,86 @@ func TestReconcile_HealthyContainerGone_NotifiesFailed(t *testing.T) {
 	}
 }
 
+func TestReconcile_DeployingWithStoppedContainer_OOMKilled_ShowsOOMMessage(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{
+		containers: []docker.ManagedContainer{
+			{ID: "c1", DeploymentID: "d1", Running: false, ExitDetails: &docker.ExitDetails{ExitCode: 137, OOMKilled: true}},
+		},
+	}
+	n := &mockNotifier{}
+	r := reconciler.New(s, d, n)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	calls := n.getCalls()
+	if len(calls) != 1 || calls[0].status != store.StatusFailed {
+		t.Fatalf("want one failed notification, got %v", calls)
+	}
+	want := "container killed: out of memory (exit code 137)"
+	if calls[0].error != want {
+		t.Errorf("want error %q, got %q", want, calls[0].error)
+	}
+}
+
+func TestReconcile_DeployingWithStoppedContainer_NonZeroExit_ShowsExitMessage(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{
+		containers: []docker.ManagedContainer{
+			{ID: "c1", DeploymentID: "d1", Running: false, ExitDetails: &docker.ExitDetails{ExitCode: 1}},
+		},
+	}
+	n := &mockNotifier{}
+	r := reconciler.New(s, d, n)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	calls := n.getCalls()
+	if len(calls) != 1 || calls[0].status != store.StatusFailed {
+		t.Fatalf("want one failed notification, got %v", calls)
+	}
+	want := "container exited unexpectedly (exit code 1)"
+	if calls[0].error != want {
+		t.Errorf("want error %q, got %q", want, calls[0].error)
+	}
+}
+
+func TestReconcile_HealthyContainerMissing_ShowsFallbackMessage(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Status: store.StatusHealthy},
+		},
+	}
+	d := &mockDocker{} // no containers
+	n := &mockNotifier{}
+	r := reconciler.New(s, d, n)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	calls := n.getCalls()
+	if len(calls) != 1 || calls[0].status != store.StatusFailed {
+		t.Fatalf("want one failed notification, got %v", calls)
+	}
+	want := "container is not running"
+	if calls[0].error != want {
+		t.Errorf("want error %q, got %q", want, calls[0].error)
+	}
+}
+
 func TestReconcile_NotifyAPIFailure_DoesNotCrash(t *testing.T) {
 	s := &mockStore{
 		deployments: []store.Deployment{

@@ -92,12 +92,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 					r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy)
 				}
 			} else {
-				r.updateStatus(d.ID, store.StatusFailed, "container is not running")
+				r.updateStatus(d.ID, store.StatusFailed, exitMessage(c.ExitDetails))
 			}
 
 		case store.StatusHealthy:
 			if !hasContainer || !c.Running {
-				r.updateStatus(d.ID, store.StatusFailed, "container is not running")
+				r.updateStatus(d.ID, store.StatusFailed, exitMessage(c.ExitDetails))
 			}
 
 		case store.StatusFailed, store.StatusIdle:
@@ -115,6 +115,24 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// exitMessage produces a human-readable failure reason from container exit details.
+// When d is nil (inspect failed or container missing) the generic fallback is returned.
+func exitMessage(d *docker.ExitDetails) string {
+	if d == nil {
+		return "container is not running"
+	}
+	if d.OOMKilled {
+		return fmt.Sprintf("container killed: out of memory (exit code %d)", d.ExitCode)
+	}
+	if d.Error != "" {
+		return fmt.Sprintf("container exited with error: %s (exit code %d)", d.Error, d.ExitCode)
+	}
+	if d.ExitCode == 0 {
+		return fmt.Sprintf("container exited cleanly (exit code %d)", d.ExitCode)
+	}
+	return fmt.Sprintf("container exited unexpectedly (exit code %d)", d.ExitCode)
 }
 
 func (r *Reconciler) updateStatus(id string, status store.Status, errorMessage string) {

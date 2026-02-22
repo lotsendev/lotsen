@@ -24,12 +24,21 @@ import (
 // ErrDockerUnavailable is returned when the Docker daemon cannot be reached.
 var ErrDockerUnavailable = errors.New("docker daemon unreachable")
 
-// ManagedContainer represents a running container managed by Dirigent.
+// ExitDetails captures why a stopped container exited.
+// It is nil for containers that are currently running.
+type ExitDetails struct {
+	ExitCode  int
+	OOMKilled bool
+	Error     string
+}
+
+// ManagedContainer represents a container managed by Dirigent.
 type ManagedContainer struct {
 	ID           string
 	Name         string
 	DeploymentID string
 	Running      bool
+	ExitDetails  *ExitDetails // nil when running
 }
 
 // Client is the Docker API surface required by the orchestrator.
@@ -147,12 +156,22 @@ func (d *Docker) ListManagedContainers(ctx context.Context) ([]ManagedContainer,
 		if len(c.Names) > 0 {
 			name = c.Names[0]
 		}
-		result = append(result, ManagedContainer{
+		mc := ManagedContainer{
 			ID:           c.ID,
 			Name:         name,
 			DeploymentID: c.Labels["dirigent.id"],
 			Running:      c.State == "running",
-		})
+		}
+		if !mc.Running {
+			if inspect, err := d.client.ContainerInspect(ctx, c.ID); err == nil && inspect.State != nil {
+				mc.ExitDetails = &ExitDetails{
+					ExitCode:  inspect.State.ExitCode,
+					OOMKilled: inspect.State.OOMKilled,
+					Error:     inspect.State.Error,
+				}
+			}
+		}
+		result = append(result, mc)
 	}
 
 	return result, nil

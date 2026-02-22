@@ -3,12 +3,12 @@
 # Dirigent installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/ercadev/dirigent-releases/main/install.sh | sudo bash
+#   curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
 #   -- or --
 #   sudo bash install.sh
 #
 # To pin a specific version:
-#   DIRIGENT_VERSION=v0.2.0 curl -fsSL ... | sudo bash
+#   DIRIGENT_VERSION=v0.0.2 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/download/v0.0.2/install.sh | sudo bash
 #
 # Supported operating systems:
 #   Ubuntu 22.04 (Jammy) and later

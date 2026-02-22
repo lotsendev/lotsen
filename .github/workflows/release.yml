@@ -160,11 +160,11 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
-          gh release delete ${{ github.ref_name }} --repo ${{ github.repository }} --yes || true
+          gh release delete ${{ github.ref_name }} --repo ercadev/dirigent-releases --yes || true
           gh release create ${{ github.ref_name }} \
-            --repo ${{ github.repository }} \
+            --repo ercadev/dirigent-releases \
             --title "${{ github.ref_name }}" \
             --generate-notes \
             --latest \

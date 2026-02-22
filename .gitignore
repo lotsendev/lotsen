@@ -6,9 +6,9 @@ control-plane/dirigent
 control-plane/tmp/
 
 # Node / Bun
-dashboard/node_modules/
-dashboard/dist/
-dashboard/*.tsbuildinfo
+**/*/node_modules/
+**/*/dist/
+**/*/*.tsbuildinfo
 
 **/*/tmp/*
 

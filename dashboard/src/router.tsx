@@ -7,34 +7,93 @@ import {
   redirect,
   useRouterState,
 } from '@tanstack/react-router'
+import { Boxes, Moon, Rocket, Server, Sun } from 'lucide-react'
+import { Button } from './components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+} from './components/ui/sidebar'
 import DeploymentList from './pages/DeploymentList'
 import { SystemStatusPage } from './pages/SystemStatusPage'
+import { useTheme } from './theme'
 
 function DashboardLayout() {
   const pathname = useRouterState({ select: state => state.location.pathname })
-
-  const navItemClass = (path: string) => {
-    const isActive = pathname === path
-    return `rounded-md px-3 py-2 text-left text-sm font-medium transition ${isActive ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'}`
-  }
+  const { theme, toggleTheme } = useTheme()
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-      <h1 className="mb-6 text-2xl font-semibold text-gray-900">Dashboard</h1>
-      <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
-        <aside className="rounded-lg border border-gray-200 bg-white p-2 shadow-sm lg:h-fit">
-          <nav className="flex gap-2 lg:flex-col" aria-label="Dashboard sections">
-            <Link to="/deployments" className={navItemClass('/deployments')}>
-              Deployments
-            </Link>
-            <Link to="/system-status" className={navItemClass('/system-status')}>
-              System status
-            </Link>
+    <SidebarProvider>
+      <Sidebar collapsible="none">
+        <SidebarHeader className="px-4 pt-6">
+          <div className="mb-2 flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-foreground text-background">
+                <Rocket className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-base font-semibold leading-tight">Dirigent</p>
+                <p className="text-sm text-muted-foreground">Dashboard</p>
+              </div>
+            </div>
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={toggleTheme} aria-label="Toggle theme">
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+          </div>
+        </SidebarHeader>
+        <SidebarContent className="px-4 pb-4 pt-1">
+          <nav aria-label="Dashboard sections" className="rounded-2xl border bg-card p-3">
+            <SidebarGroup className="p-0">
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname === '/deployments'} size="lg" className="rounded-lg">
+                      <Link to="/deployments">
+                        <Boxes className="h-4 w-4 shrink-0" />
+                        <span>Deployments</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname === '/system-status'} size="lg" className="rounded-lg">
+                      <Link to="/system-status">
+                        <Server className="h-4 w-4 shrink-0" />
+                        <span>System status</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
           </nav>
-        </aside>
-        <Outlet />
-      </div>
-    </main>
+        </SidebarContent>
+      </Sidebar>
+
+      <SidebarInset>
+        <p className="mb-4 text-sm text-muted-foreground">{pathname === '/system-status' ? 'Observability' : 'Deployments'}</p>
+        <Card className="mx-auto w-full max-w-5xl">
+          <CardHeader>
+            <CardTitle>{pathname === '/system-status' ? 'System status' : 'Deployments'}</CardTitle>
+            <CardDescription>
+              {pathname === '/system-status'
+                ? 'Observe API health and freshness.'
+                : 'Create, edit, and monitor your active deployments.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Outlet />
+          </CardContent>
+        </Card>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
 

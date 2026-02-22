@@ -1,4 +1,5 @@
 import { Plus, Trash2 } from 'lucide-react'
+import { Button } from '../components/ui/button'
 import type { Row } from './useDynamicRows'
 
 interface Props<T extends Row> {
@@ -17,34 +18,38 @@ export function DynamicSection<T extends Row>({
 }: Props<T>) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-gray-600">{title}</span>
-        <button
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-medium text-foreground">{title}</span>
+        <Button
           type="button"
           onClick={onAdd}
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
           aria-label={addLabel}
         >
           <Plus size={13} /> {addLabel}
-        </button>
+        </Button>
       </div>
       {rows.length > 0 && (
         <div className="space-y-2">
           {rows.map(row => (
             <div key={row.id}>
-              <div className="flex gap-2 items-center">
+              <div className="flex items-center gap-2">
                 {renderRow(row)}
-                <button
+                <Button
                   type="button"
                   onClick={() => onRemove(row.id)}
                   aria-label={removeLabel}
-                  className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 shrink-0"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 >
                   <Trash2 size={14} />
-                </button>
+                </Button>
               </div>
               {errorFor?.(row) && (
-                <p className="text-xs text-red-600 mt-0.5">{errorFor(row)}</p>
+                <p className="mt-0.5 text-xs text-destructive">{errorFor(row)}</p>
               )}
             </div>
           ))}

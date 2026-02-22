@@ -41,7 +41,8 @@ describe('SystemStatusPanel', () => {
     renderWithQuery(<SystemStatusPanel />)
 
     await waitFor(() => expect(screen.getByText('healthy')).toBeInTheDocument())
-    expect(screen.getByText('API signal:')).toBeInTheDocument()
+    expect(screen.getByText('API signal')).toBeInTheDocument()
+    expect(screen.getByText('State:')).toBeInTheDocument()
     expect(screen.getByText('Last updated:')).toBeInTheDocument()
     expect(screen.getByText(new Date(lastUpdated).toLocaleString())).toBeInTheDocument()
   })

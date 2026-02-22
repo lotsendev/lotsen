@@ -1,4 +1,6 @@
 import { useSystemStatus } from './useSystemStatus'
+import { Badge } from '../components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 
 function formatTimestamp(timestamp: string) {
   const date = new Date(timestamp)
@@ -12,27 +14,31 @@ export function SystemStatusPanel() {
   const { status, isLoading, isError } = useSystemStatus()
 
   return (
-    <section className="mb-6 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-      <h2 className="mb-3 text-sm font-medium text-gray-700">System status</h2>
+    <Card className="bg-card/70">
+      <CardHeader>
+        <CardTitle>API signal</CardTitle>
+        <CardDescription>Current API health and latest update timestamp.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading && <p className="text-sm text-muted-foreground">Loading system status…</p>}
 
-      {isLoading && <p className="text-sm text-gray-500">Loading system status…</p>}
+        {isError && (
+          <p className="text-sm text-destructive">Unable to fetch system status right now.</p>
+        )}
 
-      {isError && (
-        <p className="text-sm text-red-600">Unable to fetch system status right now.</p>
-      )}
-
-      {status && !isLoading && !isError && (
-        <div className="space-y-1 text-sm text-gray-700">
-          <p>
-            API signal:{' '}
-            <span className="font-medium text-gray-900">{status.api.state}</span>
-          </p>
-          <p>
-            Last updated:{' '}
-            <span className="font-medium text-gray-900">{formatTimestamp(status.api.lastUpdated)}</span>
-          </p>
-        </div>
-      )}
-    </section>
+        {status && !isLoading && !isError && (
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              State:{' '}
+              <Badge variant={status.api.state === 'healthy' ? 'success' : 'destructive'}>{status.api.state}</Badge>
+            </p>
+            <p>
+              Last updated:{' '}
+              <span className="font-medium text-foreground">{formatTimestamp(status.api.lastUpdated)}</span>
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/ercadev/dirigent/orchestrator/internal/docker"
@@ -19,19 +20,22 @@ import (
 )
 
 type mockClient struct {
-	pingErr         error
-	imagePullErr    error
-	containerCreate container.CreateResponse
-	createErr       error
-	startErr        error
-	listContainers  []dockertypes.Container
-	listErr         error
-	stopErr         error
-	removeErr       error
-	renameErr       error
-	stopped         []string
-	removed         []string
-	renamed         []string
+	pingErr          error
+	imagePullErr     error
+	containerCreate  container.CreateResponse
+	createErr        error
+	startErr         error
+	listContainers   []dockertypes.Container
+	listErr          error
+	stopErr          error
+	removeErr        error
+	renameErr        error
+	inspectContainer dockertypes.ContainerJSON
+	inspectErr       error
+	createdHostCfg   *container.HostConfig
+	stopped          []string
+	removed          []string
+	renamed          []string
 }
 
 func (m *mockClient) Ping(_ context.Context) (dockertypes.Ping, error) {
@@ -45,7 +49,8 @@ func (m *mockClient) ImagePull(_ context.Context, _ string, _ image.PullOptions)
 	return io.NopCloser(strings.NewReader("")), nil
 }
 
-func (m *mockClient) ContainerCreate(_ context.Context, _ *container.Config, _ *container.HostConfig, _ *network.NetworkingConfig, _ *ocispec.Platform, _ string) (container.CreateResponse, error) {
+func (m *mockClient) ContainerCreate(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ *network.NetworkingConfig, _ *ocispec.Platform, _ string) (container.CreateResponse, error) {
+	m.createdHostCfg = hostCfg
 	return m.containerCreate, m.createErr
 }
 
@@ -70,6 +75,13 @@ func (m *mockClient) ContainerRemove(_ context.Context, id string, _ container.R
 func (m *mockClient) ContainerRename(_ context.Context, id string, _ string) error {
 	m.renamed = append(m.renamed, id)
 	return m.renameErr
+}
+
+func (m *mockClient) ContainerInspect(_ context.Context, _ string) (dockertypes.ContainerJSON, error) {
+	if m.inspectErr != nil {
+		return dockertypes.ContainerJSON{}, m.inspectErr
+	}
+	return m.inspectContainer, nil
 }
 
 func deployment() store.Deployment {
@@ -100,17 +112,48 @@ func TestDocker_Ping_Unavailable(t *testing.T) {
 }
 
 func TestDocker_Start_OK(t *testing.T) {
-	mock := &mockClient{containerCreate: container.CreateResponse{ID: "c1"}}
+	mock := &mockClient{
+		containerCreate:  container.CreateResponse{ID: "c1"},
+		inspectContainer: inspectWithPort("80/tcp", "80"),
+	}
 	d := docker.New(mock)
-	if err := d.Start(context.Background(), deployment()); err != nil {
+	if _, err := d.Start(context.Background(), deployment()); err != nil {
 		t.Fatalf("want nil, got %v", err)
+	}
+}
+
+func TestDocker_Start_ContainerOnlyPort_AssignsHostPort(t *testing.T) {
+	mock := &mockClient{
+		containerCreate:  container.CreateResponse{ID: "c1"},
+		inspectContainer: inspectWithPort("3001/tcp", "49123"),
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	dep.Ports = []string{"3001"}
+
+	ports, err := d.Start(context.Background(), dep)
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+
+	if len(ports) != 1 || ports[0] != "49123:3001" {
+		t.Fatalf("want runtime ports [49123:3001], got %v", ports)
+	}
+
+	if mock.createdHostCfg == nil {
+		t.Fatal("want ContainerCreate called with host config")
+	}
+	b := mock.createdHostCfg.PortBindings["3001/tcp"]
+	if len(b) != 1 || b[0].HostPort != "0" {
+		t.Fatalf("want host port auto-assigned (0), got %v", b)
 	}
 }
 
 func TestDocker_Start_ImagePullError(t *testing.T) {
 	mock := &mockClient{imagePullErr: errors.New("manifest unknown")}
 	d := docker.New(mock)
-	err := d.Start(context.Background(), deployment())
+	_, err := d.Start(context.Background(), deployment())
 	if err == nil {
 		t.Fatal("want error, got nil")
 	}
@@ -169,11 +212,13 @@ func TestDocker_StartAndReplace_OK(t *testing.T) {
 		listContainers: []dockertypes.Container{
 			{ID: "new-c1", State: "running"},
 		},
+		inspectContainer: inspectWithPort("3001/tcp", "49123"),
 	}
 	d := docker.New(mock)
 
 	dep := deployment()
-	if err := d.StartAndReplace(context.Background(), dep, "old-c1"); err != nil {
+	dep.Ports = []string{"3001"}
+	if _, err := d.StartAndReplace(context.Background(), dep, "old-c1"); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
 
@@ -200,7 +245,7 @@ func TestDocker_StartAndReplace_NewContainerNotRunning(t *testing.T) {
 	d := docker.New(mock)
 
 	dep := deployment()
-	err := d.StartAndReplace(context.Background(), dep, "old-c1")
+	_, err := d.StartAndReplace(context.Background(), dep, "old-c1")
 	if err == nil {
 		t.Fatal("want error when new container is not running, got nil")
 	}
@@ -214,6 +259,35 @@ func TestDocker_StartAndReplace_NewContainerNotRunning(t *testing.T) {
 	}
 }
 
+func TestDocker_StartAndReplace_SameExplicitPorts_FallsBackToStopThenStart(t *testing.T) {
+	mock := &mockClient{
+		containerCreate:  container.CreateResponse{ID: "new-c1"},
+		inspectContainer: inspectWithPort("80/tcp", "80"),
+		// No running-container list required on fallback path.
+		listContainers: []dockertypes.Container{},
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	dep.Ports = []string{"80:80"}
+
+	ports, err := d.StartAndReplace(context.Background(), dep, "old-c1")
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+
+	if len(ports) != 1 || ports[0] != "80:80" {
+		t.Fatalf("want runtime ports [80:80], got %v", ports)
+	}
+
+	if len(mock.stopped) != 1 || mock.stopped[0] != "old-c1" {
+		t.Fatalf("want old-c1 stopped first, got %v", mock.stopped)
+	}
+	if len(mock.removed) != 1 || mock.removed[0] != "old-c1" {
+		t.Fatalf("want old-c1 removed first, got %v", mock.removed)
+	}
+}
+
 // Ensure the mock satisfies the docker.Client interface at compile time.
 var _ interface {
 	ContainerList(context.Context, container.ListOptions) ([]dockertypes.Container, error)
@@ -222,3 +296,15 @@ var _ interface {
 
 // Ensure filters package is referenced (avoids unused import if linter checks).
 var _ = filters.NewArgs
+
+func inspectWithPort(containerPort, hostPort string) dockertypes.ContainerJSON {
+	return dockertypes.ContainerJSON{
+		NetworkSettings: &dockertypes.NetworkSettings{
+			NetworkSettingsBase: dockertypes.NetworkSettingsBase{
+				Ports: nat.PortMap{
+					nat.Port(containerPort): []nat.PortBinding{{HostPort: hostPort}},
+				},
+			},
+		},
+	}
+}

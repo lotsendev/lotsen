@@ -1110,6 +1110,57 @@ func TestPatchDeployment_EmitsDeployingEvent(t *testing.T) {
 	}
 }
 
+func TestPatchDeployment_DomainOnly_DoesNotRedeploy(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{
+		ID:     "d1",
+		Name:   "web",
+		Image:  "nginx:1",
+		Domain: "old.example.com",
+		Status: store.StatusHealthy,
+	}
+
+	broker := events.NewBroker()
+	srv := newTestServerWithBroker(s, broker)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	evtCh := readSSEEvents(ctx, t, srv.URL+"/api/deployments/events")
+	time.Sleep(50 * time.Millisecond)
+
+	body, _ := json.Marshal(map[string]string{"domain": "new.example.com"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/d1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("want 202, got %d", resp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if updated.Domain != "new.example.com" {
+		t.Errorf("want domain new.example.com, got %s", updated.Domain)
+	}
+	if updated.Status != store.StatusHealthy {
+		t.Errorf("want status healthy, got %s", updated.Status)
+	}
+
+	select {
+	case event := <-evtCh:
+		t.Fatalf("unexpected SSE event for domain-only patch: %+v", event)
+	case <-time.After(250 * time.Millisecond):
+	}
+}
+
 func TestUpdateDeployment(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{
@@ -1304,6 +1355,68 @@ func TestUpdateDeployment_Lifecycle(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout: no SSE event after PUT")
+	}
+}
+
+func TestUpdateDeployment_DomainOnly_DoesNotRedeploy(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{
+		ID:      "d1",
+		Name:    "web",
+		Image:   "nginx:1",
+		Envs:    map[string]string{"PORT": "80"},
+		Ports:   []string{"80:80"},
+		Volumes: []string{"/data:/data"},
+		Domain:  "old.example.com",
+		Status:  store.StatusHealthy,
+	}
+
+	broker := events.NewBroker()
+	srv := newTestServerWithBroker(s, broker)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	evtCh := readSSEEvents(ctx, t, srv.URL+"/api/deployments/events")
+	time.Sleep(50 * time.Millisecond)
+
+	body, _ := json.Marshal(map[string]any{
+		"name":    "web",
+		"image":   "nginx:1",
+		"envs":    map[string]string{"PORT": "80"},
+		"ports":   []string{"80:80"},
+		"volumes": []string{"/data:/data"},
+		"domain":  "new.example.com",
+	})
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/d1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if updated.Domain != "new.example.com" {
+		t.Errorf("want domain new.example.com, got %s", updated.Domain)
+	}
+	if updated.Status != store.StatusHealthy {
+		t.Errorf("want status healthy, got %s", updated.Status)
+	}
+
+	select {
+	case event := <-evtCh:
+		t.Fatalf("unexpected SSE event for domain-only update: %+v", event)
+	case <-time.After(250 * time.Millisecond):
 	}
 }
 

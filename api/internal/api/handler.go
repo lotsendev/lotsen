@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/ercadev/dirigent/internal/events"
@@ -266,6 +267,21 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		body.Volumes = []string{}
 	}
 
+	existing, err := h.store.Get(id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "deployment not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to get deployment", http.StatusInternalServerError)
+		return
+	}
+
+	nextStatus := existing.Status
+	if updateRequiresRedeploy(existing, body) {
+		nextStatus = store.StatusDeploying
+	}
+
 	d := store.Deployment{
 		ID:      id,
 		Name:    body.Name,
@@ -274,23 +290,21 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		Ports:   body.Ports,
 		Volumes: body.Volumes,
 		Domain:  body.Domain,
-		Status:  store.StatusDeploying,
+		Status:  nextStatus,
 	}
 
 	updated, err := h.store.Update(d)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "deployment not found", http.StatusNotFound)
-			return
-		}
 		http.Error(w, "failed to update deployment", http.StatusInternalServerError)
 		return
 	}
 
-	h.events.Publish(events.StatusEvent{
-		DeploymentID: updated.ID,
-		Status:       string(store.StatusDeploying),
-	})
+	if nextStatus == store.StatusDeploying {
+		h.events.Publish(events.StatusEvent{
+			DeploymentID: updated.ID,
+			Status:       string(store.StatusDeploying),
+		})
+	}
 
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -368,29 +382,39 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	existing, err := h.store.Get(id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "deployment not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to get deployment", http.StatusInternalServerError)
+		return
+	}
+
 	patch := store.Deployment{
 		Image:   body.Image,
 		Envs:    body.Envs,
 		Ports:   body.Ports,
 		Volumes: body.Volumes,
 		Domain:  body.Domain,
-		Status:  store.StatusDeploying,
+	}
+	if patchRequiresRedeploy(existing, body) {
+		patch.Status = store.StatusDeploying
 	}
 
 	updated, err := h.store.Patch(id, patch)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "deployment not found", http.StatusNotFound)
-			return
-		}
 		http.Error(w, "failed to update deployment", http.StatusInternalServerError)
 		return
 	}
 
-	h.events.Publish(events.StatusEvent{
-		DeploymentID: id,
-		Status:       string(store.StatusDeploying),
-	})
+	if patch.Status == store.StatusDeploying {
+		h.events.Publish(events.StatusEvent{
+			DeploymentID: id,
+			Status:       string(store.StatusDeploying),
+		})
+	}
 
 	writeJSON(w, http.StatusAccepted, updated)
 }
@@ -518,4 +542,39 @@ func orchestratorStaleAfterFromEnv() time.Duration {
 	}
 
 	return d
+}
+
+func updateRequiresRedeploy(existing store.Deployment, body deploymentRequest) bool {
+	return existing.Image != body.Image ||
+		!equalStringMap(existing.Envs, body.Envs) ||
+		!slices.Equal(existing.Ports, body.Ports) ||
+		!slices.Equal(existing.Volumes, body.Volumes)
+}
+
+func patchRequiresRedeploy(existing store.Deployment, body patchDeploymentRequest) bool {
+	if body.Image != "" && existing.Image != body.Image {
+		return true
+	}
+	if body.Envs != nil && !equalStringMap(existing.Envs, body.Envs) {
+		return true
+	}
+	if body.Ports != nil && !slices.Equal(existing.Ports, body.Ports) {
+		return true
+	}
+	if body.Volumes != nil && !slices.Equal(existing.Volumes, body.Volumes) {
+		return true
+	}
+	return false
+}
+
+func equalStringMap(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, av := range a {
+		if bv, ok := b[k]; !ok || bv != av {
+			return false
+		}
+	}
+	return true
 }

@@ -191,6 +191,66 @@ func TestDocker_ListManagedContainers(t *testing.T) {
 	}
 }
 
+func TestDocker_ListManagedContainers_OOMKilled_PopulatesExitDetails(t *testing.T) {
+	mock := &mockClient{
+		listContainers: []dockertypes.Container{
+			{
+				ID:     "c1",
+				Names:  []string{"/web"},
+				State:  "exited",
+				Labels: map[string]string{"dirigent.managed": "true", "dirigent.id": "d1"},
+			},
+		},
+		inspectContainer: inspectWithState(137, true, ""),
+	}
+	d := docker.New(mock)
+	containers, err := d.ListManagedContainers(context.Background())
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+	if len(containers) != 1 {
+		t.Fatalf("want 1 container, got %d", len(containers))
+	}
+	c := containers[0]
+	if c.Running {
+		t.Error("want running=false")
+	}
+	if c.ExitDetails == nil {
+		t.Fatal("want ExitDetails populated, got nil")
+	}
+	if !c.ExitDetails.OOMKilled {
+		t.Error("want OOMKilled=true")
+	}
+	if c.ExitDetails.ExitCode != 137 {
+		t.Errorf("want exit code 137, got %d", c.ExitDetails.ExitCode)
+	}
+}
+
+func TestDocker_ListManagedContainers_InspectFails_ExitDetailsNil(t *testing.T) {
+	mock := &mockClient{
+		listContainers: []dockertypes.Container{
+			{
+				ID:     "c1",
+				Names:  []string{"/web"},
+				State:  "exited",
+				Labels: map[string]string{"dirigent.managed": "true", "dirigent.id": "d1"},
+			},
+		},
+		inspectErr: errors.New("inspect failed"),
+	}
+	d := docker.New(mock)
+	containers, err := d.ListManagedContainers(context.Background())
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+	if len(containers) != 1 {
+		t.Fatalf("want 1 container, got %d", len(containers))
+	}
+	if containers[0].ExitDetails != nil {
+		t.Errorf("want ExitDetails nil on inspect failure, got %+v", containers[0].ExitDetails)
+	}
+}
+
 func TestDocker_StopAndRemove(t *testing.T) {
 	mock := &mockClient{}
 	d := docker.New(mock)
@@ -296,6 +356,18 @@ var _ interface {
 
 // Ensure filters package is referenced (avoids unused import if linter checks).
 var _ = filters.NewArgs
+
+func inspectWithState(exitCode int, oomKilled bool, errMsg string) dockertypes.ContainerJSON {
+	return dockertypes.ContainerJSON{
+		ContainerJSONBase: &dockertypes.ContainerJSONBase{
+			State: &dockertypes.ContainerState{
+				ExitCode:  exitCode,
+				OOMKilled: oomKilled,
+				Error:     errMsg,
+			},
+		},
+	}
+}
 
 func inspectWithPort(containerPort, hostPort string) dockertypes.ContainerJSON {
 	return dockertypes.ContainerJSON{

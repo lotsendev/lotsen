@@ -83,29 +83,28 @@ export function SystemStatusPanel() {
                 {formatFreshness(status.orchestrator.lastUpdated)}
               </span>
             </p>
-          </section>
-
-          <section className="space-y-2 p-4">
-            <p className="font-semibold text-foreground">Docker connectivity</p>
-            <p className="text-xs text-muted-foreground/90">
-              Reachability of Docker from the orchestrator signal path.
-            </p>
-            <p>
-              State: <Badge variant={STATE_VARIANT[status.docker.state]}>{status.docker.state}</Badge>
-            </p>
-            <p>
-              Last checked:{' '}
-              <span className="font-medium text-foreground">{formatTimestamp(status.docker.lastUpdated)}</span>
-            </p>
-            <p>
-              Signal:{' '}
-              <span className="font-medium text-foreground">
-                {status.docker.state === 'healthy' && 'Docker is reachable from orchestrator'}
-                {status.docker.state === 'degraded' && 'Docker check failed at last probe'}
-                {status.docker.state === 'stale' && 'Docker signal is stale'}
-                {status.docker.state === 'unavailable' && 'No Docker connectivity telemetry yet'}
-              </span>
-            </p>
+            <div className="mt-3 space-y-2 rounded-md border bg-background/60 p-3">
+              <p className="font-medium text-foreground">Docker connectivity</p>
+              <p className="text-xs text-muted-foreground/90">
+                Reachability of Docker from the orchestrator signal path.
+              </p>
+              <p>
+                State: <Badge variant={STATE_VARIANT[status.docker.state]}>{status.docker.state}</Badge>
+              </p>
+              <p>
+                Last checked:{' '}
+                <span className="font-medium text-foreground">{formatTimestamp(status.docker.lastUpdated)}</span>
+              </p>
+              <p>
+                Signal:{' '}
+                <span className="font-medium text-foreground">
+                  {status.docker.state === 'healthy' && 'Docker is reachable from orchestrator'}
+                  {status.docker.state === 'degraded' && 'Docker check failed at last probe'}
+                  {status.docker.state === 'stale' && 'Docker signal is stale'}
+                  {status.docker.state === 'unavailable' && 'No Docker connectivity telemetry yet'}
+                </span>
+              </p>
+            </div>
           </section>
         </div>
       )}

@@ -10,18 +10,12 @@ const STATUS_VARIANTS: Record<DeploymentStatus, 'secondary' | 'info' | 'success'
 
 type Props = {
   status: DeploymentStatus
-  error?: string
 }
 
-export function StatusBadge({ status, error }: Props) {
+export function StatusBadge({ status }: Props) {
   return (
-    <>
-      <Badge variant={STATUS_VARIANTS[status]}>
-        {status}
-      </Badge>
-      {status === 'failed' && error && (
-        <p className="mt-1 text-xs text-destructive">{error}</p>
-      )}
-    </>
+    <Badge variant={STATUS_VARIANTS[status]} className="uppercase tracking-wide">
+      {status}
+    </Badge>
   )
 }

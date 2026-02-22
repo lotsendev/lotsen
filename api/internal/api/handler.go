@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/ercadev/dirigent/internal/events"
 	"github.com/ercadev/dirigent/store"
@@ -47,18 +48,30 @@ type patchDeploymentRequest struct {
 
 // Handler holds the dependencies for the API layer.
 type Handler struct {
-	store  Store
-	events EventBus
+	store        Store
+	events       EventBus
+	statusSource SystemStatusProvider
 }
 
 // New creates a Handler backed by the given store and event bus.
 func New(s Store, eb EventBus) *Handler {
-	return &Handler{store: s, events: eb}
+	return NewWithSystemStatus(s, eb, nil)
+}
+
+// NewWithSystemStatus creates a Handler with a custom system-status provider.
+// If statusSource is nil, a default provider is used.
+func NewWithSystemStatus(s Store, eb EventBus, statusSource SystemStatusProvider) *Handler {
+	if statusSource == nil {
+		statusSource = newDefaultSystemStatusProvider(time.Now)
+	}
+
+	return &Handler{store: s, events: eb, statusSource: statusSource}
 }
 
 // RegisterRoutes wires all deployment endpoints into mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/deployments", h.listDeployments)
+	mux.HandleFunc("GET /api/system-status", h.systemStatus)
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
 	mux.HandleFunc("GET /api/deployments/events", h.deploymentEvents)
 	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)

@@ -4,22 +4,31 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { DynamicSection } from './DynamicSection'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { cn } from '../lib/utils'
 
 const fieldErrorCls = 'text-xs text-destructive'
 
-export default function CreateDeploymentForm() {
+type Props = {
+  onSuccess?: () => void
+  className?: string
+  hideHeader?: boolean
+}
+
+export default function CreateDeploymentForm({ onSuccess, className, hideHeader = false }: Props) {
   const {
     name, setName, image, setImage, domain, setDomain,
     envRows, portRows, volumeRows,
     errors, handleSubmit, isPending,
-  } = useCreateDeploymentForm()
+  } = useCreateDeploymentForm({ onSuccess })
 
   return (
-    <Card className="mb-8">
-      <CardHeader>
-        <CardTitle>New deployment</CardTitle>
-        <CardDescription>Create a new service from an image and runtime settings.</CardDescription>
-      </CardHeader>
+    <Card className={cn('mb-8', className)}>
+      {!hideHeader && (
+        <CardHeader>
+          <CardTitle>New deployment</CardTitle>
+          <CardDescription>Create a new service from an image and runtime settings.</CardDescription>
+        </CardHeader>
+      )}
       <CardContent>
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
 

@@ -162,12 +162,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          gh release delete ${{ github.ref_name }} --repo ${{ github.repository }} --yes || true
           gh release create ${{ github.ref_name }} \
             --repo ${{ github.repository }} \
             --title "${{ github.ref_name }}" \
             --generate-notes \
             --latest \
-            --clobber \
             dirigent-linux-amd64 \
             dirigent-linux-arm64 \
             dirigent-orchestrator-linux-amd64 \

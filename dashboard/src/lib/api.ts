@@ -18,6 +18,18 @@ export type StatusEvent = {
   error?: string
 }
 
+export type SystemStatusState = 'healthy' | 'unavailable'
+
+export type APISystemStatus = {
+  state: SystemStatusState
+  lastUpdated: string
+}
+
+export type SystemStatusSnapshot = {
+  api: APISystemStatus
+  error?: string
+}
+
 export async function getDeployments(): Promise<Deployment[]> {
   const res = await fetch('/api/deployments')
   if (!res.ok) throw new Error('Failed to fetch deployments')
@@ -65,4 +77,10 @@ export async function updateDeployment(id: string, data: UpdateDeploymentInput):
 export async function deleteDeployment(id: string): Promise<void> {
   const res = await fetch(`/api/deployments/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Failed to delete deployment')
+}
+
+export async function getSystemStatus(): Promise<SystemStatusSnapshot> {
+  const res = await fetch('/api/system-status')
+  if (!res.ok) throw new Error('Failed to fetch system status')
+  return res.json()
 }

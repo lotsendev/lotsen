@@ -137,7 +137,7 @@ case "${ARCH}" in
     *) error "Unsupported architecture: ${ARCH}. Supported: x86_64, aarch64." ;;
 esac
 
-DOWNLOAD_URL="https://github.com/ercadev/dirigent/releases/latest/download/dirigent-linux-${ARCH}"
+DOWNLOAD_URL="https://github.com/ercadev/dirigent-releases/releases/latest/download/dirigent-linux-${ARCH}"
 
 if [ -f "${DIRIGENT_BIN}" ]; then
     step "Updating Dirigent binary at ${DIRIGENT_BIN} (linux/${ARCH})"

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -31,10 +33,12 @@ type EventBus interface {
 	Publish(events.StatusEvent)
 }
 
-// LogBus is the log-streaming interface required by the API handlers.
-type LogBus interface {
-	Append(deploymentID, line string)
-	Subscribe(deploymentID string) (backlog []events.LogLine, ch <-chan events.LogLine, cancel func())
+// DockerLogs streams container logs on demand. StreamLogs returns a reader
+// that emits demultiplexed log lines for the running container associated with
+// deploymentID, starting from the last tail lines. Returns (nil, nil) when no
+// container is currently running for the deployment.
+type DockerLogs interface {
+	StreamLogs(ctx context.Context, deploymentID string, tail int) (io.ReadCloser, error)
 }
 
 type deploymentRequest struct {
@@ -58,7 +62,7 @@ type patchDeploymentRequest struct {
 type Handler struct {
 	store        Store
 	events       EventBus
-	logs         LogBus
+	dockerLogs   DockerLogs
 	statusSource SystemStatusProvider
 	heartbeats   OrchestratorHeartbeatIngestor
 	docker       DockerConnectivityIngestor
@@ -66,14 +70,14 @@ type Handler struct {
 
 const defaultOrchestratorStaleAfter = 30 * time.Second
 
-// New creates a Handler backed by the given store, event bus, and log bus.
-func New(s Store, eb EventBus, lb LogBus) *Handler {
-	return NewWithSystemStatus(s, eb, lb, nil)
+// New creates a Handler backed by the given store, event bus, and Docker log streamer.
+func New(s Store, eb EventBus, dl DockerLogs) *Handler {
+	return NewWithSystemStatus(s, eb, dl, nil)
 }
 
 // NewWithSystemStatus creates a Handler with a custom system-status provider.
 // If statusSource is nil, a default provider is used.
-func NewWithSystemStatus(s Store, eb EventBus, lb LogBus, statusSource SystemStatusProvider) *Handler {
+func NewWithSystemStatus(s Store, eb EventBus, dl DockerLogs, statusSource SystemStatusProvider) *Handler {
 	if statusSource == nil {
 		statusSource = newDefaultSystemStatusProvider(time.Now, orchestratorStaleAfterFromEnv())
 	}
@@ -81,7 +85,7 @@ func NewWithSystemStatus(s Store, eb EventBus, lb LogBus, statusSource SystemSta
 	heartbeatIngestor, _ := statusSource.(OrchestratorHeartbeatIngestor)
 	dockerIngestor, _ := statusSource.(DockerConnectivityIngestor)
 
-	return &Handler{store: s, events: eb, logs: lb, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor}
+	return &Handler{store: s, events: eb, dockerLogs: dl, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor}
 }
 
 // RegisterRoutes wires all deployment endpoints into mux.
@@ -92,7 +96,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
 	mux.HandleFunc("GET /api/deployments/events", h.deploymentEvents)
 	mux.HandleFunc("GET /api/deployments/{id}/logs", h.deploymentLogs)
-	mux.HandleFunc("POST /api/deployments/{id}/logs", h.ingestDeploymentLog)
 	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)
 	mux.HandleFunc("PUT /api/deployments/{id}", h.updateDeployment)
 	mux.HandleFunc("DELETE /api/deployments/{id}", h.deleteDeployment)
@@ -428,8 +431,9 @@ func (h *Handler) deploymentEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // deploymentLogs streams container log lines for a deployment as SSE.
-// The last N buffered lines are sent immediately on connect; new lines are
-// pushed as they arrive. The stream stays open until the client disconnects.
+// The last 100 lines are sent immediately on connect; new lines are pushed as
+// they appear. The stream stays open until the client disconnects or the
+// container exits.
 func (h *Handler) deploymentLogs(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -452,71 +456,35 @@ func (h *Handler) deploymentLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	backlog, ch, cancel := h.logs.Subscribe(id)
-	defer cancel()
+	rc, err := h.dockerLogs.StreamLogs(r.Context(), id, 100)
+	if err != nil {
+		log.Printf("deploymentLogs: stream logs for %s: %v", id, err)
+		return
+	}
+	if rc == nil {
+		// No container is running for this deployment yet.
+		return
+	}
+	defer rc.Close()
 
-	for _, ll := range backlog {
-		data, err := json.Marshal(ll)
+	logLine := struct {
+		Line string `json:"line"`
+	}{}
+
+	scanner := bufio.NewScanner(rc)
+	for scanner.Scan() {
+		logLine.Line = scanner.Text()
+		data, err := json.Marshal(logLine)
 		if err != nil {
-			log.Printf("deploymentLogs: marshal backlog line: %v", err)
+			log.Printf("deploymentLogs: marshal line: %v", err)
 			continue
 		}
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
-			log.Printf("deploymentLogs: write backlog: %v", err)
+			log.Printf("deploymentLogs: write: %v", err)
 			return
 		}
+		flusher.Flush()
 	}
-	flusher.Flush()
-
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case ll := <-ch:
-			data, err := json.Marshal(ll)
-			if err != nil {
-				log.Printf("deploymentLogs: marshal line: %v", err)
-				continue
-			}
-			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
-				log.Printf("deploymentLogs: write: %v", err)
-				return
-			}
-			flusher.Flush()
-		}
-	}
-}
-
-// ingestDeploymentLog accepts a single log line for a deployment from the
-// orchestrator and forwards it to all connected log-streaming clients.
-func (h *Handler) ingestDeploymentLog(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
-
-	var body struct {
-		Line string `json:"line"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if body.Line == "" {
-		http.Error(w, "line is required", http.StatusBadRequest)
-		return
-	}
-
-	if _, err := h.store.Get(id); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "deployment not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "failed to get deployment", http.StatusInternalServerError)
-		return
-	}
-
-	h.logs.Append(id, body.Line)
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

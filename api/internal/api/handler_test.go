@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -127,21 +128,38 @@ func (f *failPatchStore) Patch(_ string, _ store.Deployment) (store.Deployment, 
 	return store.Deployment{}, errors.New("disk full")
 }
 
+// noopDockerLogs satisfies api.DockerLogs and always reports no running container.
+type noopDockerLogs struct{}
+
+func (noopDockerLogs) StreamLogs(_ context.Context, _ string, _ int) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+// stubDockerLogs satisfies api.DockerLogs and returns the configured reader or error.
+type stubDockerLogs struct {
+	rc  io.ReadCloser
+	err error
+}
+
+func (s *stubDockerLogs) StreamLogs(_ context.Context, _ string, _ int) (io.ReadCloser, error) {
+	return s.rc, s.err
+}
+
 func newTestServer(s api.Store) *httptest.Server {
 	mux := http.NewServeMux()
-	api.New(s, events.NewBroker(), events.NewLogBroker()).RegisterRoutes(mux)
+	api.New(s, events.NewBroker(), noopDockerLogs{}).RegisterRoutes(mux)
 	return httptest.NewServer(mux)
 }
 
 func newTestServerWithBroker(s api.Store, b *events.Broker) *httptest.Server {
 	mux := http.NewServeMux()
-	api.New(s, b, events.NewLogBroker()).RegisterRoutes(mux)
+	api.New(s, b, noopDockerLogs{}).RegisterRoutes(mux)
 	return httptest.NewServer(mux)
 }
 
-func newTestServerWithLogBroker(s api.Store, lb *events.LogBroker) *httptest.Server {
+func newTestServerWithDockerLogs(s api.Store, dl api.DockerLogs) *httptest.Server {
 	mux := http.NewServeMux()
-	api.New(s, events.NewBroker(), lb).RegisterRoutes(mux)
+	api.New(s, events.NewBroker(), dl).RegisterRoutes(mux)
 	return httptest.NewServer(mux)
 }
 
@@ -159,7 +177,7 @@ func (s *statusProviderStub) Snapshot(_ context.Context) (api.SystemStatusSnapsh
 
 func newTestServerWithStatusProvider(s api.Store, provider api.SystemStatusProvider) *httptest.Server {
 	mux := http.NewServeMux()
-	api.NewWithSystemStatus(s, events.NewBroker(), events.NewLogBroker(), provider).RegisterRoutes(mux)
+	api.NewWithSystemStatus(s, events.NewBroker(), noopDockerLogs{}, provider).RegisterRoutes(mux)
 	return httptest.NewServer(mux)
 }
 
@@ -1289,11 +1307,11 @@ func TestUpdateDeployment_Lifecycle(t *testing.T) {
 	}
 }
 
-// readLogLines connects to a log SSE endpoint and sends parsed LogLine values
+// readLogLines connects to a log SSE endpoint and sends parsed log line strings
 // to the returned channel until ctx is cancelled or the connection drops.
-func readLogLines(ctx context.Context, t *testing.T, url string) <-chan events.LogLine {
+func readLogLines(ctx context.Context, t *testing.T, url string) <-chan string {
 	t.Helper()
-	out := make(chan events.LogLine, 16)
+	out := make(chan string, 16)
 	go func() {
 		defer close(out)
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -1309,12 +1327,12 @@ func readLogLines(ctx context.Context, t *testing.T, url string) <-chan events.L
 			if !strings.HasPrefix(line, "data: ") {
 				continue
 			}
-			var ll events.LogLine
-			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &ll); err != nil {
+			var payload struct{ Line string `json:"line"` }
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &payload); err != nil {
 				continue
 			}
 			select {
-			case out <- ll:
+			case out <- payload.Line:
 			case <-ctx.Done():
 				return
 			}
@@ -1353,60 +1371,56 @@ func TestDeploymentLogs_StoreError(t *testing.T) {
 	}
 }
 
-func TestDeploymentLogs_SendsBacklog(t *testing.T) {
+func TestDeploymentLogs_NoContainer(t *testing.T) {
 	s := newMemStore()
-	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusIdle}
 
-	lb := events.NewLogBroker()
-	lb.Append("d1", "line one")
-	lb.Append("d1", "line two")
-	lb.Append("d1", "line three")
-
-	srv := newTestServerWithLogBroker(s, lb)
+	// Stub reports no running container (nil, nil).
+	srv := newTestServerWithDockerLogs(s, &stubDockerLogs{rc: nil})
 	defer srv.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	logCh := readLogLines(ctx, t, srv.URL+"/api/deployments/d1/logs")
 
-	want := []string{"line one", "line two", "line three"}
-	for _, w := range want {
-		select {
-		case ll := <-logCh:
-			if ll.Line != w {
-				t.Errorf("want line %q, got %q", w, ll.Line)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatalf("timeout: did not receive backlog line %q", w)
+	// Stream should close immediately — no container to read from.
+	select {
+	case _, open := <-logCh:
+		if open {
+			t.Error("expected channel to close when no container is running")
 		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: channel did not close for no-container case")
 	}
 }
 
-func TestDeploymentLogs_StreamsNewLines(t *testing.T) {
+func TestDeploymentLogs_StreamsLines(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
 
-	lb := events.NewLogBroker()
-	srv := newTestServerWithLogBroker(s, lb)
+	// Stub returns a reader with three plain log lines (already demultiplexed).
+	stub := &stubDockerLogs{rc: io.NopCloser(strings.NewReader("line one\nline two\nline three\n"))}
+	srv := newTestServerWithDockerLogs(s, stub)
 	defer srv.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	logCh := readLogLines(ctx, t, srv.URL+"/api/deployments/d1/logs")
-	// Wait for the SSE goroutine to subscribe before appending.
-	time.Sleep(50 * time.Millisecond)
 
-	lb.Append("d1", "live line")
-
-	select {
-	case ll := <-logCh:
-		if ll.Line != "live line" {
-			t.Errorf("want line %q, got %q", "live line", ll.Line)
+	for _, want := range []string{"line one", "line two", "line three"} {
+		select {
+		case got, ok := <-logCh:
+			if !ok {
+				t.Fatalf("channel closed before receiving %q", want)
+			}
+			if got != want {
+				t.Errorf("want %q, got %q", want, got)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timeout: did not receive %q", want)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout: no live log line received")
 	}
 }
 
@@ -1414,158 +1428,50 @@ func TestDeploymentLogs_ClientDisconnectCleansUp(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
 
-	lb := events.NewLogBroker()
-	srv := newTestServerWithLogBroker(s, lb)
+	// Use a pipe so the server-side scanner blocks waiting for new data.
+	pr, pw := io.Pipe()
+	defer pw.Close()
+
+	srv := newTestServerWithDockerLogs(s, &stubDockerLogs{rc: pr})
 	defer srv.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	logCh := readLogLines(ctx, t, srv.URL+"/api/deployments/d1/logs")
 	time.Sleep(50 * time.Millisecond)
 
-	cancel()
+	cancel() // disconnect the client
+	pw.Close() // unblock the server-side scanner so the handler goroutine can exit
 
 	select {
 	case _, open := <-logCh:
 		if open {
-			t.Error("expected channel to be closed after client disconnect")
+			t.Error("expected channel closed after client disconnect")
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout: SSE goroutine did not exit after client disconnect")
+		t.Fatal("timeout: channel did not close after client disconnect")
 	}
 }
 
-func TestIngestDeploymentLog_HappyPath(t *testing.T) {
+func TestDeploymentLogs_DockerError(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
 
-	srv := newTestServer(s)
+	stub := &stubDockerLogs{err: errors.New("docker daemon unreachable")}
+	srv := newTestServerWithDockerLogs(s, stub)
 	defer srv.Close()
 
-	body := bytes.NewBufferString(`{"line":"hello from container"}`)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/deployments/d1/logs", body)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("POST /api/deployments/d1/logs: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("want 204, got %d", resp.StatusCode)
-	}
-}
-
-func TestIngestDeploymentLog_NotFound(t *testing.T) {
-	srv := newTestServer(newMemStore())
-	defer srv.Close()
-
-	body := bytes.NewBufferString(`{"line":"hello"}`)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/deployments/nonexistent/logs", body)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("POST /api/deployments/nonexistent/logs: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("want 404, got %d", resp.StatusCode)
-	}
-}
-
-func TestIngestDeploymentLog_InvalidBody(t *testing.T) {
-	srv := newTestServer(newMemStore())
-	defer srv.Close()
-
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/deployments/d1/logs", bytes.NewBufferString("not json"))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("POST /api/deployments/d1/logs invalid body: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("want 400, got %d", resp.StatusCode)
-	}
-}
-
-func TestIngestDeploymentLog_EmptyLine(t *testing.T) {
-	s := newMemStore()
-	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
-
-	srv := newTestServer(s)
-	defer srv.Close()
-
-	body := bytes.NewBufferString(`{"line":""}`)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/deployments/d1/logs", body)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("POST /api/deployments/d1/logs empty line: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("want 400, got %d", resp.StatusCode)
-	}
-}
-
-func TestIngestDeploymentLog_StoreError(t *testing.T) {
-	srv := newTestServer(&errStore{})
-	defer srv.Close()
-
-	body := bytes.NewBufferString(`{"line":"hello"}`)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/deployments/any/logs", body)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("POST /api/deployments/any/logs store error: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("want 500, got %d", resp.StatusCode)
-	}
-}
-
-func TestIngestDeploymentLog_DeliveredToSSEStream(t *testing.T) {
-	s := newMemStore()
-	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
-
-	lb := events.NewLogBroker()
-	srv := newTestServerWithLogBroker(s, lb)
-	defer srv.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	logCh := readLogLines(ctx, t, srv.URL+"/api/deployments/d1/logs")
-	time.Sleep(50 * time.Millisecond)
 
-	body := bytes.NewBufferString(`{"line":"from orchestrator"}`)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/deployments/d1/logs", body)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("POST /api/deployments/d1/logs: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("want 204, got %d", resp.StatusCode)
-	}
-
+	// Stream should close after the error — handler logs and returns.
 	select {
-	case ll := <-logCh:
-		if ll.Line != "from orchestrator" {
-			t.Errorf("want line %q, got %q", "from orchestrator", ll.Line)
+	case _, open := <-logCh:
+		if open {
+			t.Error("expected channel to close on docker error")
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout: ingest did not deliver line to SSE stream")
+		t.Fatal("timeout: channel did not close on docker error")
 	}
 }

@@ -18,15 +18,27 @@ export type StatusEvent = {
   error?: string
 }
 
-export type SystemStatusState = 'healthy' | 'unavailable'
+export type SystemStatusState = 'healthy' | 'degraded' | 'stale' | 'unavailable'
 
 export type APISystemStatus = {
   state: SystemStatusState
   lastUpdated: string
 }
 
+export type OrchestratorSystemStatus = {
+  state: SystemStatusState
+  lastUpdated?: string
+}
+
+export type DockerSystemStatus = {
+  state: SystemStatusState
+  lastUpdated?: string
+}
+
 export type SystemStatusSnapshot = {
   api: APISystemStatus
+  orchestrator: OrchestratorSystemStatus
+  docker: DockerSystemStatus
   error?: string
 }
 

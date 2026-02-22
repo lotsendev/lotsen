@@ -18,6 +18,10 @@ export type StatusEvent = {
   error?: string
 }
 
+export type DeploymentLogEvent = {
+  line: string
+}
+
 export type SystemStatusState = 'healthy' | 'degraded' | 'stale' | 'unavailable'
 
 export type APISystemStatus = {

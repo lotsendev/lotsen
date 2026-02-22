@@ -1,4 +1,5 @@
-import { Pencil, Trash2 } from 'lucide-react'
+import { ArrowUpRight, Pencil, Trash2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { Button } from '../components/ui/button'
 import { TableCell, TableRow } from '../components/ui/table'
 import type { Deployment } from '../lib/api'
@@ -14,13 +15,27 @@ type Props = {
 export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: Props) {
   return (
     <TableRow className="bg-card">
-      <TableCell className="py-3 font-medium text-foreground">{d.name}</TableCell>
+      <TableCell className="py-3 font-medium text-foreground">
+        <Link
+          to="/deployments/$deploymentId"
+          params={{ deploymentId: d.id }}
+          className="inline-flex items-center gap-1.5 hover:text-primary hover:underline"
+        >
+          {d.name}
+          <ArrowUpRight size={14} className="text-muted-foreground" />
+        </Link>
+      </TableCell>
       <TableCell className="py-3 font-mono text-xs text-muted-foreground">{d.image}</TableCell>
       <TableCell className="py-3">
         <StatusBadge status={d.status} error={d.error} />
       </TableCell>
       <TableCell className="py-3 text-right">
         <div className="flex items-center justify-end gap-1">
+          <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
+            <Link to="/deployments/$deploymentId" params={{ deploymentId: d.id }}>
+              Details
+            </Link>
+          </Button>
           <Button
             type="button"
             variant="ghost"

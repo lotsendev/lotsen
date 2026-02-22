@@ -96,7 +96,10 @@ export function Sidebar({
     return (
       <div
         data-slot="sidebar"
-        className={cn('hidden h-svh w-[var(--sidebar-width)] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex', className)}
+        className={cn(
+          'hidden h-svh w-[var(--sidebar-width)] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:flex md:self-start',
+          className
+        )}
         {...props}
       >
         {children}

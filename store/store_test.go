@@ -378,3 +378,28 @@ func TestJSONStore_UpdateStatus_MissingID_NoOp(t *testing.T) {
 		t.Errorf("want nil for missing id, got %v", err)
 	}
 }
+
+func TestJSONStore_Patch_StatusClearsError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{ID: "d1", Name: "web", Status: store.StatusFailed, Error: "image not found"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	updated, err := s.Patch("d1", store.Deployment{Status: store.StatusHealthy})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+
+	if updated.Status != store.StatusHealthy {
+		t.Fatalf("want status healthy, got %s", updated.Status)
+	}
+	if updated.Error != "" {
+		t.Fatalf("want error cleared, got %q", updated.Error)
+	}
+}

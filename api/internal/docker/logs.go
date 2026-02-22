@@ -28,17 +28,17 @@ func New(client Client) *LogStreamer {
 }
 
 // StreamLogs returns a reader that emits demultiplexed log lines (stdout and
-// stderr combined) for the running container associated with deploymentID,
+// stderr combined) for the newest container associated with deploymentID,
 // starting from the last tail lines. The caller must close the reader when
 // done; closing it also terminates the underlying Docker log stream.
 //
-// Returns (nil, nil) when no container is currently running for the deployment.
+// Returns (nil, nil) when no managed container exists for the deployment.
 func (s *LogStreamer) StreamLogs(ctx context.Context, deploymentID string, tail int) (io.ReadCloser, error) {
 	f := filters.NewArgs(
 		filters.Arg("label", "dirigent.managed=true"),
 		filters.Arg("label", "dirigent.id="+deploymentID),
 	)
-	containers, err := s.client.ContainerList(ctx, container.ListOptions{Filters: f})
+	containers, err := s.client.ContainerList(ctx, container.ListOptions{All: true, Filters: f})
 	if err != nil {
 		return nil, fmt.Errorf("docker: list containers for deployment %s: %w", deploymentID, err)
 	}
@@ -46,14 +46,21 @@ func (s *LogStreamer) StreamLogs(ctx context.Context, deploymentID string, tail 
 		return nil, nil
 	}
 
-	raw, err := s.client.ContainerLogs(ctx, containers[0].ID, container.LogsOptions{
+	latest := containers[0]
+	for _, c := range containers[1:] {
+		if c.Created > latest.Created {
+			latest = c
+		}
+	}
+
+	raw, err := s.client.ContainerLogs(ctx, latest.ID, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
 		Tail:       fmt.Sprintf("%d", tail),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("docker: logs for container %s: %w", containers[0].ID, err)
+		return nil, fmt.Errorf("docker: logs for container %s: %w", latest.ID, err)
 	}
 
 	// Docker logs are multiplexed (8-byte header per frame). Demultiplex

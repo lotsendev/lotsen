@@ -123,7 +123,7 @@ export function DeploymentDetailPage() {
         </CardContent>
       </Card>
 
-      <DeploymentLogsPanel deploymentId={deployment.id} />
+      <DeploymentLogsPanel deploymentId={deployment.id} status={deployment.status} error={deployment.error} />
     </div>
   )
 }

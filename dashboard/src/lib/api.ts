@@ -39,10 +39,22 @@ export type DockerSystemStatus = {
   lastUpdated?: string
 }
 
+export type HostMetricSystemStatus = {
+  state: SystemStatusState
+  usagePercent?: number
+  lastUpdated?: string
+}
+
+export type HostSystemStatus = {
+  cpu: HostMetricSystemStatus
+  ram: HostMetricSystemStatus
+}
+
 export type SystemStatusSnapshot = {
   api: APISystemStatus
   orchestrator: OrchestratorSystemStatus
   docker: DockerSystemStatus
+  host: HostSystemStatus
   error?: string
 }
 

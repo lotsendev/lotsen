@@ -1,4 +1,4 @@
-.PHONY: setup dev build test clean
+.PHONY: setup dev build test clean proxy
 
 AIR := $(shell go env GOPATH)/bin/air
 
@@ -13,6 +13,7 @@ dev:
 	@trap 'kill 0' SIGINT; \
 	(cd api && DIRIGENT_DATA=/tmp/dirigent.json $(AIR)) & \
 	(cd orchestrator && DIRIGENT_DATA=/tmp/dirigent.json $(AIR)) & \
+	(cd proxy && DIRIGENT_DATA=/tmp/dirigent.json DIRIGENT_PROXY_ADDR=:8090 $(AIR)) & \
 	(cd dashboard && bun run dev) & \
 	wait
 
@@ -20,13 +21,15 @@ dev:
 build:
 	cd api && go build -o ../dirigent ./cmd/dirigent
 	cd orchestrator && go build -o ../dirigent-orchestrator ./cmd/orchestrator
+	cd proxy && go build -o ../dirigent-proxy ./cmd/proxy
 
 # Run the Go test suites.
 test:
 	cd api && go test ./...
 	cd orchestrator && go test ./...
+	cd proxy && go test ./...
 
 # Remove build artifacts.
 clean:
-	rm -f dirigent dirigent-orchestrator
-	rm -rf api/tmp orchestrator/tmp
+	rm -f dirigent dirigent-orchestrator dirigent-proxy
+	rm -rf api/tmp orchestrator/tmp proxy/tmp

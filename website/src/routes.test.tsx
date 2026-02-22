@@ -1,0 +1,51 @@
+import { render, screen } from '@testing-library/react'
+import { MemoryRouter, Route, Routes, Navigate } from 'react-router-dom'
+import Landing from '@/pages/Landing'
+import DocsLayout from '@/pages/docs/DocsLayout'
+import GettingStarted from '@/pages/docs/GettingStarted'
+import DeploymentConfiguration from '@/pages/docs/DeploymentConfiguration'
+
+function TestApp({ initialPath }: { initialPath: string }) {
+  return (
+    <MemoryRouter initialEntries={[initialPath]}>
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/docs" element={<DocsLayout />}>
+          <Route index element={<Navigate to="getting-started" replace />} />
+          <Route path="getting-started" element={<GettingStarted />} />
+          <Route path="deployment-configuration" element={<DeploymentConfiguration />} />
+        </Route>
+      </Routes>
+    </MemoryRouter>
+  )
+}
+
+describe('Routes', () => {
+  it('renders the landing page at /', () => {
+    render(<TestApp initialPath="/" />)
+    expect(
+      screen.getByRole('heading', { name: /kubernetes is overkill/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the Getting Started doc at /docs/getting-started', () => {
+    render(<TestApp initialPath="/docs/getting-started" />)
+    expect(
+      screen.getByRole('heading', { name: /getting started/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the Deployment Configuration doc at /docs/deployment-configuration', () => {
+    render(<TestApp initialPath="/docs/deployment-configuration" />)
+    expect(
+      screen.getByRole('heading', { name: /deployment configuration/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('/docs redirects to /docs/getting-started', () => {
+    render(<TestApp initialPath="/docs" />)
+    expect(
+      screen.getByRole('heading', { name: /getting started/i }),
+    ).toBeInTheDocument()
+  })
+})

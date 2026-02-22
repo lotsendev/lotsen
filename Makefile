@@ -29,6 +29,10 @@ test:
 	cd orchestrator && go test ./...
 	cd proxy && go test ./...
 
+# Start the Vite dev server for the marketing website.
+dev-website:
+	cd website && bun run dev
+
 # Remove build artifacts.
 clean:
 	rm -f dirigent dirigent-orchestrator dirigent-proxy

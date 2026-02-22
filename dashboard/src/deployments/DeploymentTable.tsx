@@ -46,7 +46,7 @@ export function DeploymentTable({ deployments, isLoading, isError, deleteMutatio
               <TableHead>Name</TableHead>
               <TableHead>Image</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-[110px]" />
+              <TableHead className="w-[190px] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

@@ -23,12 +23,22 @@ import {
   SidebarProvider,
 } from './components/ui/sidebar'
 import DeploymentList from './pages/DeploymentList'
+import { DeploymentDetailPage } from './pages/DeploymentDetailPage'
 import { SystemStatusPage } from './pages/SystemStatusPage'
 import { useTheme } from './theme'
 
 function DashboardLayout() {
   const pathname = useRouterState({ select: state => state.location.pathname })
   const { theme, toggleTheme } = useTheme()
+  const isSystemStatusPage = pathname === '/system-status'
+  const isDeploymentPage = pathname.startsWith('/deployments')
+  const isDeploymentDetailPage = isDeploymentPage && pathname !== '/deployments'
+  const pageTitle = isSystemStatusPage ? 'System status' : isDeploymentDetailPage ? 'Deployment detail' : 'Deployments'
+  const pageDescription = isSystemStatusPage
+    ? 'Observe API health and freshness.'
+    : isDeploymentDetailPage
+      ? 'Inspect deployment details and stream live logs.'
+      : 'Create, edit, and monitor your active deployments.'
 
   return (
     <SidebarProvider>
@@ -55,7 +65,7 @@ function DashboardLayout() {
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={pathname === '/deployments'} size="lg" className="rounded-lg">
+                    <SidebarMenuButton asChild isActive={pathname.startsWith('/deployments')} size="lg" className="rounded-lg">
                       <Link to="/deployments">
                         <Boxes className="h-4 w-4 shrink-0" />
                         <span>Deployments</span>
@@ -78,20 +88,26 @@ function DashboardLayout() {
       </Sidebar>
 
       <SidebarInset>
-        <p className="mb-4 text-sm text-muted-foreground">{pathname === '/system-status' ? 'Observability' : 'Deployments'}</p>
-        <Card className="mx-auto w-full max-w-5xl">
-          <CardHeader>
-            <CardTitle>{pathname === '/system-status' ? 'System status' : 'Deployments'}</CardTitle>
-            <CardDescription>
-              {pathname === '/system-status'
-                ? 'Observe API health and freshness.'
-                : 'Create, edit, and monitor your active deployments.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <p className="mb-4 text-sm text-muted-foreground">{isSystemStatusPage ? 'Observability' : 'Deployments'}</p>
+        {isDeploymentDetailPage ? (
+          <div className="mx-auto w-full max-w-5xl space-y-4">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">{pageTitle}</h1>
+              <p className="text-sm text-muted-foreground">{pageDescription}</p>
+            </div>
             <Outlet />
-          </CardContent>
-        </Card>
+          </div>
+        ) : (
+          <Card className="mx-auto w-full max-w-5xl">
+            <CardHeader>
+              <CardTitle>{pageTitle}</CardTitle>
+              <CardDescription>{pageDescription}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Outlet />
+            </CardContent>
+          </Card>
+        )}
       </SidebarInset>
     </SidebarProvider>
   )
@@ -115,13 +131,19 @@ const deploymentsRoute = createRoute({
   component: DeploymentList,
 })
 
+const deploymentDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/deployments/$deploymentId',
+  component: DeploymentDetailPage,
+})
+
 const systemStatusRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/system-status',
   component: SystemStatusPage,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, deploymentsRoute, systemStatusRoute])
+const routeTree = rootRoute.addChildren([indexRoute, deploymentsRoute, deploymentDetailRoute, systemStatusRoute])
 
 export const router = createRouter({ routeTree })
 

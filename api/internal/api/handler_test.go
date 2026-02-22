@@ -1327,7 +1327,9 @@ func readLogLines(ctx context.Context, t *testing.T, url string) <-chan string {
 			if !strings.HasPrefix(line, "data: ") {
 				continue
 			}
-			var payload struct{ Line string `json:"line"` }
+			var payload struct {
+				Line string `json:"line"`
+			}
 			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &payload); err != nil {
 				continue
 			}
@@ -1439,7 +1441,7 @@ func TestDeploymentLogs_ClientDisconnectCleansUp(t *testing.T) {
 	logCh := readLogLines(ctx, t, srv.URL+"/api/deployments/d1/logs")
 	time.Sleep(50 * time.Millisecond)
 
-	cancel() // disconnect the client
+	cancel()   // disconnect the client
 	pw.Close() // unblock the server-side scanner so the handler goroutine can exit
 
 	select {

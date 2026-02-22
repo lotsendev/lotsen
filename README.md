@@ -2,6 +2,41 @@
 
 A lightweight Docker orchestration tool for solo developers and small teams running production workloads on a VPS — a simpler alternative to Kubernetes.
 
+## Installation
+
+Run the following command on a fresh Ubuntu 22.04+ or Debian 11+ VPS as root (or with `sudo`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ercadev/dirigent-releases/main/install.sh | sudo bash
+```
+
+To pin a specific version:
+
+```bash
+DIRIGENT_VERSION=v0.2.0 curl -fsSL https://raw.githubusercontent.com/ercadev/dirigent-releases/main/install.sh | sudo bash
+```
+
+The installer will:
+- Install Docker Engine if not already present
+- Install Bun if not already present
+- Download all Dirigent components for your architecture (`amd64` / `arm64`)
+- Register and start four systemd services that survive reboots
+- Create the `/var/lib/dirigent/` data directory and the `dirigent` Docker network
+
+Re-running the installer performs an in-place upgrade.
+
+### Ports
+
+| Service               | Port   | Description                                    |
+|-----------------------|--------|------------------------------------------------|
+| `dirigent-api`        | `:8080`| REST API — reads/writes deployment state       |
+| `dirigent-orchestrator` | —    | Reconciler — syncs state with Docker (no port) |
+| `dirigent-proxy`      | `:80`  | Reverse proxy — routes traffic to containers   |
+| `dirigent-dashboard`  | `:3000`| Web dashboard                                  |
+
+**Why is the dashboard on `:3000` and not behind the proxy at `:80`?**
+The reverse proxy only routes traffic to your deployed containers. The dashboard must remain reachable before any containers are configured, so it runs as its own service on a dedicated port.
+
 ## Features
 
 - One-script installer, up and running fast

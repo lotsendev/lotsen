@@ -26,9 +26,10 @@ func main() {
 	}
 
 	broker := events.NewBroker()
+	logBroker := events.NewLogBroker()
 
 	mux := http.NewServeMux()
-	api.New(s, broker).RegisterRoutes(mux)
+	api.New(s, broker, logBroker).RegisterRoutes(mux)
 
 	log.Printf("dirigent API listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {

@@ -31,6 +31,12 @@ type EventBus interface {
 	Publish(events.StatusEvent)
 }
 
+// LogBus is the log-streaming interface required by the API handlers.
+type LogBus interface {
+	Append(deploymentID, line string)
+	Subscribe(deploymentID string) (backlog []events.LogLine, ch <-chan events.LogLine, cancel func())
+}
+
 type deploymentRequest struct {
 	Name    string            `json:"name"`
 	Image   string            `json:"image"`
@@ -52,6 +58,7 @@ type patchDeploymentRequest struct {
 type Handler struct {
 	store        Store
 	events       EventBus
+	logs         LogBus
 	statusSource SystemStatusProvider
 	heartbeats   OrchestratorHeartbeatIngestor
 	docker       DockerConnectivityIngestor
@@ -59,14 +66,14 @@ type Handler struct {
 
 const defaultOrchestratorStaleAfter = 30 * time.Second
 
-// New creates a Handler backed by the given store and event bus.
-func New(s Store, eb EventBus) *Handler {
-	return NewWithSystemStatus(s, eb, nil)
+// New creates a Handler backed by the given store, event bus, and log bus.
+func New(s Store, eb EventBus, lb LogBus) *Handler {
+	return NewWithSystemStatus(s, eb, lb, nil)
 }
 
 // NewWithSystemStatus creates a Handler with a custom system-status provider.
 // If statusSource is nil, a default provider is used.
-func NewWithSystemStatus(s Store, eb EventBus, statusSource SystemStatusProvider) *Handler {
+func NewWithSystemStatus(s Store, eb EventBus, lb LogBus, statusSource SystemStatusProvider) *Handler {
 	if statusSource == nil {
 		statusSource = newDefaultSystemStatusProvider(time.Now, orchestratorStaleAfterFromEnv())
 	}
@@ -74,7 +81,7 @@ func NewWithSystemStatus(s Store, eb EventBus, statusSource SystemStatusProvider
 	heartbeatIngestor, _ := statusSource.(OrchestratorHeartbeatIngestor)
 	dockerIngestor, _ := statusSource.(DockerConnectivityIngestor)
 
-	return &Handler{store: s, events: eb, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor}
+	return &Handler{store: s, events: eb, logs: lb, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor}
 }
 
 // RegisterRoutes wires all deployment endpoints into mux.
@@ -84,6 +91,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/system-status/orchestrator-heartbeat", h.recordOrchestratorHeartbeat)
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
 	mux.HandleFunc("GET /api/deployments/events", h.deploymentEvents)
+	mux.HandleFunc("GET /api/deployments/{id}/logs", h.deploymentLogs)
+	mux.HandleFunc("POST /api/deployments/{id}/logs", h.ingestDeploymentLog)
 	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)
 	mux.HandleFunc("PUT /api/deployments/{id}", h.updateDeployment)
 	mux.HandleFunc("DELETE /api/deployments/{id}", h.deleteDeployment)
@@ -416,6 +425,98 @@ func (h *Handler) deploymentEvents(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// deploymentLogs streams container log lines for a deployment as SSE.
+// The last N buffered lines are sent immediately on connect; new lines are
+// pushed as they arrive. The stream stays open until the client disconnects.
+func (h *Handler) deploymentLogs(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	id := r.PathValue("id")
+
+	if _, err := h.store.Get(id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "deployment not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to get deployment", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	backlog, ch, cancel := h.logs.Subscribe(id)
+	defer cancel()
+
+	for _, ll := range backlog {
+		data, err := json.Marshal(ll)
+		if err != nil {
+			log.Printf("deploymentLogs: marshal backlog line: %v", err)
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+			log.Printf("deploymentLogs: write backlog: %v", err)
+			return
+		}
+	}
+	flusher.Flush()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ll := <-ch:
+			data, err := json.Marshal(ll)
+			if err != nil {
+				log.Printf("deploymentLogs: marshal line: %v", err)
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				log.Printf("deploymentLogs: write: %v", err)
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+// ingestDeploymentLog accepts a single log line for a deployment from the
+// orchestrator and forwards it to all connected log-streaming clients.
+func (h *Handler) ingestDeploymentLog(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
+
+	var body struct {
+		Line string `json:"line"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if body.Line == "" {
+		http.Error(w, "line is required", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := h.store.Get(id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "deployment not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to get deployment", http.StatusInternalServerError)
+		return
+	}
+
+	h.logs.Append(id, body.Line)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

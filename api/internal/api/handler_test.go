@@ -230,6 +230,9 @@ func TestSystemStatus_UnavailableOnProviderError(t *testing.T) {
 	if body.Orchestrator.State != api.SystemStatusStateUnavailable {
 		t.Errorf("want orchestrator state unavailable, got %s", body.Orchestrator.State)
 	}
+	if body.Docker.State != api.SystemStatusStateUnavailable {
+		t.Errorf("want docker state unavailable, got %s", body.Docker.State)
+	}
 }
 
 func TestRecordOrchestratorHeartbeat_UpdatesSystemStatus(t *testing.T) {
@@ -293,6 +296,50 @@ func TestRecordOrchestratorHeartbeat_InvalidBody(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestRecordOrchestratorHeartbeat_UpdatesDockerConnectivity(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	reqBody := `{"docker":{"reachable":false}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/system-status/orchestrator-heartbeat", bytes.NewBufferString(reqBody))
+	if err != nil {
+		t.Fatalf("POST heartbeat request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/system-status/orchestrator-heartbeat: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", resp.StatusCode)
+	}
+
+	statusResp, err := http.Get(srv.URL + "/api/system-status")
+	if err != nil {
+		t.Fatalf("GET /api/system-status: %v", err)
+	}
+	defer statusResp.Body.Close()
+
+	if statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", statusResp.StatusCode)
+	}
+
+	var body api.SystemStatusSnapshot
+	if err := json.NewDecoder(statusResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.Docker.State != api.SystemStatusStateDegraded {
+		t.Fatalf("want docker state degraded, got %s", body.Docker.State)
+	}
+	if body.Docker.LastUpdated.IsZero() {
+		t.Fatal("want non-zero docker lastUpdated")
 	}
 }
 

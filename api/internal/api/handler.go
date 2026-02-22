@@ -54,6 +54,7 @@ type Handler struct {
 	events       EventBus
 	statusSource SystemStatusProvider
 	heartbeats   OrchestratorHeartbeatIngestor
+	docker       DockerConnectivityIngestor
 }
 
 const defaultOrchestratorStaleAfter = 30 * time.Second
@@ -71,8 +72,9 @@ func NewWithSystemStatus(s Store, eb EventBus, statusSource SystemStatusProvider
 	}
 
 	heartbeatIngestor, _ := statusSource.(OrchestratorHeartbeatIngestor)
+	dockerIngestor, _ := statusSource.(DockerConnectivityIngestor)
 
-	return &Handler{store: s, events: eb, statusSource: statusSource, heartbeats: heartbeatIngestor}
+	return &Handler{store: s, events: eb, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor}
 }
 
 // RegisterRoutes wires all deployment endpoints into mux.
@@ -98,7 +100,11 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 
 	var body struct {
-		At *time.Time `json:"at"`
+		At     *time.Time `json:"at"`
+		Docker *struct {
+			Reachable *bool      `json:"reachable"`
+			CheckedAt *time.Time `json:"checkedAt"`
+		} `json:"docker"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
@@ -114,6 +120,23 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 	if err := h.heartbeats.RecordOrchestratorHeartbeat(r.Context(), heartbeatAt); err != nil {
 		http.Error(w, "failed to record heartbeat", http.StatusInternalServerError)
 		return
+	}
+
+	if body.Docker != nil && body.Docker.Reachable != nil {
+		if h.docker == nil {
+			http.Error(w, "system status unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		dockerCheckedAt := heartbeatAt
+		if body.Docker.CheckedAt != nil {
+			dockerCheckedAt = body.Docker.CheckedAt.UTC()
+		}
+
+		if err := h.docker.RecordDockerConnectivity(r.Context(), *body.Docker.Reachable, dockerCheckedAt); err != nil {
+			http.Error(w, "failed to record docker connectivity", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

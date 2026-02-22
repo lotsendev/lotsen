@@ -15,6 +15,10 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 	if !ok {
 		t.Fatal("default provider must implement OrchestratorHeartbeatIngestor")
 	}
+	dockerIngestor, ok := provider.(DockerConnectivityIngestor)
+	if !ok {
+		t.Fatal("default provider must implement DockerConnectivityIngestor")
+	}
 
 	snapshot, err := provider.Snapshot(context.Background())
 	if err != nil {
@@ -22,6 +26,9 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 	}
 	if snapshot.Orchestrator.State != SystemStatusStateUnavailable {
 		t.Fatalf("want unavailable before first heartbeat, got %s", snapshot.Orchestrator.State)
+	}
+	if snapshot.Docker.State != SystemStatusStateUnavailable {
+		t.Fatalf("want docker unavailable before first signal, got %s", snapshot.Docker.State)
 	}
 
 	if err := ingestor.RecordOrchestratorHeartbeat(context.Background(), base); err != nil {
@@ -56,5 +63,36 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 				t.Fatalf("want lastUpdated %s, got %s", base, snapshot.Orchestrator.LastUpdated)
 			}
 		})
+	}
+
+	now = base
+	if err := dockerIngestor.RecordDockerConnectivity(context.Background(), true, base.Add(2*time.Second)); err != nil {
+		t.Fatalf("RecordDockerConnectivity healthy: %v", err)
+	}
+
+	snapshot, err = provider.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot after healthy docker signal: %v", err)
+	}
+	if snapshot.Docker.State != SystemStatusStateHealthy {
+		t.Fatalf("want docker state healthy, got %s", snapshot.Docker.State)
+	}
+	if !snapshot.Docker.LastUpdated.Equal(base.Add(2 * time.Second)) {
+		t.Fatalf("want docker lastUpdated %s, got %s", base.Add(2*time.Second), snapshot.Docker.LastUpdated)
+	}
+
+	if err := dockerIngestor.RecordDockerConnectivity(context.Background(), false, base.Add(3*time.Second)); err != nil {
+		t.Fatalf("RecordDockerConnectivity degraded: %v", err)
+	}
+
+	snapshot, err = provider.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot after degraded docker signal: %v", err)
+	}
+	if snapshot.Docker.State != SystemStatusStateDegraded {
+		t.Fatalf("want docker state degraded, got %s", snapshot.Docker.State)
+	}
+	if !snapshot.Docker.LastUpdated.Equal(base.Add(3 * time.Second)) {
+		t.Fatalf("want docker lastUpdated %s, got %s", base.Add(3*time.Second), snapshot.Docker.LastUpdated)
 	}
 }

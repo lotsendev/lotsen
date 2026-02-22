@@ -881,3 +881,200 @@ func TestPatchDeployment_EmitsDeployingEvent(t *testing.T) {
 		t.Fatal("timeout: no SSE event received after PATCH")
 	}
 }
+
+func TestUpdateDeployment(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{
+		ID:     "d1",
+		Name:   "web",
+		Image:  "nginx:1",
+		Status: store.StatusHealthy,
+	}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"name":  "web",
+		"image": "nginx:2",
+		"ports": []string{"8080:80"},
+	})
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/d1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if updated.ID != "d1" {
+		t.Errorf("want id d1, got %s", updated.ID)
+	}
+	if updated.Image != "nginx:2" {
+		t.Errorf("want image nginx:2, got %s", updated.Image)
+	}
+	if updated.Status != store.StatusDeploying {
+		t.Errorf("want status deploying, got %s", updated.Status)
+	}
+}
+
+func TestUpdateDeployment_NotFound(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"name": "web", "image": "nginx:2"})
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/nonexistent", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/nonexistent: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateDeployment_InvalidBody(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewBufferString("not json"))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/d1 invalid body: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateDeployment_MissingFields(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	cases := []map[string]string{
+		{"image": "nginx:2"}, // missing name
+		{"name": "web"},      // missing image
+		{},                   // both missing
+	}
+	for _, payload := range cases {
+		body, _ := json.Marshal(payload)
+		req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("PUT /api/deployments/d1: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("payload %v: want 400, got %d", payload, resp.StatusCode)
+		}
+	}
+}
+
+func TestUpdateDeployment_StoreError(t *testing.T) {
+	srv := newTestServer(&errStore{})
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"name": "web", "image": "nginx:2"})
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/any", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/any store error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateDeployment_Lifecycle(t *testing.T) {
+	broker := events.NewBroker()
+	srv := newTestServerWithBroker(newMemStore(), broker)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	evtCh := readSSEEvents(ctx, t, srv.URL+"/api/deployments/events")
+	time.Sleep(50 * time.Millisecond)
+
+	// Step 1: create.
+	createBody, _ := json.Marshal(map[string]string{"name": "web", "image": "nginx:1"})
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(createBody))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	var created store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	resp.Body.Close()
+	if created.Status != store.StatusDeploying {
+		t.Fatalf("after create: want status deploying, got %s", created.Status)
+	}
+
+	select {
+	case event := <-evtCh:
+		if event.DeploymentID != created.ID || event.Status != string(store.StatusDeploying) {
+			t.Errorf("create event: want {%s deploying}, got {%s %s}", created.ID, event.DeploymentID, event.Status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: no SSE event after create")
+	}
+
+	// Step 2: edit (PUT) — triggers redeployment.
+	editBody, _ := json.Marshal(map[string]string{"name": "web", "image": "nginx:2"})
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/"+created.ID, bytes.NewReader(editBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/%s: %v", created.ID, err)
+	}
+	var edited store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&edited); err != nil {
+		t.Fatalf("decode edit response: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT: want 200, got %d", resp.StatusCode)
+	}
+	if edited.Image != "nginx:2" {
+		t.Errorf("after edit: want image nginx:2, got %s", edited.Image)
+	}
+	if edited.Status != store.StatusDeploying {
+		t.Errorf("after edit: want status deploying, got %s", edited.Status)
+	}
+
+	// Step 3: SSE must emit deploying for the edit.
+	select {
+	case event := <-evtCh:
+		if event.DeploymentID != created.ID {
+			t.Errorf("edit event: want deploymentId %s, got %s", created.ID, event.DeploymentID)
+		}
+		if event.Status != string(store.StatusDeploying) {
+			t.Errorf("edit event: want status deploying, got %s", event.Status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: no SSE event after PUT")
+	}
+}

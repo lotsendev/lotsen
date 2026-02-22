@@ -19,7 +19,7 @@ jobs:
 
       - uses: actions/cache@v4
         with:
-          path: ~/.cache/go/pkg/mod
+          path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum', 'orchestrator/go.sum', 'proxy/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
@@ -89,7 +89,7 @@ jobs:
 
       - uses: actions/cache@v4
         with:
-          path: ~/.cache/go/pkg/mod
+          path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum', 'orchestrator/go.sum', 'proxy/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
@@ -144,6 +144,7 @@ jobs:
             dirigent-proxy-linux-amd64
             dirigent-proxy-linux-arm64
             dashboard.tar.gz
+            install.sh
 
   release:
     name: GitHub Release
@@ -172,4 +173,5 @@ jobs:
             dirigent-orchestrator-linux-arm64 \
             dirigent-proxy-linux-amd64 \
             dirigent-proxy-linux-arm64 \
-            dashboard.tar.gz
+            dashboard.tar.gz \
+            install.sh

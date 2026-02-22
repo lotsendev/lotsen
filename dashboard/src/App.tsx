@@ -1,5 +1,6 @@
-import DeploymentList from './pages/DeploymentList'
+import { RouterProvider } from '@tanstack/react-router'
+import { router } from './router'
 
 export default function App() {
-  return <DeploymentList />
+  return <RouterProvider router={router} />
 }

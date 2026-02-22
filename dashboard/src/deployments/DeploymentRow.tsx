@@ -1,4 +1,6 @@
 import { Pencil, Trash2 } from 'lucide-react'
+import { Button } from '../components/ui/button'
+import { TableCell, TableRow } from '../components/ui/table'
 import type { Deployment } from '../lib/api'
 import { StatusBadge } from './StatusBadge'
 
@@ -11,29 +13,37 @@ type Props = {
 
 export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: Props) {
   return (
-    <tr className="bg-white hover:bg-gray-50">
-      <td className="px-4 py-3 font-medium text-gray-900">{d.name}</td>
-      <td className="px-4 py-3 text-gray-600 font-mono text-xs">{d.image}</td>
-      <td className="px-4 py-3">
+    <TableRow className="bg-card">
+      <TableCell className="py-3 font-medium text-foreground">{d.name}</TableCell>
+      <TableCell className="py-3 font-mono text-xs text-muted-foreground">{d.image}</TableCell>
+      <TableCell className="py-3">
         <StatusBadge status={d.status} error={d.error} />
-      </td>
-      <td className="px-4 py-3 text-right flex items-center justify-end gap-1">
-        <button
-          onClick={() => onEdit(d)}
-          aria-label={`Edit ${d.name}`}
-          className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-        >
-          <Pencil size={15} />
-        </button>
-        <button
-          onClick={() => onDelete(d.id)}
-          disabled={isDeleting}
-          aria-label={`Delete ${d.name}`}
-          className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
-        >
-          <Trash2 size={15} />
-        </button>
-      </td>
-    </tr>
+      </TableCell>
+      <TableCell className="py-3 text-right">
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => onEdit(d)}
+            aria-label={`Edit ${d.name}`}
+            className="h-7 w-7 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <Pencil size={15} />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => onDelete(d.id)}
+            disabled={isDeleting}
+            aria-label={`Delete ${d.name}`}
+            className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 size={15} />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   )
 }

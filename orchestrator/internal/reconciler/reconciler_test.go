@@ -13,8 +13,8 @@ import (
 
 // mockNotifier records NotifyStatus calls and can be configured to fail.
 type mockNotifier struct {
-	mu      sync.Mutex
-	calls   []notifyCall
+	mu        sync.Mutex
+	calls     []notifyCall
 	notifyErr error
 }
 
@@ -64,6 +64,24 @@ func (m *mockStore) UpdateStatus(id string, status store.Status) error {
 	return nil
 }
 
+func (m *mockStore) Patch(id string, patch store.Deployment) (store.Deployment, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, d := range m.deployments {
+		if d.ID != id {
+			continue
+		}
+		if patch.Ports != nil {
+			m.deployments[i].Ports = patch.Ports
+		}
+		if patch.Status != "" {
+			m.deployments[i].Status = patch.Status
+		}
+		return m.deployments[i], nil
+	}
+	return store.Deployment{}, nil
+}
+
 func (m *mockStore) getStatus(id string) store.Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -75,36 +93,57 @@ func (m *mockStore) getStatus(id string) store.Status {
 	return ""
 }
 
-// mockDocker is a controllable Docker client for testing.
-type mockDocker struct {
-	mu                    sync.Mutex
-	containers            []docker.ManagedContainer
-	startErr              error
-	startAndReplaceErr    error
-	started               []string
-	replaced              []string // old container IDs passed to StartAndReplace
-	removed               []string
+func (m *mockStore) getPorts(id string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, d := range m.deployments {
+		if d.ID == id {
+			out := make([]string, len(d.Ports))
+			copy(out, d.Ports)
+			return out
+		}
+	}
+	return nil
 }
 
-func (m *mockDocker) Start(_ context.Context, d store.Deployment) error {
+// mockDocker is a controllable Docker client for testing.
+type mockDocker struct {
+	mu                   sync.Mutex
+	containers           []docker.ManagedContainer
+	startErr             error
+	startAndReplaceErr   error
+	startPorts           []string
+	startAndReplacePorts []string
+	started              []string
+	replaced             []string // old container IDs passed to StartAndReplace
+	removed              []string
+}
+
+func (m *mockDocker) Start(_ context.Context, d store.Deployment) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.startErr != nil {
-		return m.startErr
+		return nil, m.startErr
 	}
 	m.started = append(m.started, d.ID)
-	return nil
+	if m.startPorts != nil {
+		return m.startPorts, nil
+	}
+	return d.Ports, nil
 }
 
-func (m *mockDocker) StartAndReplace(_ context.Context, d store.Deployment, oldContainerID string) error {
+func (m *mockDocker) StartAndReplace(_ context.Context, d store.Deployment, oldContainerID string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.startAndReplaceErr != nil {
-		return m.startAndReplaceErr
+		return nil, m.startAndReplaceErr
 	}
 	m.started = append(m.started, d.ID)
 	m.replaced = append(m.replaced, oldContainerID)
-	return nil
+	if m.startAndReplacePorts != nil {
+		return m.startAndReplacePorts, nil
+	}
+	return d.Ports, nil
 }
 
 func (m *mockDocker) ListManagedContainers(_ context.Context) ([]docker.ManagedContainer, error) {
@@ -184,6 +223,47 @@ func TestReconcile_DeployingWithRunningContainer_RedeploysAndBecomesHealthy(t *t
 	}
 	if s.getStatus("d1") != store.StatusHealthy {
 		t.Errorf("want status healthy, got %s", s.getStatus("d1"))
+	}
+}
+
+func TestReconcile_DeployingNoContainer_StoresRuntimePorts(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "nginx:latest", Ports: []string{"3001"}, Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{startPorts: []string{"49123:3001"}}
+	r := reconciler.New(s, d, nil)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	ports := s.getPorts("d1")
+	if len(ports) != 1 || ports[0] != "49123:3001" {
+		t.Fatalf("want ports [49123:3001], got %v", ports)
+	}
+}
+
+func TestReconcile_Redeploy_StoresRuntimePorts(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "nginx:2", Ports: []string{"3001"}, Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{
+		containers:           []docker.ManagedContainer{{ID: "c1", DeploymentID: "d1", Running: true}},
+		startAndReplacePorts: []string{"49124:3001"},
+	}
+	r := reconciler.New(s, d, nil)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	ports := s.getPorts("d1")
+	if len(ports) != 1 || ports[0] != "49124:3001" {
+		t.Fatalf("want ports [49124:3001], got %v", ports)
 	}
 }
 

@@ -104,3 +104,12 @@ make build   # compile the Go binary → ./dirigent
 make test    # run go test ./...
 make clean   # remove build artifacts
 ```
+
+## Release workflow secrets
+
+The release workflow (`.github/workflows/release.yml`) publishes the landing page Docker image to Docker Hub on `v*` tags.
+
+Configure these repository secrets before creating a release tag:
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`

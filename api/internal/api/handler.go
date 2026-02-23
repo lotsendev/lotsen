@@ -69,6 +69,7 @@ type Handler struct {
 	statusSource SystemStatusProvider
 	heartbeats   OrchestratorHeartbeatIngestor
 	docker       DockerConnectivityIngestor
+	loadBalancer LoadBalancerHealthIngestor
 	cpu          CPUUtilizationIngestor
 	ram          RAMUtilizationIngestor
 }
@@ -84,15 +85,27 @@ func New(s Store, eb EventBus, dl DockerLogs) *Handler {
 // If statusSource is nil, a default provider is used.
 func NewWithSystemStatus(s Store, eb EventBus, dl DockerLogs, statusSource SystemStatusProvider) *Handler {
 	if statusSource == nil {
-		statusSource = newDefaultSystemStatusProvider(time.Now, orchestratorStaleAfterFromEnv())
+		statusSource = newDefaultSystemStatusProvider(time.Now, orchestratorStaleAfterFromEnv(), buildAPIStoreChecker(s))
 	}
 
 	heartbeatIngestor, _ := statusSource.(OrchestratorHeartbeatIngestor)
 	dockerIngestor, _ := statusSource.(DockerConnectivityIngestor)
+	loadBalancerIngestor, _ := statusSource.(LoadBalancerHealthIngestor)
 	cpuIngestor, _ := statusSource.(CPUUtilizationIngestor)
 	ramIngestor, _ := statusSource.(RAMUtilizationIngestor)
 
-	return &Handler{store: s, events: eb, dockerLogs: dl, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor, cpu: cpuIngestor, ram: ramIngestor}
+	return &Handler{store: s, events: eb, dockerLogs: dl, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor, loadBalancer: loadBalancerIngestor, cpu: cpuIngestor, ram: ramIngestor}
+}
+
+func buildAPIStoreChecker(s Store) func(context.Context) bool {
+	if s == nil {
+		return nil
+	}
+
+	return func(_ context.Context) bool {
+		_, err := s.List()
+		return err == nil
+	}
 }
 
 // RegisterRoutes wires all deployment endpoints into mux.
@@ -119,11 +132,18 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
 
 	var body struct {
-		At     *time.Time `json:"at"`
+		At           *time.Time `json:"at"`
+		Orchestrator *struct {
+			StoreAccessible *bool `json:"storeAccessible"`
+		} `json:"orchestrator"`
 		Docker *struct {
 			Reachable *bool      `json:"reachable"`
 			CheckedAt *time.Time `json:"checkedAt"`
 		} `json:"docker"`
+		LoadBalancer *struct {
+			Responding *bool      `json:"responding"`
+			CheckedAt  *time.Time `json:"checkedAt"`
+		} `json:"loadBalancer"`
 		Host *struct {
 			CPU *struct {
 				UsagePercent *float64   `json:"usagePercent"`
@@ -146,7 +166,12 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 		heartbeatAt = body.At.UTC()
 	}
 
-	if err := h.heartbeats.RecordOrchestratorHeartbeat(r.Context(), heartbeatAt); err != nil {
+	storeAccessible := true
+	if body.Orchestrator != nil && body.Orchestrator.StoreAccessible != nil {
+		storeAccessible = *body.Orchestrator.StoreAccessible
+	}
+
+	if err := h.heartbeats.RecordOrchestratorHeartbeat(r.Context(), heartbeatAt, storeAccessible); err != nil {
 		http.Error(w, "failed to record heartbeat", http.StatusInternalServerError)
 		return
 	}
@@ -164,6 +189,23 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 
 		if err := h.docker.RecordDockerConnectivity(r.Context(), *body.Docker.Reachable, dockerCheckedAt); err != nil {
 			http.Error(w, "failed to record docker connectivity", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if body.LoadBalancer != nil && body.LoadBalancer.Responding != nil {
+		if h.loadBalancer == nil {
+			http.Error(w, "system status unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		checkedAt := heartbeatAt
+		if body.LoadBalancer.CheckedAt != nil {
+			checkedAt = body.LoadBalancer.CheckedAt.UTC()
+		}
+
+		if err := h.loadBalancer.RecordLoadBalancerHealth(r.Context(), *body.LoadBalancer.Responding, checkedAt); err != nil {
+			http.Error(w, "failed to record load balancer health", http.StatusInternalServerError)
 			return
 		}
 	}

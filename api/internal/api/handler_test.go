@@ -258,6 +258,9 @@ func TestSystemStatus_UnavailableOnProviderError(t *testing.T) {
 	if body.Docker.State != api.SystemStatusStateUnavailable {
 		t.Errorf("want docker state unavailable, got %s", body.Docker.State)
 	}
+	if body.LoadBalancer.State != api.SystemStatusStateUnavailable {
+		t.Errorf("want load balancer state unavailable, got %s", body.LoadBalancer.State)
+	}
 	if body.Host.CPU.State != api.SystemStatusStateUnavailable {
 		t.Errorf("want cpu state unavailable, got %s", body.Host.CPU.State)
 	}
@@ -428,6 +431,50 @@ func TestRecordOrchestratorHeartbeat_UpdatesHostMetrics(t *testing.T) {
 	}
 	if body.Host.RAM.LastUpdated.IsZero() {
 		t.Fatal("want non-zero ram lastUpdated")
+	}
+}
+
+func TestRecordOrchestratorHeartbeat_UpdatesLoadBalancerHealth(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	reqBody := `{"loadBalancer":{"responding":false}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/system-status/orchestrator-heartbeat", bytes.NewBufferString(reqBody))
+	if err != nil {
+		t.Fatalf("POST heartbeat request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/system-status/orchestrator-heartbeat: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", resp.StatusCode)
+	}
+
+	statusResp, err := http.Get(srv.URL + "/api/system-status")
+	if err != nil {
+		t.Fatalf("GET /api/system-status: %v", err)
+	}
+	defer statusResp.Body.Close()
+
+	if statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", statusResp.StatusCode)
+	}
+
+	var body api.SystemStatusSnapshot
+	if err := json.NewDecoder(statusResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.LoadBalancer.State != api.SystemStatusStateDegraded {
+		t.Fatalf("want load balancer state degraded, got %s", body.LoadBalancer.State)
+	}
+	if body.LoadBalancer.LastUpdated == nil || body.LoadBalancer.LastUpdated.IsZero() {
+		t.Fatal("want non-zero load balancer lastUpdated")
 	}
 }
 

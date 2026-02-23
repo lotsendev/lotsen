@@ -169,8 +169,8 @@ func TestSetRoute_MissingFields(t *testing.T) {
 
 	cases := []map[string]string{
 		{"upstream": "localhost:3000"}, // missing domain
-		{"domain": "example.com"},     // missing upstream
-		{},                            // both missing
+		{"domain": "example.com"},      // missing upstream
+		{},                             // both missing
 	}
 
 	for _, payload := range cases {
@@ -198,6 +198,21 @@ func TestSetRoute_InvalidBody(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestHealth_Returns200(t *testing.T) {
+	proxy := newProxyServer(newTestTable())
+	defer proxy.Close()
+
+	resp, err := http.Get(proxy.URL + "/internal/health")
+	if err != nil {
+		t.Fatalf("GET /internal/health: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
 	}
 }
 

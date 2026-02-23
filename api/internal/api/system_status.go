@@ -13,26 +13,55 @@ type SystemStatusState string
 const (
 	SystemStatusStateHealthy     SystemStatusState = "healthy"
 	SystemStatusStateDegraded    SystemStatusState = "degraded"
-	SystemStatusStateStale       SystemStatusState = "stale"
 	SystemStatusStateUnavailable SystemStatusState = "unavailable"
 )
 
+type APISystemStatusChecks struct {
+	ProcessRunning     bool `json:"processRunning"`
+	DashboardReachable bool `json:"dashboardReachable"`
+	StoreAccessible    bool `json:"storeAccessible"`
+}
+
 // APISystemStatus carries API availability and freshness information.
 type APISystemStatus struct {
-	State       SystemStatusState `json:"state"`
-	LastUpdated time.Time         `json:"lastUpdated"`
+	State       SystemStatusState     `json:"state"`
+	LastUpdated time.Time             `json:"lastUpdated"`
+	Checks      APISystemStatusChecks `json:"checks"`
+}
+
+type OrchestratorSystemStatusChecks struct {
+	ProcessRunning  bool `json:"processRunning"`
+	DockerReachable bool `json:"dockerReachable"`
+	StoreAccessible bool `json:"storeAccessible"`
 }
 
 // OrchestratorSystemStatus carries orchestrator liveness and freshness information.
 type OrchestratorSystemStatus struct {
-	State       SystemStatusState `json:"state"`
-	LastUpdated *time.Time        `json:"lastUpdated,omitempty"`
+	State       SystemStatusState              `json:"state"`
+	LastUpdated *time.Time                     `json:"lastUpdated,omitempty"`
+	Checks      OrchestratorSystemStatusChecks `json:"checks"`
+}
+
+type LoadBalancerSystemStatusChecks struct {
+	ProcessRunning        bool `json:"processRunning"`
+	HealthcheckResponding bool `json:"healthcheckResponding"`
+}
+
+type LoadBalancerSystemStatus struct {
+	State       SystemStatusState              `json:"state"`
+	LastUpdated *time.Time                     `json:"lastUpdated,omitempty"`
+	Checks      LoadBalancerSystemStatusChecks `json:"checks"`
+}
+
+type DockerSystemStatusChecks struct {
+	DaemonHealthy bool `json:"daemonHealthy"`
 }
 
 // DockerSystemStatus carries Docker connectivity information as observed by the orchestrator.
 type DockerSystemStatus struct {
-	State       SystemStatusState `json:"state"`
-	LastUpdated *time.Time        `json:"lastUpdated,omitempty"`
+	State       SystemStatusState        `json:"state"`
+	LastUpdated *time.Time               `json:"lastUpdated,omitempty"`
+	Checks      DockerSystemStatusChecks `json:"checks"`
 }
 
 // HostMetricSystemStatus carries a host metric signal value and freshness information.
@@ -52,6 +81,7 @@ type HostSystemStatus struct {
 type SystemStatusSnapshot struct {
 	API          APISystemStatus          `json:"api"`
 	Orchestrator OrchestratorSystemStatus `json:"orchestrator"`
+	LoadBalancer LoadBalancerSystemStatus `json:"loadBalancer"`
 	Docker       DockerSystemStatus       `json:"docker"`
 	Host         HostSystemStatus         `json:"host"`
 	Error        string                   `json:"error,omitempty"`
@@ -64,12 +94,16 @@ type SystemStatusProvider interface {
 
 // OrchestratorHeartbeatIngestor accepts orchestrator heartbeat updates.
 type OrchestratorHeartbeatIngestor interface {
-	RecordOrchestratorHeartbeat(ctx context.Context, at time.Time) error
+	RecordOrchestratorHeartbeat(ctx context.Context, at time.Time, storeAccessible bool) error
 }
 
 // DockerConnectivityIngestor accepts Docker connectivity observations.
 type DockerConnectivityIngestor interface {
 	RecordDockerConnectivity(ctx context.Context, reachable bool, at time.Time) error
+}
+
+type LoadBalancerHealthIngestor interface {
+	RecordLoadBalancerHealth(ctx context.Context, responding bool, at time.Time) error
 }
 
 // CPUUtilizationIngestor accepts host CPU utilization observations.
@@ -83,20 +117,35 @@ type RAMUtilizationIngestor interface {
 }
 
 type defaultSystemStatusProvider struct {
-	now              func() time.Time
-	staleAfter       time.Duration
-	lastHeartbeatMu  sync.RWMutex
+	now                func() time.Time
+	staleAfter         time.Duration
+	apiStoreCheck      func(context.Context) bool
+	lastHeartbeatMu    sync.RWMutex
+	orchestratorSignal orchestratorHeartbeatSignal
+	dockerSignalMu     sync.RWMutex
+	dockerSignal       dockerConnectivitySignal
+	loadBalancerMu     sync.RWMutex
+	loadBalancerSignal loadBalancerHealthSignal
+	hostSignalMu       sync.RWMutex
+	cpuSignal          hostMetricSignal
+	ramSignal          hostMetricSignal
+}
+
+type orchestratorHeartbeatSignal struct {
 	lastHeartbeatUTC time.Time
-	dockerSignalMu   sync.RWMutex
-	dockerSignal     dockerConnectivitySignal
-	hostSignalMu     sync.RWMutex
-	cpuSignal        hostMetricSignal
-	ramSignal        hostMetricSignal
+	storeAccessible  bool
+	hasSignal        bool
 }
 
 type dockerConnectivitySignal struct {
 	lastCheckedUTC time.Time
 	reachable      bool
+	hasSignal      bool
+}
+
+type loadBalancerHealthSignal struct {
+	lastCheckedUTC time.Time
+	responding     bool
 	hasSignal      bool
 }
 
@@ -106,19 +155,34 @@ type hostMetricSignal struct {
 	hasSignal      bool
 }
 
-func newDefaultSystemStatusProvider(now func() time.Time, staleAfter time.Duration) SystemStatusProvider {
-	return &defaultSystemStatusProvider{now: now, staleAfter: staleAfter}
+func newDefaultSystemStatusProvider(now func() time.Time, staleAfter time.Duration, apiStoreCheck func(context.Context) bool) SystemStatusProvider {
+	if apiStoreCheck == nil {
+		apiStoreCheck = func(context.Context) bool { return true }
+	}
+
+	return &defaultSystemStatusProvider{now: now, staleAfter: staleAfter, apiStoreCheck: apiStoreCheck}
 }
 
-func (p *defaultSystemStatusProvider) Snapshot(_ context.Context) (SystemStatusSnapshot, error) {
+func (p *defaultSystemStatusProvider) Snapshot(ctx context.Context) (SystemStatusSnapshot, error) {
 	orchestrator := p.orchestratorStatus()
+	storeAccessible := p.apiStoreCheck(ctx)
+	apiState := SystemStatusStateHealthy
+	if !storeAccessible {
+		apiState = SystemStatusStateDegraded
+	}
 
 	return SystemStatusSnapshot{
 		API: APISystemStatus{
-			State:       SystemStatusStateHealthy,
+			State:       apiState,
 			LastUpdated: p.now().UTC(),
+			Checks: APISystemStatusChecks{
+				ProcessRunning:     true,
+				DashboardReachable: true,
+				StoreAccessible:    storeAccessible,
+			},
 		},
 		Orchestrator: orchestrator,
+		LoadBalancer: p.loadBalancerStatus(),
 		Docker:       p.dockerStatus(),
 		Host: HostSystemStatus{
 			CPU: p.cpuStatus(),
@@ -127,13 +191,17 @@ func (p *defaultSystemStatusProvider) Snapshot(_ context.Context) (SystemStatusS
 	}, nil
 }
 
-func (p *defaultSystemStatusProvider) RecordOrchestratorHeartbeat(_ context.Context, at time.Time) error {
+func (p *defaultSystemStatusProvider) RecordOrchestratorHeartbeat(_ context.Context, at time.Time, storeAccessible bool) error {
 	if at.IsZero() {
 		at = p.now()
 	}
 
 	p.lastHeartbeatMu.Lock()
-	p.lastHeartbeatUTC = at.UTC()
+	p.orchestratorSignal = orchestratorHeartbeatSignal{
+		lastHeartbeatUTC: at.UTC(),
+		storeAccessible:  storeAccessible,
+		hasSignal:        true,
+	}
 	p.lastHeartbeatMu.Unlock()
 
 	return nil
@@ -141,31 +209,35 @@ func (p *defaultSystemStatusProvider) RecordOrchestratorHeartbeat(_ context.Cont
 
 func (p *defaultSystemStatusProvider) orchestratorStatus() OrchestratorSystemStatus {
 	p.lastHeartbeatMu.RLock()
-	lastHeartbeat := p.lastHeartbeatUTC
+	signal := p.orchestratorSignal
 	p.lastHeartbeatMu.RUnlock()
 
-	if lastHeartbeat.IsZero() {
+	if !signal.hasSignal {
 		return OrchestratorSystemStatus{State: SystemStatusStateUnavailable}
 	}
+	lastHeartbeat := signal.lastHeartbeatUTC
+
+	dockerState := p.dockerStatus()
+	dockerReachable := dockerState.Checks.DaemonHealthy
 
 	age := p.now().UTC().Sub(lastHeartbeat)
 	if age < 0 {
 		age = 0
 	}
 
-	degradedAfter := p.staleAfter / 2
-	state := SystemStatusStateStale
-
-	switch {
-	case age <= degradedAfter:
-		state = SystemStatusStateHealthy
-	case age <= p.staleAfter:
+	state := SystemStatusStateHealthy
+	if age > p.staleAfter || !signal.storeAccessible || !dockerReachable {
 		state = SystemStatusStateDegraded
 	}
 
 	return OrchestratorSystemStatus{
 		State:       state,
 		LastUpdated: &lastHeartbeat,
+		Checks: OrchestratorSystemStatusChecks{
+			ProcessRunning:  true,
+			DockerReachable: dockerReachable,
+			StoreAccessible: signal.storeAccessible,
+		},
 	}
 }
 
@@ -201,8 +273,9 @@ func (p *defaultSystemStatusProvider) dockerStatus() DockerSystemStatus {
 	checkedAt := signal.lastCheckedUTC
 	if age > p.staleAfter {
 		return DockerSystemStatus{
-			State:       SystemStatusStateStale,
+			State:       SystemStatusStateDegraded,
 			LastUpdated: &checkedAt,
+			Checks:      DockerSystemStatusChecks{DaemonHealthy: false},
 		}
 	}
 
@@ -214,6 +287,53 @@ func (p *defaultSystemStatusProvider) dockerStatus() DockerSystemStatus {
 	return DockerSystemStatus{
 		State:       state,
 		LastUpdated: &checkedAt,
+		Checks:      DockerSystemStatusChecks{DaemonHealthy: signal.reachable},
+	}
+}
+
+func (p *defaultSystemStatusProvider) RecordLoadBalancerHealth(_ context.Context, responding bool, at time.Time) error {
+	if at.IsZero() {
+		at = p.now()
+	}
+
+	p.loadBalancerMu.Lock()
+	p.loadBalancerSignal = loadBalancerHealthSignal{
+		lastCheckedUTC: at.UTC(),
+		responding:     responding,
+		hasSignal:      true,
+	}
+	p.loadBalancerMu.Unlock()
+
+	return nil
+}
+
+func (p *defaultSystemStatusProvider) loadBalancerStatus() LoadBalancerSystemStatus {
+	p.loadBalancerMu.RLock()
+	signal := p.loadBalancerSignal
+	p.loadBalancerMu.RUnlock()
+
+	if !signal.hasSignal {
+		return LoadBalancerSystemStatus{State: SystemStatusStateUnavailable}
+	}
+
+	age := p.now().UTC().Sub(signal.lastCheckedUTC)
+	if age < 0 {
+		age = 0
+	}
+
+	state := SystemStatusStateHealthy
+	if age > p.staleAfter || !signal.responding {
+		state = SystemStatusStateDegraded
+	}
+
+	checkedAt := signal.lastCheckedUTC
+	return LoadBalancerSystemStatus{
+		State:       state,
+		LastUpdated: &checkedAt,
+		Checks: LoadBalancerSystemStatusChecks{
+			ProcessRunning:        true,
+			HealthcheckResponding: signal.responding,
+		},
 	}
 }
 
@@ -259,8 +379,12 @@ func (p *defaultSystemStatusProvider) cpuStatus() HostMetricSystemStatus {
 	}
 
 	cpuCheckedAt := signal.lastCheckedUTC
+	state := SystemStatusStateHealthy
+	if p.now().UTC().Sub(cpuCheckedAt) > p.staleAfter {
+		state = SystemStatusStateDegraded
+	}
 	return HostMetricSystemStatus{
-		State:        SystemStatusStateHealthy,
+		State:        state,
 		UsagePercent: signal.usagePercent,
 		LastUpdated:  &cpuCheckedAt,
 	}
@@ -276,8 +400,12 @@ func (p *defaultSystemStatusProvider) ramStatus() HostMetricSystemStatus {
 	}
 
 	ramCheckedAt := signal.lastCheckedUTC
+	state := SystemStatusStateHealthy
+	if p.now().UTC().Sub(ramCheckedAt) > p.staleAfter {
+		state = SystemStatusStateDegraded
+	}
 	return HostMetricSystemStatus{
-		State:        SystemStatusStateHealthy,
+		State:        state,
 		UsagePercent: signal.usagePercent,
 		LastUpdated:  &ramCheckedAt,
 	}
@@ -292,6 +420,7 @@ func (h *Handler) systemStatus(w http.ResponseWriter, r *http.Request) {
 				LastUpdated: time.Now().UTC(),
 			},
 			Orchestrator: OrchestratorSystemStatus{State: SystemStatusStateUnavailable},
+			LoadBalancer: LoadBalancerSystemStatus{State: SystemStatusStateUnavailable},
 			Docker:       DockerSystemStatus{State: SystemStatusStateUnavailable},
 			Host: HostSystemStatus{
 				CPU: HostMetricSystemStatus{State: SystemStatusStateUnavailable},

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -58,6 +60,10 @@ func main() {
 	if v := os.Getenv("DIRIGENT_API_URL"); v != "" {
 		apiURL = v
 	}
+	proxyHealthURL := "http://localhost/internal/health"
+	if v := os.Getenv("DIRIGENT_PROXY_HEALTH_URL"); v != "" {
+		proxyHealthURL = v
+	}
 	notifier := apiclient.New(apiURL)
 	metrics := hostmetrics.NewCollector()
 
@@ -76,6 +82,8 @@ func main() {
 		case <-ticker.C:
 			now := time.Now().UTC()
 			dockerReachable := true
+			loadBalancerResponding := false
+			storeAccessible := true
 			var cpuUsagePercent *float64
 			var ramUsagePercent *float64
 
@@ -86,6 +94,17 @@ func main() {
 				log.Printf("orchestrator: docker unreachable: %v", err)
 			}
 			pingCancel()
+
+			if _, err := s.List(); err != nil {
+				storeAccessible = false
+				log.Printf("orchestrator: store unavailable: %v", err)
+			}
+
+			if err := probeProxyHealth(ctx, proxyHealthURL); err != nil {
+				log.Printf("orchestrator: load balancer healthcheck failed: %v", err)
+			} else {
+				loadBalancerResponding = true
+			}
 
 			if usage, ok, err := metrics.CPUUsagePercent(); err != nil {
 				log.Printf("orchestrator: collect cpu telemetry: %v", err)
@@ -100,7 +119,7 @@ func main() {
 			}
 
 			// Heartbeat is always sent, regardless of Docker state.
-			if err := notifier.NotifyHeartbeat(dockerReachable, now, cpuUsagePercent, ramUsagePercent); err != nil {
+			if err := notifier.NotifyHeartbeat(dockerReachable, loadBalancerResponding, storeAccessible, now, cpuUsagePercent, ramUsagePercent); err != nil {
 				log.Printf("orchestrator: notify heartbeat: %v", err)
 			}
 
@@ -115,4 +134,26 @@ func main() {
 			return
 		}
 	}
+}
+
+func probeProxyHealth(ctx context.Context, healthURL string) error {
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, healthURL, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+
+	return nil
 }

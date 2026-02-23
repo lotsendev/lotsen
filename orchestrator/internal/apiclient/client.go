@@ -17,14 +17,25 @@ type Client struct {
 }
 
 type heartbeatRequest struct {
-	At     time.Time            `json:"at"`
-	Docker heartbeatDockerState `json:"docker"`
-	Host   *heartbeatHostState  `json:"host,omitempty"`
+	At           time.Time                  `json:"at"`
+	Orchestrator heartbeatOrchestratorState `json:"orchestrator"`
+	Docker       heartbeatDockerState       `json:"docker"`
+	LoadBalancer heartbeatLoadBalancerState `json:"loadBalancer"`
+	Host         *heartbeatHostState        `json:"host,omitempty"`
+}
+
+type heartbeatOrchestratorState struct {
+	StoreAccessible bool `json:"storeAccessible"`
 }
 
 type heartbeatDockerState struct {
 	Reachable bool      `json:"reachable"`
 	CheckedAt time.Time `json:"checkedAt"`
+}
+
+type heartbeatLoadBalancerState struct {
+	Responding bool      `json:"responding"`
+	CheckedAt  time.Time `json:"checkedAt"`
 }
 
 type heartbeatHostState struct {
@@ -78,7 +89,7 @@ func (c *Client) NotifyStatus(id string, status store.Status, errorMessage strin
 
 // NotifyHeartbeat calls POST /api/system-status/orchestrator-heartbeat so the
 // API can update orchestrator liveness, Docker connectivity, and host metrics.
-func (c *Client) NotifyHeartbeat(dockerReachable bool, checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64) error {
+func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bool, storeAccessible bool, checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64) error {
 	if checkedAt.IsZero() {
 		checkedAt = time.Now().UTC()
 	} else {
@@ -89,9 +100,16 @@ func (c *Client) NotifyHeartbeat(dockerReachable bool, checkedAt time.Time, cpuU
 
 	body, err := json.Marshal(heartbeatRequest{
 		At: checkedAt,
+		Orchestrator: heartbeatOrchestratorState{
+			StoreAccessible: storeAccessible,
+		},
 		Docker: heartbeatDockerState{
 			Reachable: dockerReachable,
 			CheckedAt: checkedAt,
+		},
+		LoadBalancer: heartbeatLoadBalancerState{
+			Responding: loadBalancerResponding,
+			CheckedAt:  checkedAt,
 		},
 		Host: host,
 	})

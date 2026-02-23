@@ -35,14 +35,35 @@ describe('SystemStatusPanel', () => {
       api: {
         state: 'healthy',
         lastUpdated,
+        checks: {
+          processRunning: true,
+          dashboardReachable: true,
+          storeAccessible: true,
+        },
       },
       orchestrator: {
         state: 'healthy',
         lastUpdated,
+        checks: {
+          processRunning: true,
+          dockerReachable: true,
+          storeAccessible: true,
+        },
+      },
+      loadBalancer: {
+        state: 'healthy',
+        lastUpdated,
+        checks: {
+          processRunning: true,
+          healthcheckResponding: true,
+        },
       },
       docker: {
         state: 'healthy',
         lastUpdated,
+        checks: {
+          daemonHealthy: true,
+        },
       },
       host: {
         cpu: {
@@ -60,25 +81,31 @@ describe('SystemStatusPanel', () => {
 
     renderWithQuery(<SystemStatusPanel />)
 
-    await waitFor(() => expect(screen.getAllByText('healthy')).toHaveLength(3))
+    await waitFor(() => expect(screen.getAllByText('healthy')).toHaveLength(4))
     expect(screen.getByText('API signal')).toBeInTheDocument()
     expect(screen.getByText('Orchestrator')).toBeInTheDocument()
     expect(screen.getByText('Docker connectivity')).toBeInTheDocument()
+    expect(screen.getByText('Load balancer')).toBeInTheDocument()
     expect(screen.getByText('Services')).toBeInTheDocument()
     expect(screen.getByText('Host metrics')).toBeInTheDocument()
     expect(screen.getByText('CPU usage')).toBeInTheDocument()
     expect(screen.getByText('RAM usage')).toBeInTheDocument()
     expect(screen.getByText(/Last heartbeat:/)).toBeInTheDocument()
-    expect(screen.getByText(/Last checked:/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Last checked:/)).toHaveLength(2)
     expect(screen.getByText(/Freshness:/)).toBeInTheDocument()
     expect(screen.getByText('Docker is reachable from orchestrator')).toBeInTheDocument()
     expect(screen.getAllByText('healthy pressure')).toHaveLength(2)
     expect(screen.getByTestId('api-status-icon')).toBeInTheDocument()
     expect(screen.getByTestId('orchestrator-status-icon')).toBeInTheDocument()
     expect(screen.getByTestId('docker-status-icon')).toBeInTheDocument()
+    expect(screen.getByTestId('load-balancer-status-icon')).toBeInTheDocument()
     expect(screen.getByText('Reading: 31.2%')).toBeInTheDocument()
     expect(screen.getByText('Reading: 45.8%')).toBeInTheDocument()
-    expect(screen.getAllByText(new RegExp(new Date(lastUpdated).toLocaleString()), { selector: 'p' })).toHaveLength(5)
+    expect(screen.getAllByText('Checks')).toHaveLength(4)
+    expect(screen.getByTestId('api-check-0-pass')).toBeInTheDocument()
+    expect(screen.getByTestId('docker-check-0-pass')).toBeInTheDocument()
+    expect(screen.getByTestId('load-balancer-check-1-pass')).toBeInTheDocument()
+    expect(screen.getAllByText(new RegExp(new Date(lastUpdated).toLocaleString()), { selector: 'p' })).toHaveLength(6)
   })
 
   it('renders degraded orchestrator and docker states', async () => {
@@ -88,14 +115,35 @@ describe('SystemStatusPanel', () => {
       api: {
         state: 'healthy',
         lastUpdated: apiUpdated,
+        checks: {
+          processRunning: true,
+          dashboardReachable: true,
+          storeAccessible: true,
+        },
       },
       orchestrator: {
         state: 'degraded',
         lastUpdated: orchestratorUpdated,
+        checks: {
+          processRunning: true,
+          dockerReachable: false,
+          storeAccessible: false,
+        },
+      },
+      loadBalancer: {
+        state: 'degraded',
+        lastUpdated: orchestratorUpdated,
+        checks: {
+          processRunning: true,
+          healthcheckResponding: false,
+        },
       },
       docker: {
         state: 'degraded',
         lastUpdated: orchestratorUpdated,
+        checks: {
+          daemonHealthy: false,
+        },
       },
       host: {
         cpu: {
@@ -113,23 +161,29 @@ describe('SystemStatusPanel', () => {
 
     renderWithQuery(<SystemStatusPanel />)
 
-    await waitFor(() => expect(screen.getAllByText('degraded')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByText('degraded')).toHaveLength(3))
     expect(screen.getByText('Docker check failed at last probe')).toBeInTheDocument()
+    expect(screen.getByText('Load balancer healthcheck failed at last probe')).toBeInTheDocument()
+    expect(screen.getByTestId('orchestrator-check-1-fail')).toBeInTheDocument()
+    expect(screen.getByTestId('orchestrator-check-2-fail')).toBeInTheDocument()
+    expect(screen.getByTestId('docker-check-0-fail')).toBeInTheDocument()
     expect(screen.getAllByText('degraded pressure')).toHaveLength(2)
-    expect(screen.getAllByText(new RegExp(new Date(orchestratorUpdated).toLocaleString()), { selector: 'p' })).toHaveLength(4)
+    expect(screen.getAllByText(new RegExp(new Date(orchestratorUpdated).toLocaleString()), { selector: 'p' })).toHaveLength(5)
   })
 
-  it('renders stale orchestrator state and freshness', async () => {
+  it('renders unavailable load balancer telemetry explicitly', async () => {
     const apiUpdated = '2026-02-22T12:00:00.000Z'
-    const orchestratorUpdated = '2026-02-22T11:40:00.000Z'
     vi.mocked(api.getSystemStatus).mockResolvedValue({
       api: {
         state: 'healthy',
         lastUpdated: apiUpdated,
       },
       orchestrator: {
-        state: 'stale',
-        lastUpdated: orchestratorUpdated,
+        state: 'healthy',
+        lastUpdated: apiUpdated,
+      },
+      loadBalancer: {
+        state: 'unavailable',
       },
       docker: {
         state: 'healthy',
@@ -151,8 +205,8 @@ describe('SystemStatusPanel', () => {
 
     renderWithQuery(<SystemStatusPanel />)
 
-    await waitFor(() => expect(screen.getByText('stale')).toBeInTheDocument())
-    expect(screen.getByText(/ago|just now/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Load balancer')).toBeInTheDocument())
+    expect(screen.getByText('No load balancer telemetry yet')).toBeInTheDocument()
   })
 
   it('renders unavailable docker telemetry explicitly', async () => {
@@ -163,6 +217,10 @@ describe('SystemStatusPanel', () => {
         lastUpdated: apiUpdated,
       },
       orchestrator: {
+        state: 'healthy',
+        lastUpdated: apiUpdated,
+      },
+      loadBalancer: {
         state: 'healthy',
         lastUpdated: apiUpdated,
       },

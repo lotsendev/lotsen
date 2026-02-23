@@ -13,3 +13,4 @@ control-plane/tmp/
 **/*/tmp/*
 
 **/*/node_modules
+**/*/.vite

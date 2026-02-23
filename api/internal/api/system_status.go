@@ -26,20 +26,20 @@ type APISystemStatus struct {
 // OrchestratorSystemStatus carries orchestrator liveness and freshness information.
 type OrchestratorSystemStatus struct {
 	State       SystemStatusState `json:"state"`
-	LastUpdated time.Time         `json:"lastUpdated,omitempty"`
+	LastUpdated *time.Time        `json:"lastUpdated,omitempty"`
 }
 
 // DockerSystemStatus carries Docker connectivity information as observed by the orchestrator.
 type DockerSystemStatus struct {
 	State       SystemStatusState `json:"state"`
-	LastUpdated time.Time         `json:"lastUpdated,omitempty"`
+	LastUpdated *time.Time        `json:"lastUpdated,omitempty"`
 }
 
 // HostMetricSystemStatus carries a host metric signal value and freshness information.
 type HostMetricSystemStatus struct {
 	State        SystemStatusState `json:"state"`
 	UsagePercent float64           `json:"usagePercent,omitempty"`
-	LastUpdated  time.Time         `json:"lastUpdated,omitempty"`
+	LastUpdated  *time.Time        `json:"lastUpdated,omitempty"`
 }
 
 // HostSystemStatus carries host-level runtime utilization signals.
@@ -165,7 +165,7 @@ func (p *defaultSystemStatusProvider) orchestratorStatus() OrchestratorSystemSta
 
 	return OrchestratorSystemStatus{
 		State:       state,
-		LastUpdated: lastHeartbeat,
+		LastUpdated: &lastHeartbeat,
 	}
 }
 
@@ -194,6 +194,18 @@ func (p *defaultSystemStatusProvider) dockerStatus() DockerSystemStatus {
 		return DockerSystemStatus{State: SystemStatusStateUnavailable}
 	}
 
+	age := p.now().UTC().Sub(signal.lastCheckedUTC)
+	if age < 0 {
+		age = 0
+	}
+	checkedAt := signal.lastCheckedUTC
+	if age > p.staleAfter {
+		return DockerSystemStatus{
+			State:       SystemStatusStateStale,
+			LastUpdated: &checkedAt,
+		}
+	}
+
 	state := SystemStatusStateDegraded
 	if signal.reachable {
 		state = SystemStatusStateHealthy
@@ -201,7 +213,7 @@ func (p *defaultSystemStatusProvider) dockerStatus() DockerSystemStatus {
 
 	return DockerSystemStatus{
 		State:       state,
-		LastUpdated: signal.lastCheckedUTC,
+		LastUpdated: &checkedAt,
 	}
 }
 
@@ -246,10 +258,11 @@ func (p *defaultSystemStatusProvider) cpuStatus() HostMetricSystemStatus {
 		return HostMetricSystemStatus{State: SystemStatusStateUnavailable}
 	}
 
+	cpuCheckedAt := signal.lastCheckedUTC
 	return HostMetricSystemStatus{
 		State:        SystemStatusStateHealthy,
 		UsagePercent: signal.usagePercent,
-		LastUpdated:  signal.lastCheckedUTC,
+		LastUpdated:  &cpuCheckedAt,
 	}
 }
 
@@ -262,10 +275,11 @@ func (p *defaultSystemStatusProvider) ramStatus() HostMetricSystemStatus {
 		return HostMetricSystemStatus{State: SystemStatusStateUnavailable}
 	}
 
+	ramCheckedAt := signal.lastCheckedUTC
 	return HostMetricSystemStatus{
 		State:        SystemStatusStateHealthy,
 		UsagePercent: signal.usagePercent,
-		LastUpdated:  signal.lastCheckedUTC,
+		LastUpdated:  &ramCheckedAt,
 	}
 }
 

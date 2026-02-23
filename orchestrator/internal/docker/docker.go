@@ -144,7 +144,7 @@ func (d *Docker) ListManagedContainers(ctx context.Context) ([]ManagedContainer,
 		Filters: f,
 	})
 	if err != nil {
-		if dockerclient.IsErrConnectionFailed(err) {
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
 		}
 		return nil, fmt.Errorf("docker: list containers: %w", err)

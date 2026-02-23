@@ -48,9 +48,11 @@ func main() {
 
 	d := docker.New(cli)
 
-	if err := d.Ping(context.Background()); err != nil {
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := d.Ping(startupCtx); err != nil {
 		log.Printf("orchestrator: warning: docker unavailable at startup: %v", err)
 	}
+	startupCancel()
 
 	apiURL := "http://localhost:8080"
 	if v := os.Getenv("DIRIGENT_API_URL"); v != "" {
@@ -76,10 +78,14 @@ func main() {
 			dockerReachable := true
 			var cpuUsagePercent *float64
 			var ramUsagePercent *float64
-			if err := d.Ping(ctx); err != nil {
+
+			// Ping with a hard deadline so a hung Docker socket never delays the heartbeat.
+			pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+			if err := d.Ping(pingCtx); err != nil {
 				dockerReachable = false
 				log.Printf("orchestrator: docker unreachable: %v", err)
 			}
+			pingCancel()
 
 			if usage, ok, err := metrics.CPUUsagePercent(); err != nil {
 				log.Printf("orchestrator: collect cpu telemetry: %v", err)
@@ -93,13 +99,17 @@ func main() {
 				ramUsagePercent = &usage
 			}
 
+			// Heartbeat is always sent, regardless of Docker state.
 			if err := notifier.NotifyHeartbeat(dockerReachable, now, cpuUsagePercent, ramUsagePercent); err != nil {
 				log.Printf("orchestrator: notify heartbeat: %v", err)
 			}
 
-			if err := r.Reconcile(ctx); err != nil {
+			// Reconcile with a deadline shorter than the interval so it cannot starve the next tick.
+			reconcileCtx, reconcileCancel := context.WithTimeout(ctx, interval*9/10)
+			if err := r.Reconcile(reconcileCtx); err != nil {
 				log.Printf("orchestrator: reconcile: %v", err)
 			}
+			reconcileCancel()
 		case <-ctx.Done():
 			log.Println("orchestrator: shutting down")
 			return

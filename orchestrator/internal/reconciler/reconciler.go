@@ -2,7 +2,6 @@ package reconciler
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 
@@ -12,6 +11,7 @@ import (
 
 // Docker is the container management interface required by the reconciler.
 type Docker interface {
+	Ping(ctx context.Context) error
 	Start(ctx context.Context, d store.Deployment) ([]string, error)
 	StartAndReplace(ctx context.Context, d store.Deployment, oldContainerID string) ([]string, error)
 	ListManagedContainers(ctx context.Context) ([]docker.ManagedContainer, error)
@@ -51,15 +51,20 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("reconcile: list deployments: %w", err)
 	}
 
-	containers, err := r.docker.ListManagedContainers(ctx)
-	if err != nil {
-		if errors.Is(err, docker.ErrDockerUnavailable) {
-			for _, d := range deployments {
-				if d.Status == store.StatusHealthy || d.Status == store.StatusDeploying {
-					r.updateStatus(d.ID, store.StatusFailed, "docker daemon is unavailable")
-				}
+	// Check Docker availability before any container operations. If the daemon
+	// is unreachable we update the store directly — no Docker calls required —
+	// so active deployments reflect reality even when Docker is fully down.
+	if err := r.docker.Ping(ctx); err != nil {
+		for _, d := range deployments {
+			if d.Status == store.StatusHealthy || d.Status == store.StatusDeploying {
+				r.updateStatus(d.ID, store.StatusFailed, "docker daemon is unavailable")
 			}
 		}
+		return fmt.Errorf("reconcile: docker unavailable: %w", err)
+	}
+
+	containers, err := r.docker.ListManagedContainers(ctx)
+	if err != nil {
 		return fmt.Errorf("reconcile: list containers: %w", err)
 	}
 

@@ -73,8 +73,8 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 			if snapshot.Orchestrator.State != tc.wantState {
 				t.Fatalf("want state %s, got %s", tc.wantState, snapshot.Orchestrator.State)
 			}
-			if !snapshot.Orchestrator.LastUpdated.Equal(base) {
-				t.Fatalf("want lastUpdated %s, got %s", base, snapshot.Orchestrator.LastUpdated)
+			if snapshot.Orchestrator.LastUpdated == nil || !snapshot.Orchestrator.LastUpdated.Equal(base) {
+				t.Fatalf("want lastUpdated %s, got %v", base, snapshot.Orchestrator.LastUpdated)
 			}
 		})
 	}
@@ -91,8 +91,8 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 	if snapshot.Docker.State != SystemStatusStateHealthy {
 		t.Fatalf("want docker state healthy, got %s", snapshot.Docker.State)
 	}
-	if !snapshot.Docker.LastUpdated.Equal(base.Add(2 * time.Second)) {
-		t.Fatalf("want docker lastUpdated %s, got %s", base.Add(2*time.Second), snapshot.Docker.LastUpdated)
+	if snapshot.Docker.LastUpdated == nil || !snapshot.Docker.LastUpdated.Equal(base.Add(2*time.Second)) {
+		t.Fatalf("want docker lastUpdated %s, got %v", base.Add(2*time.Second), snapshot.Docker.LastUpdated)
 	}
 
 	if err := dockerIngestor.RecordDockerConnectivity(context.Background(), false, base.Add(3*time.Second)); err != nil {
@@ -106,8 +106,8 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 	if snapshot.Docker.State != SystemStatusStateDegraded {
 		t.Fatalf("want docker state degraded, got %s", snapshot.Docker.State)
 	}
-	if !snapshot.Docker.LastUpdated.Equal(base.Add(3 * time.Second)) {
-		t.Fatalf("want docker lastUpdated %s, got %s", base.Add(3*time.Second), snapshot.Docker.LastUpdated)
+	if snapshot.Docker.LastUpdated == nil || !snapshot.Docker.LastUpdated.Equal(base.Add(3*time.Second)) {
+		t.Fatalf("want docker lastUpdated %s, got %v", base.Add(3*time.Second), snapshot.Docker.LastUpdated)
 	}
 
 	// Advance time past the stale threshold — Docker signal should go stale even if last
@@ -139,8 +139,8 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 	if snapshot.Host.CPU.UsagePercent != 42.5 {
 		t.Fatalf("want cpu usage 42.5, got %v", snapshot.Host.CPU.UsagePercent)
 	}
-	if !snapshot.Host.CPU.LastUpdated.Equal(base.Add(4 * time.Second)) {
-		t.Fatalf("want cpu lastUpdated %s, got %s", base.Add(4*time.Second), snapshot.Host.CPU.LastUpdated)
+	if snapshot.Host.CPU.LastUpdated == nil || !snapshot.Host.CPU.LastUpdated.Equal(base.Add(4*time.Second)) {
+		t.Fatalf("want cpu lastUpdated %s, got %v", base.Add(4*time.Second), snapshot.Host.CPU.LastUpdated)
 	}
 	if snapshot.Host.RAM.State != SystemStatusStateUnavailable {
 		t.Fatalf("want ram state unavailable without signal, got %s", snapshot.Host.RAM.State)
@@ -160,7 +160,7 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 	if snapshot.Host.RAM.UsagePercent != 73.2 {
 		t.Fatalf("want ram usage 73.2, got %v", snapshot.Host.RAM.UsagePercent)
 	}
-	if !snapshot.Host.RAM.LastUpdated.Equal(base.Add(5 * time.Second)) {
-		t.Fatalf("want ram lastUpdated %s, got %s", base.Add(5*time.Second), snapshot.Host.RAM.LastUpdated)
+	if snapshot.Host.RAM.LastUpdated == nil || !snapshot.Host.RAM.LastUpdated.Equal(base.Add(5*time.Second)) {
+		t.Fatalf("want ram lastUpdated %s, got %v", base.Add(5*time.Second), snapshot.Host.RAM.LastUpdated)
 	}
 }

@@ -3,7 +3,6 @@ package reconciler_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"testing"
 
@@ -112,6 +111,7 @@ func (m *mockStore) getPorts(id string) []string {
 type mockDocker struct {
 	mu                   sync.Mutex
 	containers           []docker.ManagedContainer
+	pingErr              error
 	listErr              error
 	startErr             error
 	startAndReplaceErr   error
@@ -120,6 +120,12 @@ type mockDocker struct {
 	started              []string
 	replaced             []string // old container IDs passed to StartAndReplace
 	removed              []string
+}
+
+func (m *mockDocker) Ping(_ context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.pingErr
 }
 
 func (m *mockDocker) Start(_ context.Context, d store.Deployment) ([]string, error) {
@@ -528,7 +534,7 @@ func TestReconcile_DockerUnavailable_HealthyBecomesFailed(t *testing.T) {
 			{ID: "d1", Name: "web", Status: store.StatusHealthy},
 		},
 	}
-	d := &mockDocker{listErr: fmt.Errorf("%w: connection refused", docker.ErrDockerUnavailable)}
+	d := &mockDocker{pingErr: errors.New("dial unix /var/run/docker.sock: no such file or directory")}
 	r := reconciler.New(s, d, nil)
 
 	err := r.Reconcile(context.Background())
@@ -546,7 +552,7 @@ func TestReconcile_DockerUnavailable_DeployingBecomesFailed(t *testing.T) {
 			{ID: "d1", Name: "web", Image: "nginx:latest", Status: store.StatusDeploying},
 		},
 	}
-	d := &mockDocker{listErr: fmt.Errorf("%w: connection refused", docker.ErrDockerUnavailable)}
+	d := &mockDocker{pingErr: errors.New("dial unix /var/run/docker.sock: no such file or directory")}
 	r := reconciler.New(s, d, nil)
 
 	err := r.Reconcile(context.Background())
@@ -565,7 +571,7 @@ func TestReconcile_DockerUnavailable_FailedAndIdleUnchanged(t *testing.T) {
 			{ID: "d2", Name: "app", Status: store.StatusIdle},
 		},
 	}
-	d := &mockDocker{listErr: fmt.Errorf("%w: connection refused", docker.ErrDockerUnavailable)}
+	d := &mockDocker{pingErr: errors.New("dial unix /var/run/docker.sock: no such file or directory")}
 	r := reconciler.New(s, d, nil)
 
 	r.Reconcile(context.Background()) //nolint:errcheck

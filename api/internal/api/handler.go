@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ercadev/dirigent/internal/events"
@@ -270,11 +272,20 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 	if body.Envs == nil {
 		body.Envs = map[string]string{}
 	}
-	if body.Ports == nil {
-		body.Ports = []string{}
-	}
 	if body.Volumes == nil {
 		body.Volumes = []string{}
+	}
+
+	allDeployments, err := h.store.List()
+	if err != nil {
+		http.Error(w, "failed to list deployments", http.StatusInternalServerError)
+		return
+	}
+
+	assignedPorts, err := assignHostPorts(allDeployments, "", nil, normalizeContainerPorts(body.Ports))
+	if err != nil {
+		http.Error(w, "no host ports available", http.StatusServiceUnavailable)
+		return
 	}
 
 	d := store.Deployment{
@@ -282,7 +293,7 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		Name:    body.Name,
 		Image:   body.Image,
 		Envs:    body.Envs,
-		Ports:   body.Ports,
+		Ports:   assignedPorts,
 		Volumes: body.Volumes,
 		Domain:  body.Domain,
 		Status:  store.StatusDeploying,
@@ -324,9 +335,6 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 	if body.Envs == nil {
 		body.Envs = map[string]string{}
 	}
-	if body.Ports == nil {
-		body.Ports = []string{}
-	}
 	if body.Volumes == nil {
 		body.Volumes = []string{}
 	}
@@ -340,6 +348,19 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to get deployment", http.StatusInternalServerError)
 		return
 	}
+
+	allDeployments, err := h.store.List()
+	if err != nil {
+		http.Error(w, "failed to list deployments", http.StatusInternalServerError)
+		return
+	}
+
+	assignedPorts, err := assignHostPorts(allDeployments, id, existing.Ports, normalizeContainerPorts(body.Ports))
+	if err != nil {
+		http.Error(w, "no host ports available", http.StatusServiceUnavailable)
+		return
+	}
+	body.Ports = assignedPorts
 
 	nextStatus := existing.Status
 	if updateRequiresRedeploy(existing, body) {
@@ -455,6 +476,20 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, "failed to get deployment", http.StatusInternalServerError)
 		return
+	}
+
+	if body.Ports != nil {
+		allDeployments, err := h.store.List()
+		if err != nil {
+			http.Error(w, "failed to list deployments", http.StatusInternalServerError)
+			return
+		}
+		assignedPorts, err := assignHostPorts(allDeployments, id, existing.Ports, normalizeContainerPorts(body.Ports))
+		if err != nil {
+			http.Error(w, "no host ports available", http.StatusServiceUnavailable)
+			return
+		}
+		body.Ports = assignedPorts
 	}
 
 	patch := store.Deployment{
@@ -607,6 +642,136 @@ func orchestratorStaleAfterFromEnv() time.Duration {
 	}
 
 	return d
+}
+
+const (
+	hostPortRangeMin = 32768
+	hostPortRangeMax = 60999
+)
+
+// containerPortOnly strips any user-supplied host port prefix and protocol suffix
+// from a port spec, returning only the container port number.
+// "8080:80" → "80", "80/tcp" → "80", "80" → "80".
+func containerPortOnly(spec string) string {
+	if idx := strings.LastIndex(spec, ":"); idx != -1 {
+		spec = spec[idx+1:]
+	}
+	if idx := strings.Index(spec, "/"); idx != -1 {
+		spec = spec[:idx]
+	}
+	return strings.TrimSpace(spec)
+}
+
+// normalizeContainerPorts strips host port prefixes from every entry and
+// deduplicates the result, preserving order.
+func normalizeContainerPorts(specs []string) []string {
+	seen := make(map[string]struct{}, len(specs))
+	out := make([]string, 0, len(specs))
+	for _, s := range specs {
+		cp := containerPortOnly(s)
+		if cp == "" {
+			continue
+		}
+		if _, dup := seen[cp]; dup {
+			continue
+		}
+		seen[cp] = struct{}{}
+		out = append(out, cp)
+	}
+	return out
+}
+
+// hostPortFromBinding extracts the host port number from a "hostPort:containerPort"
+// binding string. Returns 0 if the binding is not in that format.
+func hostPortFromBinding(binding string) int {
+	idx := strings.Index(binding, ":")
+	if idx == -1 {
+		return 0
+	}
+	n, err := strconv.Atoi(binding[:idx])
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// containerPortFromBinding extracts the container port from a "hostPort:containerPort"
+// binding string. Returns the full string if there is no colon.
+func containerPortFromBinding(binding string) string {
+	idx := strings.Index(binding, ":")
+	if idx == -1 {
+		return binding
+	}
+	return binding[idx+1:]
+}
+
+// assignHostPorts returns stable, conflict-free "hostPort:containerPort" bindings
+// for the given container ports.
+//
+//   - allDeployments: current store snapshot used to find occupied host ports.
+//   - skipID: deployment being created/updated — its existing host ports are NOT
+//     counted as occupied so they can be reused (stability).
+//   - currentBindings: the Ports slice of the deployment being updated, used to
+//     carry over existing host-port assignments for unchanged container ports.
+func assignHostPorts(allDeployments []store.Deployment, skipID string, currentBindings []string, containerPorts []string) ([]string, error) {
+	if len(containerPorts) == 0 {
+		return []string{}, nil
+	}
+
+	// Collect host ports in use by other deployments.
+	usedHostPorts := make(map[int]struct{})
+	for _, d := range allDeployments {
+		if d.ID == skipID {
+			continue
+		}
+		for _, p := range d.Ports {
+			if hp := hostPortFromBinding(p); hp > 0 {
+				usedHostPorts[hp] = struct{}{}
+			}
+		}
+	}
+
+	// Build a map of containerPort → existing host port for the deployment being
+	// updated so we can reuse the same host port (stable across redeployments).
+	existing := make(map[string]int, len(currentBindings))
+	for _, p := range currentBindings {
+		hp := hostPortFromBinding(p)
+		cp := containerPortFromBinding(p)
+		if hp > 0 && cp != "" {
+			existing[cp] = hp
+		}
+	}
+
+	result := make([]string, 0, len(containerPorts))
+	for _, cp := range containerPorts {
+		// Reuse the existing host port for this container port when it is still free.
+		if hp, ok := existing[cp]; ok {
+			if _, inUse := usedHostPorts[hp]; !inUse {
+				result = append(result, fmt.Sprintf("%d:%s", hp, cp))
+				usedHostPorts[hp] = struct{}{} // prevent double-allocation within batch
+				continue
+			}
+		}
+
+		// Assign a new free host port from the reserved range.
+		hp, err := allocateHostPort(usedHostPorts)
+		if err != nil {
+			return nil, err
+		}
+		usedHostPorts[hp] = struct{}{}
+		result = append(result, fmt.Sprintf("%d:%s", hp, cp))
+	}
+
+	return result, nil
+}
+
+func allocateHostPort(used map[int]struct{}) (int, error) {
+	for port := hostPortRangeMin; port <= hostPortRangeMax; port++ {
+		if _, inUse := used[port]; !inUse {
+			return port, nil
+		}
+	}
+	return 0, fmt.Errorf("no free host port available in range %d–%d", hostPortRangeMin, hostPortRangeMax)
 }
 
 func updateRequiresRedeploy(existing store.Deployment, body deploymentRequest) bool {

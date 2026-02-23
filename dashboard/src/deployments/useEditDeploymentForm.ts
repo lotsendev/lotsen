@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateDeployment, type Deployment } from '../lib/api'
 import { useDynamicRows } from './useDynamicRows'
-import type { EnvRow, FormErrors, PairRow } from './useCreateDeploymentForm'
+import type { EnvRow, FormErrors, PairRow, PortRow } from './useCreateDeploymentForm'
 
 const EMPTY_ERRORS: FormErrors = { envs: {}, ports: {}, volumes: {} }
 
@@ -17,6 +17,15 @@ function toPairRows(items: string[]): PairRow[] {
   })
 }
 
+// Ports are stored as "hostPort:containerPort" after reconciliation.
+// The user only controls the container port; extract it for the edit form.
+function toPortRows(items: string[]): PortRow[] {
+  return items.map((item, i) => {
+    const sep = item.indexOf(':')
+    return { id: i, port: sep >= 0 ? item.slice(sep + 1) : item }
+  })
+}
+
 export function useEditDeploymentForm(deployment: Deployment, onClose: () => void) {
   const queryClient = useQueryClient()
 
@@ -26,7 +35,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
   const [errors, setErrors] = useState<FormErrors>(EMPTY_ERRORS)
 
   const envRows = useDynamicRows<EnvRow>(id => ({ id, key: '', value: '' }), toEnvRows(deployment.envs))
-  const portRows = useDynamicRows<PairRow>(id => ({ id, left: '', right: '' }), toPairRows(deployment.ports))
+  const portRows = useDynamicRows<PortRow>(id => ({ id, port: '' }), toPortRows(deployment.ports))
   const volumeRows = useDynamicRows<PairRow>(id => ({ id, left: '', right: '' }), toPairRows(deployment.volumes))
 
   const mutation = useMutation({
@@ -48,8 +57,8 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
       if (!row.key.trim()) errs.envs[row.id] = 'Key is required'
     }
     for (const row of portRows.rows) {
-      if (!row.left.trim() || !row.right.trim())
-        errs.ports[row.id] = 'Both host and container ports are required'
+      if (!row.port.trim())
+        errs.ports[row.id] = 'Container port is required'
     }
     for (const row of volumeRows.rows) {
       if (!row.left.trim() || !row.right.trim())
@@ -74,7 +83,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
       name: name.trim(),
       image: image.trim(),
       envs,
-      ports: portRows.rows.map(r => `${r.left.trim()}:${r.right.trim()}`),
+      ports: portRows.rows.map(r => r.port.trim()),
       volumes: volumeRows.rows.map(r => `${r.left.trim()}:${r.right.trim()}`),
       domain: domain.trim(),
     })

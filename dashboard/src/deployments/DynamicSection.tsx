@@ -4,6 +4,7 @@ import type { Row } from './useDynamicRows'
 
 interface Props<T extends Row> {
   title: string
+  description?: string
   addLabel: string
   removeLabel: string
   rows: T[]
@@ -14,12 +15,15 @@ interface Props<T extends Row> {
 }
 
 export function DynamicSection<T extends Row>({
-  title, addLabel, removeLabel, rows, onAdd, onRemove, renderRow, errorFor,
+  title, description, addLabel, removeLabel, rows, onAdd, onRemove, renderRow, errorFor,
 }: Props<T>) {
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-medium text-foreground">{title}</span>
+        <div>
+          <span className="text-sm font-medium text-foreground">{title}</span>
+          {description && <p className="text-xs text-muted-foreground">{description}</p>}
+        </div>
         <Button
           type="button"
           onClick={onAdd}

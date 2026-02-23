@@ -6,7 +6,7 @@ import { DynamicSection } from './DynamicSection'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { cn } from '../lib/utils'
-import type { EnvRow, PairRow } from './useCreateDeploymentForm'
+import type { EnvRow, PairRow, PortRow } from './useCreateDeploymentForm'
 
 const fieldErrorCls = 'text-xs text-destructive'
 
@@ -73,19 +73,17 @@ export default function EditDeploymentForm({ deployment, onClose, className, hid
           </>)}
         />
 
-        <DynamicSection<PairRow>
-          title="Port mappings" addLabel="Add port mapping" removeLabel="Remove port mapping"
+        <DynamicSection<PortRow>
+          title="Port mappings"
+          description="Specify the container port to expose. A host port is automatically assigned."
+          addLabel="Add port mapping" removeLabel="Remove port mapping"
           rows={portRows.rows} onAdd={portRows.add} onRemove={portRows.remove}
           errorFor={row => errors.ports[row.id]}
-          renderRow={row => (<>
-            <Input type="text" placeholder="Host port" value={row.left}
-              onChange={e => portRows.update(row.id, { left: e.target.value })}
+          renderRow={row => (
+            <Input type="text" placeholder="Container port" value={row.port}
+              onChange={e => portRows.update(row.id, { port: e.target.value })}
               aria-invalid={Boolean(errors.ports[row.id])} />
-            <span className="shrink-0 text-sm text-muted-foreground">:</span>
-            <Input type="text" placeholder="Container port" value={row.right}
-              onChange={e => portRows.update(row.id, { right: e.target.value })}
-              aria-invalid={Boolean(errors.ports[row.id])} />
-          </>)}
+          )}
         />
 
         <DynamicSection<PairRow>

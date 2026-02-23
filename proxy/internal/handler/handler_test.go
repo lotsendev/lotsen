@@ -237,3 +237,31 @@ func TestProxy_UpstreamUnavailableReturns502(t *testing.T) {
 		t.Fatalf("want 502, got %d", resp.StatusCode)
 	}
 }
+
+func TestProxy_HTTPSKnownDomainReachesBackend(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("example.com", backend.Listener.Addr().String())
+
+	mux := http.NewServeMux()
+	handler.New(tbl).RegisterRoutes(mux)
+	proxy := httptest.NewTLSServer(mux)
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	req.Host = "example.com"
+
+	resp, err := proxy.Client().Do(req)
+	if err != nil {
+		t.Fatalf("GET / over HTTPS: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+}

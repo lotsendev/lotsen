@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 )
 
 // RoutingTable is the interface the handler reads from when proxying requests
@@ -30,8 +31,18 @@ func New(table RoutingTable) *Handler {
 
 // RegisterRoutes wires the proxy catch-all and the internal control API into mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	h.RegisterInternalRoutes(mux)
+	h.RegisterProxyRoutes(mux)
+}
+
+// RegisterInternalRoutes wires the internal health/control API into mux.
+func (h *Handler) RegisterInternalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/health", h.health)
 	mux.HandleFunc("POST /internal/routes", h.setRoute)
+}
+
+// RegisterProxyRoutes wires the proxy catch-all route into mux.
+func (h *Handler) RegisterProxyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.proxy)
 }
 
@@ -47,6 +58,7 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	if bare, _, err := net.SplitHostPort(host); err == nil {
 		host = bare
 	}
+	host = normalizeDomain(host)
 
 	upstream, ok := h.table.Get(host)
 	if !ok {
@@ -96,6 +108,12 @@ func (h *Handler) setRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.table.Set(body.Domain, body.Upstream)
+	h.table.Set(normalizeDomain(body.Domain), body.Upstream)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	domain = strings.TrimSuffix(domain, ".")
+	return strings.ToLower(domain)
 }

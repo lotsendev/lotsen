@@ -95,10 +95,10 @@ describe('CreateDeploymentForm', () => {
     renderWithQuery(<CreateDeploymentForm />)
 
     await user.click(screen.getByRole('button', { name: /add port/i }))
-    expect(screen.getByPlaceholderText('Host port')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Container port')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /remove port mapping/i }))
-    expect(screen.queryByPlaceholderText('Host port')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Container port')).not.toBeInTheDocument()
   })
 
   it('adds and removes a volume mount row', async () => {
@@ -135,7 +135,6 @@ describe('CreateDeploymentForm', () => {
     await user.type(screen.getByPlaceholderText('value'), 'true')
 
     await user.click(screen.getByRole('button', { name: /add port/i }))
-    await user.type(screen.getByPlaceholderText('Host port'), '8080')
     await user.type(screen.getByPlaceholderText('Container port'), '80')
 
     await user.click(screen.getByRole('button', { name: /add volume/i }))
@@ -149,7 +148,7 @@ describe('CreateDeploymentForm', () => {
         name: 'full-app',
         image: 'alpine:3',
         envs: { DEBUG: 'true' },
-        ports: ['8080:80'],
+        ports: ['80'],
         volumes: ['/data:/app/data'],
         domain: 'example.com',
       })

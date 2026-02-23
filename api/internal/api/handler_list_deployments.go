@@ -1,8 +1,10 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
 
-import "github.com/ercadev/dirigent/store"
+	"github.com/ercadev/dirigent/store"
+)
 
 func (h *Handler) listDeployments(w http.ResponseWriter, _ *http.Request) {
 	deployments, err := h.store.List()

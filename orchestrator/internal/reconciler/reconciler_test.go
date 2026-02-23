@@ -77,6 +77,9 @@ func (m *mockStore) Patch(id string, patch store.Deployment) (store.Deployment, 
 		}
 		if patch.Status != "" {
 			m.deployments[i].Status = patch.Status
+			m.deployments[i].Error = patch.Error
+		} else if patch.Error != "" {
+			m.deployments[i].Error = patch.Error
 		}
 		return m.deployments[i], nil
 	}
@@ -117,6 +120,7 @@ type mockDocker struct {
 	startAndReplaceErr   error
 	startPorts           []string
 	startAndReplacePorts []string
+	startCalls           int
 	started              []string
 	replaced             []string // old container IDs passed to StartAndReplace
 	removed              []string
@@ -131,6 +135,7 @@ func (m *mockDocker) Ping(_ context.Context) error {
 func (m *mockDocker) Start(_ context.Context, d store.Deployment) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.startCalls++
 	if m.startErr != nil {
 		return nil, m.startErr
 	}
@@ -144,6 +149,7 @@ func (m *mockDocker) Start(_ context.Context, d store.Deployment) ([]string, err
 func (m *mockDocker) StartAndReplace(_ context.Context, d store.Deployment, oldContainerID string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.startCalls++
 	if m.startAndReplaceErr != nil {
 		return nil, m.startAndReplaceErr
 	}
@@ -367,7 +373,7 @@ func TestReconcile_OrphanContainer_StoppedAndRemoved(t *testing.T) {
 func TestReconcile_FailedDeployment_Skipped(t *testing.T) {
 	s := &mockStore{
 		deployments: []store.Deployment{
-			{ID: "d1", Name: "web", Status: store.StatusFailed},
+			{ID: "d1", Name: "web", Status: store.StatusFailed, Error: "image not found"},
 		},
 	}
 	d := &mockDocker{}
@@ -380,8 +386,103 @@ func TestReconcile_FailedDeployment_Skipped(t *testing.T) {
 	if len(d.started) != 0 {
 		t.Errorf("want no starts for failed deployment, got %v", d.started)
 	}
+	if d.startCalls != 0 {
+		t.Errorf("want no retry attempts for non-transient failure, got %d", d.startCalls)
+	}
 	if s.getStatus("d1") != store.StatusFailed {
 		t.Errorf("want status to remain failed, got %s", s.getStatus("d1"))
+	}
+}
+
+func TestReconcile_FailedTransient_NoContainer_RetriesThenBacksOff(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "nginx:latest", Status: store.StatusFailed, Error: "docker daemon is unavailable"},
+		},
+	}
+	d := &mockDocker{startErr: errors.New("docker daemon unreachable: dial unix /var/run/docker.sock: connect: connection refused")}
+	r := reconciler.New(s, d, nil)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile first attempt: %v", err)
+	}
+	if d.startCalls != 1 {
+		t.Fatalf("want one retry attempt, got %d", d.startCalls)
+	}
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile second attempt: %v", err)
+	}
+	if d.startCalls != 1 {
+		t.Fatalf("want backoff to suppress immediate retry, got %d attempts", d.startCalls)
+	}
+}
+
+func TestReconcile_DockerReconnect_RetriesTransientFailureImmediately(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "nginx:latest", Status: store.StatusFailed, Error: "docker daemon is unavailable"},
+		},
+	}
+	d := &mockDocker{startErr: errors.New("docker daemon unreachable: temporary pull failure")}
+	r := reconciler.New(s, d, nil)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile first attempt: %v", err)
+	}
+	if d.startCalls != 1 {
+		t.Fatalf("want one initial retry attempt, got %d", d.startCalls)
+	}
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile second attempt: %v", err)
+	}
+	if d.startCalls != 1 {
+		t.Fatalf("want backoff to suppress immediate retry, got %d attempts", d.startCalls)
+	}
+
+	d.pingErr = errors.New("dial unix /var/run/docker.sock: no such file or directory")
+	err := r.Reconcile(context.Background())
+	if err == nil {
+		t.Fatal("want docker unavailable error")
+	}
+
+	d.pingErr = nil
+	d.startErr = nil
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile after reconnect: %v", err)
+	}
+	if d.startCalls != 2 {
+		t.Fatalf("want reconnect to force immediate retry, got %d attempts", d.startCalls)
+	}
+	if s.getStatus("d1") != store.StatusHealthy {
+		t.Fatalf("want deployment healthy after reconnect retry, got %s", s.getStatus("d1"))
+	}
+}
+
+func TestReconcile_DockerReconnect_RunningContainerHealsWithoutRestart(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Status: store.StatusFailed, Error: "docker daemon is unavailable"},
+		},
+	}
+	d := &mockDocker{}
+	r := reconciler.New(s, d, nil)
+
+	d.pingErr = errors.New("dial unix /var/run/docker.sock: no such file or directory")
+	_ = r.Reconcile(context.Background())
+
+	d.pingErr = nil
+	d.containers = []docker.ManagedContainer{{ID: "c1", DeploymentID: "d1", Running: true}}
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile after reconnect: %v", err)
+	}
+
+	if d.startCalls != 0 {
+		t.Fatalf("want no restart when container already running, got %d attempts", d.startCalls)
+	}
+	if s.getStatus("d1") != store.StatusHealthy {
+		t.Fatalf("want deployment healed to healthy, got %s", s.getStatus("d1"))
 	}
 }
 

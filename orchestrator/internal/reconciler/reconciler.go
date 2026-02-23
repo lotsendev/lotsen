@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/ercadev/dirigent/orchestrator/internal/docker"
 	"github.com/ercadev/dirigent/store"
@@ -35,17 +38,43 @@ type Reconciler struct {
 	store    Store
 	docker   Docker
 	notifier Notifier
+
+	mu                     sync.Mutex
+	lastDockerReachable    bool
+	hasLastDockerReachable bool
+	retryByDeployment      map[string]retryState
+	now                    func() time.Time
 }
+
+type retryState struct {
+	attempts      int
+	nextAllowedAt time.Time
+}
+
+const (
+	dockerUnavailableError = "docker daemon is unavailable"
+
+	transientRetryBaseDelay = 15 * time.Second
+	transientRetryMaxDelay  = 2 * time.Minute
+)
 
 // New creates a Reconciler backed by the given store and Docker client.
 // n may be nil; if so, API notification is skipped.
 func New(s Store, d Docker, n Notifier) *Reconciler {
-	return &Reconciler{store: s, docker: d, notifier: n}
+	return &Reconciler{
+		store:             s,
+		docker:            d,
+		notifier:          n,
+		retryByDeployment: make(map[string]retryState),
+		now:               time.Now,
+	}
 }
 
 // Reconcile performs one reconciliation pass: reads desired state from the store,
 // reads actual state from Docker, and converges them.
 func (r *Reconciler) Reconcile(ctx context.Context) error {
+	now := r.now().UTC()
+
 	deployments, err := r.store.List()
 	if err != nil {
 		return fmt.Errorf("reconcile: list deployments: %w", err)
@@ -55,12 +84,18 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	// is unreachable we update the store directly — no Docker calls required —
 	// so active deployments reflect reality even when Docker is fully down.
 	if err := r.docker.Ping(ctx); err != nil {
+		r.recordDockerReachability(false)
 		for _, d := range deployments {
 			if d.Status == store.StatusHealthy || d.Status == store.StatusDeploying {
-				r.updateStatus(d.ID, store.StatusFailed, "docker daemon is unavailable")
+				r.updateStatus(d.ID, store.StatusFailed, dockerUnavailableError)
 			}
 		}
 		return fmt.Errorf("reconcile: docker unavailable: %w", err)
+	}
+
+	reconnected := r.recordDockerReachability(true)
+	if reconnected {
+		log.Printf("reconciler: docker reconnected, retrying transient failed deployments")
 	}
 
 	containers, err := r.docker.ListManagedContainers(ctx)
@@ -82,6 +117,10 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 	// Reconcile each deployment in the store.
 	for _, d := range deployments {
+		if d.Status == store.StatusHealthy || d.Status == store.StatusDeploying || d.Status == store.StatusIdle {
+			r.clearRetryState(d.ID)
+		}
+
 		c, hasContainer := containerByDeployment[d.ID]
 
 		switch d.Status {
@@ -114,7 +153,39 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 			}
 
 		case store.StatusFailed, store.StatusIdle:
-			// Leave as-is; operator must intervene.
+			if d.Status == store.StatusIdle {
+				continue
+			}
+
+			if !isTransientFailure(d.Error) {
+				continue
+			}
+
+			if hasContainer && c.Running {
+				r.clearRetryState(d.ID)
+				r.updateStatus(d.ID, store.StatusHealthy, "")
+				continue
+			}
+
+			if !r.canRetryTransientFailure(d.ID, now, reconnected) {
+				continue
+			}
+
+			var runtimePorts []string
+			if hasContainer {
+				runtimePorts, err = r.docker.StartAndReplace(ctx, d, c.ID)
+			} else {
+				runtimePorts, err = r.docker.Start(ctx, d)
+			}
+			if err != nil {
+				log.Printf("reconciler: heal failed deployment %s (%s): %v", d.ID, d.Name, err)
+				r.recordRetryFailure(d.ID, now)
+				r.updateStatus(d.ID, store.StatusFailed, err.Error())
+				continue
+			}
+
+			r.clearRetryState(d.ID)
+			r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy)
 		}
 	}
 
@@ -128,6 +199,75 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func isTransientFailure(errorMessage string) bool {
+	if errorMessage == "" {
+		return false
+	}
+
+	msg := strings.ToLower(errorMessage)
+	return strings.Contains(msg, dockerUnavailableError) ||
+		strings.Contains(msg, "docker daemon unreachable") ||
+		strings.Contains(msg, "container is not running")
+}
+
+func (r *Reconciler) recordDockerReachability(reachable bool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.hasLastDockerReachable {
+		r.hasLastDockerReachable = true
+		r.lastDockerReachable = reachable
+		return false
+	}
+
+	reconnected := !r.lastDockerReachable && reachable
+	r.lastDockerReachable = reachable
+	return reconnected
+}
+
+func (r *Reconciler) canRetryTransientFailure(id string, now time.Time, force bool) bool {
+	if force {
+		return true
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	state, ok := r.retryByDeployment[id]
+	if !ok {
+		return true
+	}
+	if state.nextAllowedAt.IsZero() || !now.Before(state.nextAllowedAt) {
+		return true
+	}
+	return false
+}
+
+func (r *Reconciler) recordRetryFailure(id string, now time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	state := r.retryByDeployment[id]
+	delay := transientRetryBaseDelay
+	for i := 0; i < state.attempts; i++ {
+		delay *= 2
+		if delay >= transientRetryMaxDelay {
+			delay = transientRetryMaxDelay
+			break
+		}
+	}
+
+	state.attempts++
+	state.nextAllowedAt = now.Add(delay)
+	r.retryByDeployment[id] = state
+}
+
+func (r *Reconciler) clearRetryState(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.retryByDeployment, id)
 }
 
 // exitMessage produces a human-readable failure reason from container exit details.

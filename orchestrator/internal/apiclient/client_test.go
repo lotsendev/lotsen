@@ -24,11 +24,18 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 		}
 
 		var body struct {
-			At     time.Time `json:"at"`
+			At           time.Time `json:"at"`
+			Orchestrator struct {
+				StoreAccessible bool `json:"storeAccessible"`
+			} `json:"orchestrator"`
 			Docker struct {
 				Reachable bool      `json:"reachable"`
 				CheckedAt time.Time `json:"checkedAt"`
 			} `json:"docker"`
+			LoadBalancer struct {
+				Responding bool      `json:"responding"`
+				CheckedAt  time.Time `json:"checkedAt"`
+			} `json:"loadBalancer"`
 			Host *struct {
 				CPU *struct {
 					UsagePercent float64   `json:"usagePercent"`
@@ -53,6 +60,15 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 		if !body.Docker.CheckedAt.Equal(checkedAt) {
 			t.Fatalf("want checkedAt %s, got %s", checkedAt, body.Docker.CheckedAt)
 		}
+		if body.Orchestrator.StoreAccessible {
+			t.Fatal("want orchestrator store accessible false")
+		}
+		if body.LoadBalancer.Responding {
+			t.Fatal("want load balancer responding false")
+		}
+		if !body.LoadBalancer.CheckedAt.Equal(checkedAt) {
+			t.Fatalf("want load balancer checkedAt %s, got %s", checkedAt, body.LoadBalancer.CheckedAt)
+		}
 		if body.Host == nil || body.Host.CPU == nil || body.Host.RAM == nil {
 			t.Fatal("want host cpu and ram metrics in heartbeat")
 		}
@@ -74,7 +90,7 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(false, checkedAt, &cpu, &ram); err != nil {
+	if err := client.NotifyHeartbeat(false, false, false, checkedAt, &cpu, &ram); err != nil {
 		t.Fatalf("NotifyHeartbeat: %v", err)
 	}
 }
@@ -102,7 +118,7 @@ func TestClient_NotifyHeartbeat_WithoutHostMetrics(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(false, checkedAt, nil, nil); err != nil {
+	if err := client.NotifyHeartbeat(false, true, true, checkedAt, nil, nil); err != nil {
 		t.Fatalf("NotifyHeartbeat: %v", err)
 	}
 }
@@ -114,7 +130,7 @@ func TestClient_NotifyHeartbeat_UnexpectedResponse(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(true, time.Time{}, nil, nil); err == nil {
+	if err := client.NotifyHeartbeat(true, true, true, time.Time{}, nil, nil); err == nil {
 		t.Fatal("want error for non-204 heartbeat response")
 	}
 }

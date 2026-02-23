@@ -22,21 +22,43 @@ export type DeploymentLogEvent = {
   line: string
 }
 
-export type SystemStatusState = 'healthy' | 'degraded' | 'stale' | 'unavailable'
+export type SystemStatusState = 'healthy' | 'degraded' | 'unavailable'
 
 export type APISystemStatus = {
   state: SystemStatusState
   lastUpdated: string
+  checks?: {
+    processRunning: boolean
+    dashboardReachable: boolean
+    storeAccessible: boolean
+  }
 }
 
 export type OrchestratorSystemStatus = {
   state: SystemStatusState
   lastUpdated?: string
+  checks?: {
+    processRunning: boolean
+    dockerReachable: boolean
+    storeAccessible: boolean
+  }
+}
+
+export type LoadBalancerSystemStatus = {
+  state: SystemStatusState
+  lastUpdated?: string
+  checks?: {
+    processRunning: boolean
+    healthcheckResponding: boolean
+  }
 }
 
 export type DockerSystemStatus = {
   state: SystemStatusState
   lastUpdated?: string
+  checks?: {
+    daemonHealthy: boolean
+  }
 }
 
 export type HostMetricSystemStatus = {
@@ -53,6 +75,7 @@ export type HostSystemStatus = {
 export type SystemStatusSnapshot = {
   api: APISystemStatus
   orchestrator: OrchestratorSystemStatus
+  loadBalancer: LoadBalancerSystemStatus
   docker: DockerSystemStatus
   host: HostSystemStatus
   error?: string

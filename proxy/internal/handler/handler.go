@@ -30,8 +30,13 @@ func New(table RoutingTable) *Handler {
 
 // RegisterRoutes wires the proxy catch-all and the internal control API into mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /internal/health", h.health)
 	mux.HandleFunc("POST /internal/routes", h.setRoute)
 	mux.HandleFunc("/", h.proxy)
+}
+
+func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }
 
 // proxy routes inbound requests to the upstream registered for the Host header.

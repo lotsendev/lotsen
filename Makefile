@@ -12,7 +12,7 @@ setup:
 dev:
 	@trap 'kill 0' SIGINT; \
 	(cd api && DIRIGENT_DATA=/tmp/dirigent.json $(AIR)) & \
-	(cd orchestrator && DIRIGENT_DATA=/tmp/dirigent.json $(AIR)) & \
+	(cd orchestrator && DIRIGENT_DATA=/tmp/dirigent.json DIRIGENT_PROXY_HEALTH_URL=http://localhost:8090/internal/health $(AIR)) & \
 	(cd proxy && DIRIGENT_DATA=/tmp/dirigent.json DIRIGENT_PROXY_ADDR=:8090 $(AIR)) & \
 	(cd dashboard && bun run dev) & \
 	wait

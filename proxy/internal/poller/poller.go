@@ -72,11 +72,15 @@ func (p *Poller) sync() {
 		if d.Domain == "" {
 			continue
 		}
+		domain := normalizeDomain(d.Domain)
+		if domain == "" {
+			continue
+		}
 		upstream := upstreamFromPorts(d.Ports)
 		if upstream == "" {
 			continue
 		}
-		current[d.Domain] = upstream
+		current[domain] = upstream
 	}
 
 	// Register new routes and update changed upstreams.
@@ -125,4 +129,10 @@ func upstreamFromPorts(ports []string) string {
 		}
 	}
 	return ""
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	domain = strings.TrimSuffix(domain, ".")
+	return strings.ToLower(domain)
 }

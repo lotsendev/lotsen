@@ -2,12 +2,20 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/crypto/acme"
+	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/ercadev/dirigent/proxy/internal/handler"
 	"github.com/ercadev/dirigent/proxy/internal/poller"
@@ -15,7 +23,13 @@ import (
 	"github.com/ercadev/dirigent/store"
 )
 
-const defaultAddr = ":80"
+const (
+	defaultHTTPAddr                = ":80"
+	defaultHTTPSAddr               = ":443"
+	defaultCertCacheDir            = "/var/lib/dirigent/certs"
+	letsencryptProdDirectoryURL    = "https://acme-v02.api.letsencrypt.org/directory"
+	letsencryptStagingDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
+)
 
 func dataPath() string {
 	if p := os.Getenv("DIRIGENT_DATA"); p != "" {
@@ -40,31 +54,156 @@ func main() {
 	}
 
 	p := poller.New(s, table, interval)
+	h := handler.New(table)
 
-	mux := http.NewServeMux()
-	handler.New(table).RegisterRoutes(mux)
+	hostPolicy := hostPolicyFromTable(table)
+	cacheDir := envOrDefault("DIRIGENT_CERT_CACHE_DIR", defaultCertCacheDir)
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		log.Fatalf("proxy: create cert cache dir %s: %v", cacheDir, err)
+	}
+	manager := newAutocertManager(
+		cacheDir,
+		os.Getenv("DIRIGENT_ACME_EMAIL"),
+		envOrDefault("DIRIGENT_ACME_DIRECTORY_URL", letsencryptProdDirectoryURL),
+		hostPolicy,
+	)
+
+	httpsAddr := envOrDefault("DIRIGENT_PROXY_HTTPS_ADDR", defaultHTTPSAddr)
+	httpAddr := envOrDefault("DIRIGENT_PROXY_HTTP_ADDR", envOrDefault("DIRIGENT_PROXY_ADDR", defaultHTTPAddr))
+
+	httpMux := newHTTPMux(h, manager.HTTPHandler(http.HandlerFunc(redirectToHTTPS(httpsAddr))))
+	httpsMux := newHTTPSMux(h)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	go p.Run(ctx)
 
-	addr := defaultAddr
-	if v := os.Getenv("DIRIGENT_PROXY_ADDR"); v != "" {
-		addr = v
-	}
-
-	srv := &http.Server{Addr: addr, Handler: mux}
+	httpSrv := &http.Server{Addr: httpAddr, Handler: httpMux}
+	httpsSrv := &http.Server{Addr: httpsAddr, Handler: httpsMux, TLSConfig: manager.TLSConfig()}
 
 	go func() {
 		<-ctx.Done()
-		if err := srv.Close(); err != nil {
-			log.Printf("proxy: shutdown: %v", err)
+		if err := httpSrv.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("proxy: http shutdown: %v", err)
+		}
+		if err := httpsSrv.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("proxy: https shutdown: %v", err)
 		}
 	}()
 
-	log.Printf("proxy: listening on %s", addr)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	errCh := make(chan error, 2)
+
+	go func() {
+		log.Printf("proxy: listening for HTTP on %s", httpAddr)
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("http server: %w", err)
+		}
+	}()
+
+	go func() {
+		log.Printf("proxy: listening for HTTPS on %s", httpsAddr)
+		if err := httpsSrv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("https server: %w", err)
+		}
+	}()
+
+	select {
+	case err := <-errCh:
 		log.Fatalf("proxy: %v", err)
+	case <-ctx.Done():
 	}
+}
+
+func newHTTPMux(h *handler.Handler, external http.Handler) *http.ServeMux {
+	mux := http.NewServeMux()
+	h.RegisterInternalRoutes(mux)
+	mux.Handle("/", external)
+	return mux
+}
+
+func newHTTPSMux(h *handler.Handler) *http.ServeMux {
+	mux := http.NewServeMux()
+	h.RegisterProxyRoutes(mux)
+	return mux
+}
+
+func redirectToHTTPS(httpsAddr string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		host := hostWithoutPort(r.Host)
+		if host == "" {
+			http.Error(w, "missing host", http.StatusBadRequest)
+			return
+		}
+		if port := portFromAddr(httpsAddr); port != "" && port != "443" {
+			host = net.JoinHostPort(host, port)
+		}
+		target := &url.URL{
+			Scheme:   "https",
+			Host:     host,
+			Path:     r.URL.Path,
+			RawQuery: r.URL.RawQuery,
+		}
+		http.Redirect(w, r, target.String(), http.StatusMovedPermanently)
+	}
+}
+
+func hostPolicyFromTable(table interface{ Get(string) (string, bool) }) autocert.HostPolicy {
+	return func(_ context.Context, host string) error {
+		host = normalizeDomain(host)
+		if host == "" {
+			return errors.New("empty host")
+		}
+		if _, ok := table.Get(host); !ok {
+			return fmt.Errorf("host %q not configured", host)
+		}
+		return nil
+	}
+}
+
+func newAutocertManager(cacheDir, email, directoryURL string, hostPolicy autocert.HostPolicy) *autocert.Manager {
+	if directoryURL == "" {
+		directoryURL = letsencryptProdDirectoryURL
+	}
+	return &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		Cache:      autocert.DirCache(cacheDir),
+		HostPolicy: hostPolicy,
+		Email:      email,
+		Client: &acme.Client{
+			DirectoryURL: directoryURL,
+		},
+	}
+}
+
+func hostWithoutPort(host string) string {
+	host = strings.TrimSpace(host)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return normalizeDomain(host)
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	domain = strings.TrimSuffix(domain, ".")
+	return strings.ToLower(domain)
+}
+
+func portFromAddr(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if strings.HasPrefix(addr, ":") {
+		return strings.TrimPrefix(addr, ":")
+	}
+	if _, port, err := net.SplitHostPort(addr); err == nil {
+		return port
+	}
+	return ""
+}
+
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

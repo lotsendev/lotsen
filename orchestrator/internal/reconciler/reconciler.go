@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -52,6 +53,13 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 	containers, err := r.docker.ListManagedContainers(ctx)
 	if err != nil {
+		if errors.Is(err, docker.ErrDockerUnavailable) {
+			for _, d := range deployments {
+				if d.Status == store.StatusHealthy || d.Status == store.StatusDeploying {
+					r.updateStatus(d.ID, store.StatusFailed, "docker daemon is unavailable")
+				}
+			}
+		}
 		return fmt.Errorf("reconcile: list containers: %w", err)
 	}
 

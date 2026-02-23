@@ -194,6 +194,17 @@ func (p *defaultSystemStatusProvider) dockerStatus() DockerSystemStatus {
 		return DockerSystemStatus{State: SystemStatusStateUnavailable}
 	}
 
+	age := p.now().UTC().Sub(signal.lastCheckedUTC)
+	if age < 0 {
+		age = 0
+	}
+	if age > p.staleAfter {
+		return DockerSystemStatus{
+			State:       SystemStatusStateStale,
+			LastUpdated: signal.lastCheckedUTC,
+		}
+	}
+
 	state := SystemStatusStateDegraded
 	if signal.reachable {
 		state = SystemStatusStateHealthy

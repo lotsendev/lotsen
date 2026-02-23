@@ -110,6 +110,21 @@ func TestDefaultSystemStatusProvider_OrchestratorStateMapping(t *testing.T) {
 		t.Fatalf("want docker lastUpdated %s, got %s", base.Add(3*time.Second), snapshot.Docker.LastUpdated)
 	}
 
+	// Advance time past the stale threshold — Docker signal should go stale even if last
+	// signal said reachable, because the orchestrator has stopped reporting.
+	if err := dockerIngestor.RecordDockerConnectivity(context.Background(), true, base.Add(4*time.Second)); err != nil {
+		t.Fatalf("RecordDockerConnectivity healthy again: %v", err)
+	}
+	now = base.Add(4*time.Second + 10*time.Second + 1) // signal at +4s, staleAfter=10s → stale at +14s+1ns
+	snapshot, err = provider.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot after stale docker signal: %v", err)
+	}
+	if snapshot.Docker.State != SystemStatusStateStale {
+		t.Fatalf("want docker state stale when signal is old, got %s", snapshot.Docker.State)
+	}
+	now = base // reset for subsequent assertions
+
 	if err := cpuIngestor.RecordCPUUtilization(context.Background(), 42.5, base.Add(4*time.Second)); err != nil {
 		t.Fatalf("RecordCPUUtilization: %v", err)
 	}

@@ -3,6 +3,7 @@ package reconciler_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -111,6 +112,7 @@ func (m *mockStore) getPorts(id string) []string {
 type mockDocker struct {
 	mu                   sync.Mutex
 	containers           []docker.ManagedContainer
+	listErr              error
 	startErr             error
 	startAndReplaceErr   error
 	startPorts           []string
@@ -150,6 +152,9 @@ func (m *mockDocker) StartAndReplace(_ context.Context, d store.Deployment, oldC
 func (m *mockDocker) ListManagedContainers(_ context.Context) ([]docker.ManagedContainer, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
 	out := make([]docker.ManagedContainer, len(m.containers))
 	copy(out, m.containers)
 	return out, nil
@@ -514,6 +519,62 @@ func TestReconcile_HealthyContainerMissing_ShowsFallbackMessage(t *testing.T) {
 	want := "container is not running"
 	if calls[0].error != want {
 		t.Errorf("want error %q, got %q", want, calls[0].error)
+	}
+}
+
+func TestReconcile_DockerUnavailable_HealthyBecomesFailed(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Status: store.StatusHealthy},
+		},
+	}
+	d := &mockDocker{listErr: fmt.Errorf("%w: connection refused", docker.ErrDockerUnavailable)}
+	r := reconciler.New(s, d, nil)
+
+	err := r.Reconcile(context.Background())
+	if err == nil {
+		t.Fatal("want error when docker unavailable, got nil")
+	}
+	if s.getStatus("d1") != store.StatusFailed {
+		t.Errorf("want status failed when docker is unavailable, got %s", s.getStatus("d1"))
+	}
+}
+
+func TestReconcile_DockerUnavailable_DeployingBecomesFailed(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "nginx:latest", Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{listErr: fmt.Errorf("%w: connection refused", docker.ErrDockerUnavailable)}
+	r := reconciler.New(s, d, nil)
+
+	err := r.Reconcile(context.Background())
+	if err == nil {
+		t.Fatal("want error when docker unavailable, got nil")
+	}
+	if s.getStatus("d1") != store.StatusFailed {
+		t.Errorf("want deploying status failed when docker is unavailable, got %s", s.getStatus("d1"))
+	}
+}
+
+func TestReconcile_DockerUnavailable_FailedAndIdleUnchanged(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Status: store.StatusFailed},
+			{ID: "d2", Name: "app", Status: store.StatusIdle},
+		},
+	}
+	d := &mockDocker{listErr: fmt.Errorf("%w: connection refused", docker.ErrDockerUnavailable)}
+	r := reconciler.New(s, d, nil)
+
+	r.Reconcile(context.Background()) //nolint:errcheck
+
+	if s.getStatus("d1") != store.StatusFailed {
+		t.Errorf("want failed to remain failed, got %s", s.getStatus("d1"))
+	}
+	if s.getStatus("d2") != store.StatusIdle {
+		t.Errorf("want idle to remain idle, got %s", s.getStatus("d2"))
 	}
 }
 

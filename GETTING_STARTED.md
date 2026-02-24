@@ -68,6 +68,13 @@ The dashboard streams installer logs in real time and prompts you to reload once
 If dashboard access is unavailable, you can still run the manual installer command. The installer stops all services,
 replaces the binaries, and restarts cleanly.
 
+```bash
+sudo dirigent upgrade
+```
+
+By default, `dirigent upgrade` now shows the current and target version, then asks for confirmation before continuing.
+For unattended runs (for example CI/automation), pass `--non-interactive --yes`.
+
 ### Manage services
 
 ```bash

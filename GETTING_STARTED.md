@@ -41,7 +41,17 @@ In interactive mode, setup recommends the `strict` security profile.
 
 Open the dashboard at `http://<your-vps-ip>:3000`.
 
-> **Why port 3000?** The dashboard runs on its own port rather than through the Dirigent proxy. This gives you immediate access without any DNS configuration and keeps future dashboard authentication independent of the proxy layer. To serve the dashboard on a custom domain, place a reverse proxy (nginx, Caddy, etc.) in front of port 3000.
+> **Why port 3000?** The dashboard runs on its own port rather than through the Dirigent proxy. This gives you immediate access without any DNS setup. If you want HTTPS + Basic Auth on a dedicated domain through Dirigent's built-in proxy, run `sudo dirigent setup`.
+
+### Configure dashboard access after install
+
+You can re-run dashboard exposure/auth setup at any time:
+
+```bash
+sudo dirigent setup
+```
+
+This command updates `/etc/dirigent/dirigent.env` and restarts `dirigent-proxy`.
 
 ### Pin a specific version
 
@@ -52,7 +62,11 @@ sudo DIRIGENT_VERSION=v0.1.0 dirigent setup
 
 ### Upgrade
 
-Re-run the same install command. The installer stops all services, replaces the binaries, and restarts cleanly.
+Use the dashboard upgrade flow: open **Settings** and click **Upgrade** when a newer version is available.
+The dashboard streams installer logs in real time and prompts you to reload once the API is back online.
+
+If dashboard access is unavailable, you can still run the manual installer command. The installer stops all services,
+replaces the binaries, and restarts cleanly.
 
 ### Manage services
 

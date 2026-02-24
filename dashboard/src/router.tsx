@@ -7,7 +7,7 @@ import {
   redirect,
   useRouterState,
 } from '@tanstack/react-router'
-import { Boxes, Moon, Rocket, Server, Sun } from 'lucide-react'
+import { Boxes, Moon, Rocket, Server, Settings, Sun } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 import {
@@ -24,21 +24,33 @@ import {
 } from './components/ui/sidebar'
 import DeploymentList from './pages/DeploymentList'
 import { DeploymentDetailPage } from './pages/DeploymentDetailPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { SystemStatusPage } from './pages/SystemStatusPage'
+import { useVersionCheck } from './settings/useVersionCheck'
 import { useTheme } from './theme'
 
 function DashboardLayout() {
   const pathname = useRouterState({ select: state => state.location.pathname })
   const { theme, toggleTheme } = useTheme()
+  const { upgradeAvailable } = useVersionCheck()
   const isSystemStatusPage = pathname === '/system-status'
+  const isSettingsPage = pathname === '/settings'
   const isDeploymentPage = pathname.startsWith('/deployments')
   const isDeploymentDetailPage = isDeploymentPage && pathname !== '/deployments'
-  const pageTitle = isSystemStatusPage ? 'System status' : isDeploymentDetailPage ? 'Deployment detail' : 'Deployments'
+  const pageTitle = isSystemStatusPage
+    ? 'System status'
+    : isSettingsPage
+      ? 'Settings'
+      : isDeploymentDetailPage
+        ? 'Deployment detail'
+        : 'Deployments'
   const pageDescription = isSystemStatusPage
     ? 'Observe API health and freshness.'
-    : isDeploymentDetailPage
-      ? 'Inspect deployment details and stream live logs.'
-      : 'Create, edit, and monitor your active deployments.'
+    : isSettingsPage
+      ? 'Manage product version and in-dashboard upgrades.'
+      : isDeploymentDetailPage
+        ? 'Inspect deployment details and stream live logs.'
+        : 'Create, edit, and monitor your active deployments.'
 
   return (
     <SidebarProvider>
@@ -79,6 +91,15 @@ function DashboardLayout() {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname === '/settings'} size="lg" className="rounded-lg">
+                      <Link to="/settings">
+                        <Settings className="h-4 w-4 shrink-0" />
+                        <span>Settings</span>
+                        {upgradeAvailable && <span aria-label="Upgrade available" className="ml-auto h-2 w-2 rounded-full bg-orange-500" />}
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -87,7 +108,7 @@ function DashboardLayout() {
       </Sidebar>
 
       <SidebarInset>
-        <p className="mb-4 text-sm text-muted-foreground">{isSystemStatusPage ? 'Observability' : 'Deployments'}</p>
+        <p className="mb-4 text-sm text-muted-foreground">{isSystemStatusPage ? 'Observability' : isSettingsPage ? 'Configuration' : 'Deployments'}</p>
         {isDeploymentDetailPage ? (
           <div className="mx-auto w-full max-w-5xl space-y-4">
             <div>
@@ -142,7 +163,13 @@ const systemStatusRoute = createRoute({
   component: SystemStatusPage,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, deploymentsRoute, deploymentDetailRoute, systemStatusRoute])
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  component: SettingsPage,
+})
+
+const routeTree = rootRoute.addChildren([indexRoute, deploymentsRoute, deploymentDetailRoute, systemStatusRoute, settingsRoute])
 
 export const router = createRouter({ routeTree })
 

@@ -120,14 +120,34 @@ func (s *Service) Snapshot(ctx context.Context) (Snapshot, error) {
 }
 
 func (s *Service) snapshotFromCache(cached cachedRelease) Snapshot {
+	currentVersion := displayCurrentVersion(s.currentVersion, cached.latestVersion)
+	upgradeAvailable := upgradeAvailable(currentVersion, cached.latestVersion)
+
 	return Snapshot{
-		CurrentVersion:   s.currentVersion,
+		CurrentVersion:   currentVersion,
 		LatestVersion:    cached.latestVersion,
 		ReleaseNotes:     cached.releaseNotes,
 		PublishedAt:      cached.publishedAt,
-		UpgradeAvailable: upgradeAvailable(s.currentVersion, cached.latestVersion),
+		UpgradeAvailable: upgradeAvailable,
 		CachedAt:         cached.cachedAt,
 	}
+}
+
+func displayCurrentVersion(currentVersion, latestVersion string) string {
+	if _, ok := parseSemver(currentVersion); ok {
+		return currentVersion
+	}
+
+	normalizedCurrent := strings.ToLower(strings.TrimSpace(currentVersion))
+	if normalizedCurrent != "main" && normalizedCurrent != "master" {
+		return currentVersion
+	}
+
+	if _, ok := parseSemver(latestVersion); !ok {
+		return currentVersion
+	}
+
+	return latestVersion
 }
 
 func (s *Service) fetchLatestRelease(ctx context.Context) (latestRelease, error) {

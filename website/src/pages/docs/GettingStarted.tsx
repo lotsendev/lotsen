@@ -103,6 +103,10 @@ export default function GettingStarted() {
           <InlineCmd>dirigent-api</InlineCmd>, <InlineCmd>dirigent-orchestrator</InlineCmd>,{' '}
           <InlineCmd>dirigent-proxy</InlineCmd>, and <InlineCmd>dirigent-dashboard</InlineCmd>.
         </li>
+        <li>
+          Prompt for optional dashboard domain + Basic Auth setup (works in normal SSH sessions,
+          including piped install commands).
+        </li>
       </ul>
 
       <div className="callout">
@@ -129,27 +133,23 @@ systemctl status dirigent-dashboard`}</CodeBlock>
       {/* Accessing the dashboard */}
       <h2>Access the dashboard</h2>
       <p>
-        By default, the dashboard runs locally on your VPS and is not public. You can inspect it
-        on the server directly:
+        By default, the dashboard is available directly on port <InlineCmd>3000</InlineCmd>:
       </p>
-      <CodeBlock>{`curl http://localhost:3000`}</CodeBlock>
+      <CodeBlock>{`http://<your-vps-ip>:3000`}</CodeBlock>
 
       <p>
-        The dashboard connects to the local API on port 8080. The API and orchestrator are not
-        exposed to the internet by default.
+        The dashboard connects to the local API on port 8080. The orchestrator has no public
+        inbound port.
       </p>
 
       <h3>Expose dashboard publicly (HTTPS + Basic Auth)</h3>
       <p>
-        To serve the dashboard through the Dirigent proxy with automatic TLS, configure a
-        dedicated domain and credentials in <InlineCmd>/etc/dirigent/dirigent.env</InlineCmd>:
+        You can configure or update dashboard proxy exposure any time:
       </p>
-      <CodeBlock>{`DIRIGENT_DASHBOARD_DOMAIN=dashboard.example.com
-DIRIGENT_DASHBOARD_USER=admin
-DIRIGENT_DASHBOARD_PASSWORD=change-me`}</CodeBlock>
+      <CodeBlock>{`sudo dirigent setup`}</CodeBlock>
       <p>
-        Then point the domain's DNS A record to your VPS IP, keep port <InlineCmd>80</InlineCmd>{' '}
-        open, and restart Dirigent services. The dashboard will be available at{' '}
+        The setup command writes values to <InlineCmd>/etc/dirigent/dirigent.env</InlineCmd>,
+        restarts the proxy, and enables dashboard access at{' '}
         <InlineCmd>https://dashboard.example.com</InlineCmd> and protected by HTTP Basic Auth.
       </p>
 

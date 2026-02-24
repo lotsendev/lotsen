@@ -28,8 +28,29 @@ Then `dirigent setup` will:
 - Register and start four systemd services that survive reboots
 - Create the `/var/lib/dirigent/` data directory and the `dirigent` Docker network
 - Offer security profiles in guided mode (`strict` is recommended)
+- Configure proxy hardening profiles (`standard` by default, `strict` recommended for internet-facing hosts)
 
 Re-running the installer performs an in-place upgrade.
+
+### Proxy hardening profiles
+
+Dirigent proxy supports three hardening levels:
+
+- `standard` (default): blocks sensitive file and dot-path probes like `/.env`, `/.git`, and `/.vscode`
+- `strict`: includes `standard` plus broader scanner-target blocks (`/swagger*`, `/actuator`, `/wp-*`, etc.) and tighter anti-scan throttling
+- `off`: disables proxy hardening checks
+
+Configure during setup:
+
+```bash
+sudo dirigent setup --proxy-hardening-profile strict
+```
+
+Or via environment variable:
+
+```bash
+sudo DIRIGENT_PROXY_HARDENING_PROFILE=strict dirigent setup
+```
 
 ### Ports
 

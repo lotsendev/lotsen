@@ -175,3 +175,35 @@ func TestDashboardAuthFromEnv_IgnoresCredentialsWithoutDomain(t *testing.T) {
 		t.Fatal("want nil config when dashboard domain is unset")
 	}
 }
+
+func TestHardeningProfileFromEnv_DefaultsToStandard(t *testing.T) {
+	t.Setenv("DIRIGENT_PROXY_HARDENING_PROFILE", "")
+
+	profile, err := hardeningProfileFromEnv()
+	if err != nil {
+		t.Fatalf("hardeningProfileFromEnv: %v", err)
+	}
+	if profile != handler.HardeningStandard {
+		t.Fatalf("want profile %s, got %s", handler.HardeningStandard, profile)
+	}
+}
+
+func TestHardeningProfileFromEnv_AcceptsStrict(t *testing.T) {
+	t.Setenv("DIRIGENT_PROXY_HARDENING_PROFILE", " STRICT ")
+
+	profile, err := hardeningProfileFromEnv()
+	if err != nil {
+		t.Fatalf("hardeningProfileFromEnv: %v", err)
+	}
+	if profile != handler.HardeningStrict {
+		t.Fatalf("want profile %s, got %s", handler.HardeningStrict, profile)
+	}
+}
+
+func TestHardeningProfileFromEnv_RejectsInvalidValue(t *testing.T) {
+	t.Setenv("DIRIGENT_PROXY_HARDENING_PROFILE", "aggressive")
+
+	if _, err := hardeningProfileFromEnv(); err == nil {
+		t.Fatal("want validation error for invalid profile")
+	}
+}

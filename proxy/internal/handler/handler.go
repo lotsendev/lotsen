@@ -8,6 +8,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ercadev/dirigent/proxy/internal/middleware"
 )
@@ -25,7 +27,21 @@ type RoutingTable interface {
 type Handler struct {
 	table         RoutingTable
 	dashboardAuth *DashboardAuth
+	hardening     HardeningProfile
+	scanner       *scannerLimiter
 }
+
+// HardeningProfile controls request filtering and anti-scan behavior.
+type HardeningProfile string
+
+const (
+	HardeningOff      HardeningProfile = "off"
+	HardeningStandard HardeningProfile = "standard"
+	HardeningStrict   HardeningProfile = "strict"
+)
+
+// Option customizes handler behavior.
+type Option func(*Handler)
 
 // DashboardAuth configures host-scoped authentication for the dashboard domain.
 type DashboardAuth struct {
@@ -35,8 +51,23 @@ type DashboardAuth struct {
 }
 
 // New creates a Handler backed by the given routing table.
-func New(table RoutingTable, dashboardAuth *DashboardAuth) *Handler {
-	return &Handler{table: table, dashboardAuth: dashboardAuth}
+func New(table RoutingTable, dashboardAuth *DashboardAuth, options ...Option) *Handler {
+	h := &Handler{table: table, dashboardAuth: dashboardAuth, hardening: HardeningStandard}
+	for _, apply := range options {
+		if apply != nil {
+			apply(h)
+		}
+	}
+	h.hardening = normalizeHardeningProfile(h.hardening)
+	h.scanner = newScannerLimiter(h.hardening)
+	return h
+}
+
+// WithHardeningProfile applies proxy hardening rules.
+func WithHardeningProfile(profile HardeningProfile) Option {
+	return func(h *Handler) {
+		h.hardening = profile
+	}
 }
 
 // RegisterRoutes wires the proxy catch-all and the internal control API into mux.
@@ -63,6 +94,21 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 // proxy routes inbound requests to the upstream registered for the Host header.
 // Returns 404 for unknown domains and 502 when the upstream is unreachable.
 func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	client := clientIP(r)
+	if h.scanner != nil && client != "" && h.scanner.IsBlocked(client, now) {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
+
+	if shouldBlockPath(r.URL.Path, h.hardening) {
+		if h.scanner != nil && client != "" {
+			h.scanner.RecordSuspicious(client, now)
+		}
+		http.NotFound(w, r)
+		return
+	}
+
 	host := r.Host
 	// Strip port if present (e.g. "example.com:80" → "example.com").
 	if bare, _, err := net.SplitHostPort(host); err == nil {
@@ -133,4 +179,160 @@ func normalizeDomain(domain string) string {
 	domain = strings.TrimSpace(domain)
 	domain = strings.TrimSuffix(domain, ".")
 	return strings.ToLower(domain)
+}
+
+func normalizeHardeningProfile(profile HardeningProfile) HardeningProfile {
+	switch HardeningProfile(strings.ToLower(strings.TrimSpace(string(profile)))) {
+	case HardeningOff:
+		return HardeningOff
+	case HardeningStrict:
+		return HardeningStrict
+	default:
+		return HardeningStandard
+	}
+}
+
+func shouldBlockPath(path string, profile HardeningProfile) bool {
+	if normalizeHardeningProfile(profile) == HardeningOff {
+		return false
+	}
+
+	p := strings.ToLower(strings.TrimSpace(path))
+	if p == "" {
+		p = "/"
+	}
+
+	for _, prefix := range []string{"/.git", "/.env", "/.vscode", "/.idea", "/.aws", "/.ssh", "/.svn", "/.hg"} {
+		if hasPathPrefix(p, prefix) {
+			return true
+		}
+	}
+
+	for _, exact := range []string{"/.ds_store", "/docker-compose.yml", "/docker-compose.yaml"} {
+		if p == exact {
+			return true
+		}
+	}
+
+	if normalizeHardeningProfile(profile) != HardeningStrict {
+		return false
+	}
+
+	for _, prefix := range []string{"/wp-admin", "/wp-includes", "/actuator", "/swagger", "/api-docs", "/debug", "/telescope", "/server-status", "/phpmyadmin"} {
+		if hasPathPrefix(p, prefix) {
+			return true
+		}
+	}
+
+	for _, exact := range []string{"/wp-login.php", "/xmlrpc.php", "/info.php", "/phpinfo.php", "/v2/_catalog"} {
+		if p == exact {
+			return true
+		}
+	}
+
+	for _, prefix := range []string{"/swagger-", "/v2/api-docs", "/v3/api-docs"} {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasPathPrefix(path, prefix string) bool {
+	if path == prefix {
+		return true
+	}
+	if strings.HasPrefix(path, prefix+"/") {
+		return true
+	}
+	if prefix == "/.env" && strings.HasPrefix(path, "/.env.") {
+		return true
+	}
+	return false
+}
+
+type scannerLimiter struct {
+	mu        sync.Mutex
+	entries   map[string]scannerEntry
+	window    time.Duration
+	threshold int
+	blockFor  time.Duration
+}
+
+type scannerEntry struct {
+	windowStart  time.Time
+	count        int
+	blockedUntil time.Time
+}
+
+func newScannerLimiter(profile HardeningProfile) *scannerLimiter {
+	switch normalizeHardeningProfile(profile) {
+	case HardeningOff:
+		return nil
+	case HardeningStrict:
+		return &scannerLimiter{entries: make(map[string]scannerEntry), window: time.Minute, threshold: 6, blockFor: 15 * time.Minute}
+	default:
+		return &scannerLimiter{entries: make(map[string]scannerEntry), window: time.Minute, threshold: 12, blockFor: 10 * time.Minute}
+	}
+}
+
+func (l *scannerLimiter) IsBlocked(ip string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	e, ok := l.entries[ip]
+	if !ok {
+		return false
+	}
+	if now.Before(e.blockedUntil) {
+		return true
+	}
+	if !e.blockedUntil.IsZero() {
+		e.blockedUntil = time.Time{}
+		e.windowStart = now
+		e.count = 0
+		l.entries[ip] = e
+	}
+	return false
+}
+
+func (l *scannerLimiter) RecordSuspicious(ip string, now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	e := l.entries[ip]
+	if e.windowStart.IsZero() || now.Sub(e.windowStart) > l.window {
+		e.windowStart = now
+		e.count = 0
+	}
+	e.count++
+	if e.count >= l.threshold {
+		e.blockedUntil = now.Add(l.blockFor)
+		e.windowStart = now
+		e.count = 0
+	}
+	l.entries[ip] = e
+}
+
+func clientIP(r *http.Request) string {
+	forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+	if forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		if len(parts) > 0 {
+			ip := strings.TrimSpace(parts[0])
+			if net.ParseIP(ip) != nil {
+				return ip
+			}
+		}
+	}
+
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && net.ParseIP(host) != nil {
+		return host
+	}
+	if net.ParseIP(strings.TrimSpace(r.RemoteAddr)) != nil {
+		return strings.TrimSpace(r.RemoteAddr)
+	}
+	return ""
 }

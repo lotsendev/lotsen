@@ -40,6 +40,12 @@ func newProxyServer(tbl *testTable) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
+func newProxyServerWithOptions(tbl *testTable, options ...handler.Option) *httptest.Server {
+	mux := http.NewServeMux()
+	handler.New(tbl, nil, options...).RegisterRoutes(mux)
+	return httptest.NewServer(mux)
+}
+
 func newProxyServerWithDashboardAuth(tbl *testTable, auth *handler.DashboardAuth) *httptest.Server {
 	mux := http.NewServeMux()
 	handler.New(tbl, auth).RegisterRoutes(mux)
@@ -363,5 +369,123 @@ func TestProxy_NonDashboardDomainDoesNotRequireBasicAuth(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestProxy_StandardHardeningBlocksSensitivePaths(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("example.com", backend.Listener.Addr().String())
+
+	proxy := newProxyServer(tbl)
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/.env", nil)
+	req.Host = "example.com"
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /.env: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestProxy_OffHardeningAllowsSensitivePaths(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.env" {
+			t.Fatalf("want path /.env, got %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("example.com", backend.Listener.Addr().String())
+
+	proxy := newProxyServerWithOptions(tbl, handler.WithHardeningProfile(handler.HardeningOff))
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/.env", nil)
+	req.Host = "example.com"
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /.env: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestProxy_StrictHardeningBlocksScannerPaths(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("example.com", backend.Listener.Addr().String())
+
+	proxy := newProxyServerWithOptions(tbl, handler.WithHardeningProfile(handler.HardeningStrict))
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/swagger-ui.html", nil)
+	req.Host = "example.com"
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /swagger-ui.html: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestProxy_StandardHardeningRateLimitsRepeatedScans(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("example.com", backend.Listener.Addr().String())
+
+	proxy := newProxyServer(tbl)
+	defer proxy.Close()
+
+	for i := 0; i < 12; i++ {
+		req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/.env", nil)
+		req.Host = "example.com"
+		req.Header.Set("X-Forwarded-For", "203.0.113.7")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("scan request %d: %v", i, err)
+		}
+		resp.Body.Close()
+	}
+
+	blocked, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	blocked.Host = "example.com"
+	blocked.Header.Set("X-Forwarded-For", "203.0.113.7")
+	resp, err := http.DefaultClient.Do(blocked)
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("want 429, got %d", resp.StatusCode)
 	}
 }

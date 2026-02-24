@@ -446,7 +446,7 @@ if [ -f "${ENV_FILE}" ]; then
     fi
 fi
 
-if [ -t 0 ]; then
+if [ -t 0 ] && [ "${DIRIGENT_NON_INTERACTIVE:-0}" != "1" ] && [ "${DIRIGENT_UPGRADE:-0}" != "1" ]; then
     echo ""
     echo "Dashboard public exposure setup"
     echo "  Configure HTTPS + Basic Auth on a dedicated domain (optional)."

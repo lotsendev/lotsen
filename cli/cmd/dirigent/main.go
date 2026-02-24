@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,6 +18,13 @@ const (
 	releaseBaseLatest = "https://github.com/ercadev/dirigent-releases/releases/latest/download"
 	releaseBaseTagFmt = "https://github.com/ercadev/dirigent-releases/releases/download/%s"
 )
+
+type versionSnapshot struct {
+	CurrentVersion string `json:"currentVersion"`
+	LatestVersion  string `json:"latestVersion"`
+}
+
+type versionLookup func() (versionSnapshot, error)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -190,17 +198,32 @@ func runUpgrade(args []string) error {
 	fs.SetOutput(io.Discard)
 
 	target := fs.String("to", "latest", "Upgrade target version")
-	nonInteractive := fs.Bool("non-interactive", true, "Disable prompts")
-	yes := fs.Bool("yes", true, "Skip confirmation prompts")
+	nonInteractive := fs.Bool("non-interactive", false, "Disable prompts")
+	yes := fs.Bool("yes", false, "Skip confirmation prompts")
 
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%w\n\nUsage: dirigent upgrade [--to latest|vX.Y.Z] [--non-interactive] [--yes]", err)
 	}
 
+	currentVersion, targetVersion := determineUpgradeVersions(*target, fetchLocalVersionSnapshot)
+	fmt.Printf("--> Upgrading Dirigent from %s to %s\n", currentVersion, targetVersion)
+
+	effectiveNonInteractive := *nonInteractive || !stdinIsTTY()
+	if !effectiveNonInteractive && !*yes {
+		confirmed, err := promptYesNo("Proceed with upgrade? [Y/n]: ", true)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return errors.New("upgrade cancelled")
+		}
+	}
+
 	env := append(os.Environ(),
 		"DIRIGENT_VERSION="+*target,
+		"DIRIGENT_UPGRADE=1",
 	)
-	if *nonInteractive {
+	if effectiveNonInteractive {
 		env = append(env, "DIRIGENT_NON_INTERACTIVE=1")
 	}
 	if *yes {
@@ -210,6 +233,57 @@ func runUpgrade(args []string) error {
 	url := releaseScriptURL(*target, "setup.sh")
 	fmt.Printf("--> Running upgrade from %s\n", url)
 	return runRemoteScript(url, env)
+}
+
+func determineUpgradeVersions(target string, lookup versionLookup) (string, string) {
+	from := "unknown"
+	to := strings.TrimSpace(target)
+	if to == "" {
+		to = "latest"
+	}
+
+	if lookup == nil {
+		return from, to
+	}
+
+	snapshot, err := lookup()
+	if err != nil {
+		return from, to
+	}
+
+	if strings.TrimSpace(snapshot.CurrentVersion) != "" {
+		from = strings.TrimSpace(snapshot.CurrentVersion)
+	}
+	if to == "latest" && strings.TrimSpace(snapshot.LatestVersion) != "" {
+		to = strings.TrimSpace(snapshot.LatestVersion)
+	}
+
+	return from, to
+}
+
+func fetchLocalVersionSnapshot() (versionSnapshot, error) {
+	client := &http.Client{Timeout: 3 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8080/api/version", nil)
+	if err != nil {
+		return versionSnapshot{}, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return versionSnapshot{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return versionSnapshot{}, fmt.Errorf("version endpoint status: %d", resp.StatusCode)
+	}
+
+	var snapshot versionSnapshot
+	if err := json.NewDecoder(resp.Body).Decode(&snapshot); err != nil {
+		return versionSnapshot{}, err
+	}
+
+	return snapshot, nil
 }
 
 func runDoctor(args []string) error {

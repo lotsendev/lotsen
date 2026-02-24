@@ -2302,3 +2302,65 @@ func TestUpdateDeployment_HostPortStableOnRedeploy(t *testing.T) {
 		t.Errorf("host port changed from %d to %d — should be stable", originalHostPort, updatedHostPort)
 	}
 }
+
+func TestAccessLogs_ProxiesProxyLogs(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/access-logs" {
+			t.Fatalf("want /internal/access-logs path, got %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode([]api.AccessLogEntry{{Method: http.MethodGet, Path: "/", StatusCode: 200}})
+	}))
+	defer proxy.Close()
+
+	t.Setenv("DIRIGENT_PROXY_INTERNAL_URL", proxy.URL)
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/access-logs?limit=5")
+	if err != nil {
+		t.Fatalf("GET /api/access-logs: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var entries []api.AccessLogEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("want one entry, got %d", len(entries))
+	}
+}
+
+func TestSecurityConfig_ProxiesProxySettings(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/security-config" {
+			t.Fatalf("want /internal/security-config path, got %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(api.SecurityConfig{Profile: "standard", SuspiciousThreshold: 12})
+	}))
+	defer proxy.Close()
+
+	t.Setenv("DIRIGENT_PROXY_INTERNAL_URL", proxy.URL)
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/security-config")
+	if err != nil {
+		t.Fatalf("GET /api/security-config: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var cfg api.SecurityConfig
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if cfg.Profile != "standard" {
+		t.Fatalf("want profile standard, got %s", cfg.Profile)
+	}
+}

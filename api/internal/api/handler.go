@@ -82,6 +82,8 @@ type Handler struct {
 	heartbeats   OrchestratorHeartbeatIngestor
 	docker       DockerConnectivityIngestor
 	loadBalancer LoadBalancerHealthIngestor
+	proxyClient  *http.Client
+	proxyBaseURL string
 	cpu          CPUUtilizationIngestor
 	ram          RAMUtilizationIngestor
 	versions     VersionInfoProvider
@@ -133,7 +135,23 @@ func NewWithDependencies(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 	cpuIngestor, _ := statusSource.(CPUUtilizationIngestor)
 	ramIngestor, _ := statusSource.(RAMUtilizationIngestor)
 
-	return &Handler{store: s, events: eb, dockerLogs: dl, statusEvents: newSystemStatusBroker(), accessLogDir: proxyAccessLogDirFromEnv(), statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor, loadBalancer: loadBalancerIngestor, cpu: cpuIngestor, ram: ramIngestor, versions: versions, upgrade: upgrader}
+	return &Handler{
+		store:        s,
+		events:       eb,
+		dockerLogs:   dl,
+		statusEvents: newSystemStatusBroker(),
+		accessLogDir: proxyAccessLogDirFromEnv(),
+		statusSource: statusSource,
+		heartbeats:   heartbeatIngestor,
+		docker:       dockerIngestor,
+		loadBalancer: loadBalancerIngestor,
+		proxyClient:  &http.Client{Timeout: 3 * time.Second},
+		proxyBaseURL: proxyInternalBaseURLFromEnv(),
+		cpu:          cpuIngestor,
+		ram:          ramIngestor,
+		versions:     versions,
+		upgrade:      upgrader,
+	}
 }
 
 func buildAPIStoreChecker(s Store) func(context.Context) bool {
@@ -155,6 +173,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/load-balancer/access-logs", h.loadBalancerAccessLogs)
 	mux.HandleFunc("POST /api/system-status/orchestrator-heartbeat", h.recordOrchestratorHeartbeat)
 	mux.HandleFunc("GET /api/version", h.getVersion)
+	mux.HandleFunc("GET /api/access-logs", h.accessLogs)
+	mux.HandleFunc("GET /api/security-config", h.securityConfig)
 	mux.HandleFunc("POST /api/upgrade", h.startUpgrade)
 	mux.HandleFunc("GET /api/upgrade/logs", h.upgradeLogs)
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
@@ -205,6 +225,14 @@ func proxyAccessLogDirFromEnv() string {
 		return dir
 	}
 	return "/var/lib/dirigent/logs/proxy"
+}
+
+func proxyInternalBaseURLFromEnv() string {
+	baseURL := strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_INTERNAL_URL"))
+	if baseURL == "" {
+		return "http://127.0.0.1"
+	}
+	return strings.TrimSuffix(baseURL, "/")
 }
 
 const (

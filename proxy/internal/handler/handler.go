@@ -10,6 +10,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -92,6 +93,8 @@ func (h *Handler) RegisterInternalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/health", h.health)
 	mux.HandleFunc("GET /internal/traffic", h.traffic)
 	mux.HandleFunc("POST /internal/routes", h.setRoute)
+	mux.HandleFunc("GET /internal/access-logs", h.listAccessLogs)
+	mux.HandleFunc("GET /internal/security-config", h.securityConfig)
 }
 
 // RegisterProxyRoutes wires the proxy catch-all route into mux.
@@ -114,6 +117,13 @@ type trafficStatus struct {
 	BlockedRequests    int64                    `json:"blockedRequests"`
 	ActiveBlockedIPs   int                      `json:"activeBlockedIps"`
 	BlockedIPs         []blockedIPTrafficStatus `json:"blockedIps,omitempty"`
+}
+
+type HardeningSettings struct {
+	Profile                   HardeningProfile `json:"profile"`
+	SuspiciousWindowSeconds   int64            `json:"suspiciousWindowSeconds"`
+	SuspiciousThreshold       int              `json:"suspiciousThreshold"`
+	SuspiciousBlockForSeconds int64            `json:"suspiciousBlockForSeconds"`
 }
 
 func (h *Handler) traffic(w http.ResponseWriter, _ *http.Request) {
@@ -215,6 +225,43 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rp.ServeHTTP(rw, r)
+}
+
+func (h *Handler) listAccessLogs(w http.ResponseWriter, r *http.Request) {
+	if h.accessLogs == nil {
+		writeJSON(w, http.StatusOK, []AccessLogEvent{})
+		return
+	}
+	provider, ok := h.accessLogs.(interface{ List(int) []AccessLogEvent })
+	if !ok {
+		writeJSON(w, http.StatusOK, []AccessLogEvent{})
+		return
+	}
+	limit := 200
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 1000 {
+			limit = parsed
+		}
+	}
+	writeJSON(w, http.StatusOK, provider.List(limit))
+}
+
+func (h *Handler) securityConfig(w http.ResponseWriter, _ *http.Request) {
+	cfg := HardeningSettings{Profile: h.hardening}
+	if h.scanner != nil {
+		cfg.SuspiciousWindowSeconds = int64(h.scanner.window.Seconds())
+		cfg.SuspiciousThreshold = h.scanner.threshold
+		cfg.SuspiciousBlockForSeconds = int64(h.scanner.blockFor.Seconds())
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("proxy: writeJSON: %v", err)
+	}
 }
 
 type accessLogResponseWriter struct {

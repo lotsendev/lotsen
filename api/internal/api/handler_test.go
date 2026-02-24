@@ -667,6 +667,28 @@ func TestCreateDeployment_DuplicateName(t *testing.T) {
 	}
 }
 
+func TestCreateDeployment_DashboardDomainConflict(t *testing.T) {
+	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "dashboard.example.com")
+
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"name":   "web",
+		"image":  "nginx:latest",
+		"domain": "Dashboard.Example.com.",
+	})
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("want 409, got %d", resp.StatusCode)
+	}
+}
+
 func TestCreateDeployment_InvalidBody(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
@@ -1333,6 +1355,36 @@ func TestPatchDeployment_DomainOnly_DoesNotRedeploy(t *testing.T) {
 	}
 }
 
+func TestPatchDeployment_DashboardDomainConflict(t *testing.T) {
+	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "dashboard.example.com")
+
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{
+		ID:     "d1",
+		Name:   "web",
+		Image:  "nginx:1",
+		Domain: "app.example.com",
+		Status: store.StatusHealthy,
+	}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]string{"domain": "dashboard.example.com"})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/d1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("want 409, got %d", resp.StatusCode)
+	}
+}
+
 func TestUpdateDeployment(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{
@@ -1589,6 +1641,40 @@ func TestUpdateDeployment_DomainOnly_DoesNotRedeploy(t *testing.T) {
 	case event := <-evtCh:
 		t.Fatalf("unexpected SSE event for domain-only update: %+v", event)
 	case <-time.After(250 * time.Millisecond):
+	}
+}
+
+func TestUpdateDeployment_DashboardDomainConflict(t *testing.T) {
+	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "dashboard.example.com")
+
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{
+		ID:     "d1",
+		Name:   "web",
+		Image:  "nginx:1",
+		Domain: "app.example.com",
+		Status: store.StatusHealthy,
+	}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"name":   "web",
+		"image":  "nginx:1",
+		"domain": "dashboard.example.com",
+	})
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/d1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("want 409, got %d", resp.StatusCode)
 	}
 }
 

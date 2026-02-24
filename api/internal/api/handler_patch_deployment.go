@@ -18,6 +18,10 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	if body.Domain != "" && conflictsWithDashboardDomain(body.Domain) {
+		http.Error(w, "domain is reserved for dashboard", http.StatusConflict)
+		return
+	}
 
 	existing, err := h.store.Get(id)
 	if err != nil {

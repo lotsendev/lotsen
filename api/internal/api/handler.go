@@ -307,6 +307,24 @@ func patchRequiresRedeploy(existing store.Deployment, body patchDeploymentReques
 	return false
 }
 
+func dashboardDomainFromEnv() string {
+	return normalizeDomain(os.Getenv("DIRIGENT_DASHBOARD_DOMAIN"))
+}
+
+func conflictsWithDashboardDomain(domain string) bool {
+	dashboardDomain := dashboardDomainFromEnv()
+	if dashboardDomain == "" {
+		return false
+	}
+	return normalizeDomain(domain) == dashboardDomain
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	domain = strings.TrimSuffix(domain, ".")
+	return strings.ToLower(domain)
+}
+
 func equalStringMap(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false

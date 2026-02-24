@@ -22,6 +22,10 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name and image are required", http.StatusBadRequest)
 		return
 	}
+	if conflictsWithDashboardDomain(body.Domain) {
+		http.Error(w, "domain is reserved for dashboard", http.StatusConflict)
+		return
+	}
 
 	id, err := newID()
 	if err != nil {

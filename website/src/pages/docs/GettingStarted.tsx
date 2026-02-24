@@ -36,8 +36,8 @@ export default function GettingStarted() {
           <InlineCmd>sudo</InlineCmd>.
         </li>
         <li>
-          <strong>Open ports:</strong> <InlineCmd>80</InlineCmd> (reverse proxy),{' '}
-          <InlineCmd>3000</InlineCmd> (dashboard), <InlineCmd>8080</InlineCmd> (API).
+          <strong>Open ports:</strong> <InlineCmd>80</InlineCmd> (reverse proxy) and{' '}
+          <InlineCmd>8080</InlineCmd> (API).
         </li>
         <li>
           <strong>Docker:</strong> if not already installed, the installer will install it for
@@ -129,14 +129,28 @@ systemctl status dirigent-dashboard`}</CodeBlock>
       {/* Accessing the dashboard */}
       <h2>Access the dashboard</h2>
       <p>
-        Open your browser and navigate to your server's IP address on port 3000:
+        By default, the dashboard runs locally on your VPS and is not public. You can inspect it
+        on the server directly:
       </p>
-      <CodeBlock>{`http://<your-vps-ip>:3000`}</CodeBlock>
+      <CodeBlock>{`curl http://localhost:3000`}</CodeBlock>
 
       <p>
         The dashboard connects to the local API on port 8080. The API and orchestrator are not
-        exposed to the internet by default — the proxy on port 80 only routes traffic to your
-        deployed containers.
+        exposed to the internet by default.
+      </p>
+
+      <h3>Expose dashboard publicly (HTTPS + Basic Auth)</h3>
+      <p>
+        To serve the dashboard through the Dirigent proxy with automatic TLS, configure a
+        dedicated domain and credentials in <InlineCmd>/etc/dirigent/dirigent.env</InlineCmd>:
+      </p>
+      <CodeBlock>{`DIRIGENT_DASHBOARD_DOMAIN=dashboard.example.com
+DIRIGENT_DASHBOARD_USER=admin
+DIRIGENT_DASHBOARD_PASSWORD=change-me`}</CodeBlock>
+      <p>
+        Then point the domain's DNS A record to your VPS IP, keep port <InlineCmd>80</InlineCmd>{' '}
+        open, and restart Dirigent services. The dashboard will be available at{' '}
+        <InlineCmd>https://dashboard.example.com</InlineCmd> and protected by HTTP Basic Auth.
       </p>
 
       {/* First deployment */}

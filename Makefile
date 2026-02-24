@@ -19,6 +19,7 @@ dev:
 
 # Compile the Go binaries.
 build:
+	cd cli && go build -o ../dirigent-cli ./cmd/dirigent
 	cd api && go build -o ../dirigent ./cmd/dirigent
 	cd orchestrator && go build -o ../dirigent-orchestrator ./cmd/orchestrator
 	cd proxy && go build -o ../dirigent-proxy ./cmd/proxy
@@ -35,5 +36,5 @@ dev-website:
 
 # Remove build artifacts.
 clean:
-	rm -f dirigent dirigent-orchestrator dirigent-proxy
+	rm -f dirigent-cli dirigent dirigent-orchestrator dirigent-proxy
 	rm -rf api/tmp orchestrator/tmp proxy/tmp

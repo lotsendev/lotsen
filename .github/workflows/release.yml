@@ -40,7 +40,9 @@ jobs:
 
           BUMP="none"
           while IFS= read -r line; do
-            if echo "$line" | grep -qiE 'BREAKING CHANGE'; then
+            # Footer token per conventional commits spec (must start the line).
+            # This avoids matching prose like "e.g. BREAKING CHANGE → major".
+            if echo "$line" | grep -qE '^BREAKING[- ]CHANGE:'; then
               BUMP="major"; break
             fi
             if echo "$line" | grep -qE '^[a-z]+(\([^)]+\))?!:'; then

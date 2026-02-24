@@ -48,4 +48,16 @@ describe('Routes', () => {
       screen.getByRole('heading', { name: /getting started/i }),
     ).toBeInTheDocument()
   })
+
+
+  it('renders markdown elements for docs pages', () => {
+    render(<TestApp initialPath="/docs/getting-started" />)
+
+    expect(screen.getAllByRole('link', { name: /deployment configuration/i })[1]).toHaveAttribute(
+      'href',
+      '/docs/deployment-configuration',
+    )
+    expect(screen.getByText(/curl -fsSL/i).tagName).toBe('CODE')
+    expect(screen.getByText(/OS:/i)).toBeInTheDocument()
+  })
 })

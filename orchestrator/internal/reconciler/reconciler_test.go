@@ -665,6 +665,29 @@ func TestReconcile_DockerUnavailable_DeployingBecomesFailed(t *testing.T) {
 	}
 }
 
+func TestReconcile_DeployingWithDashboardDomainConflict_BecomesFailedWithoutStart(t *testing.T) {
+	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "dashboard.example.com")
+
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "nginx:latest", Domain: "Dashboard.Example.com.", Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{}
+	r := reconciler.New(s, d, nil)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	if d.startCalls != 0 {
+		t.Fatalf("want no container starts, got %d", d.startCalls)
+	}
+	if s.getStatus("d1") != store.StatusFailed {
+		t.Fatalf("want status failed, got %s", s.getStatus("d1"))
+	}
+}
+
 func TestReconcile_DockerUnavailable_FailedAndIdleUnchanged(t *testing.T) {
 	s := &mockStore{
 		deployments: []store.Deployment{

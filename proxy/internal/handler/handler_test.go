@@ -36,7 +36,13 @@ func (t *testTable) Get(domain string) (string, bool) {
 
 func newProxyServer(tbl *testTable) *httptest.Server {
 	mux := http.NewServeMux()
-	handler.New(tbl).RegisterRoutes(mux)
+	handler.New(tbl, nil).RegisterRoutes(mux)
+	return httptest.NewServer(mux)
+}
+
+func newProxyServerWithDashboardAuth(tbl *testTable, auth *handler.DashboardAuth) *httptest.Server {
+	mux := http.NewServeMux()
+	handler.New(tbl, auth).RegisterRoutes(mux)
 	return httptest.NewServer(mux)
 }
 
@@ -248,7 +254,7 @@ func TestProxy_HTTPSKnownDomainReachesBackend(t *testing.T) {
 	tbl.Set("example.com", backend.Listener.Addr().String())
 
 	mux := http.NewServeMux()
-	handler.New(tbl).RegisterRoutes(mux)
+	handler.New(tbl, nil).RegisterRoutes(mux)
 	proxy := httptest.NewTLSServer(mux)
 	defer proxy.Close()
 
@@ -258,6 +264,100 @@ func TestProxy_HTTPSKnownDomainReachesBackend(t *testing.T) {
 	resp, err := proxy.Client().Do(req)
 	if err != nil {
 		t.Fatalf("GET / over HTTPS: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestProxy_DashboardDomainRequiresBasicAuth(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String())
+
+	proxy := newProxyServerWithDashboardAuth(tbl, &handler.DashboardAuth{
+		Domain:   "dashboard.example.com",
+		Username: "admin",
+		Password: "secret",
+	})
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	req.Host = "dashboard.example.com"
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("WWW-Authenticate"); got != `Basic realm="Dirigent"` {
+		t.Fatalf("want WWW-Authenticate header, got %q", got)
+	}
+}
+
+func TestProxy_DashboardDomainWithValidBasicAuth(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String())
+
+	proxy := newProxyServerWithDashboardAuth(tbl, &handler.DashboardAuth{
+		Domain:   "dashboard.example.com",
+		Username: "admin",
+		Password: "secret",
+	})
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	req.Host = "dashboard.example.com"
+	req.SetBasicAuth("admin", "secret")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestProxy_NonDashboardDomainDoesNotRequireBasicAuth(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("app.example.com", backend.Listener.Addr().String())
+
+	proxy := newProxyServerWithDashboardAuth(tbl, &handler.DashboardAuth{
+		Domain:   "dashboard.example.com",
+		Username: "admin",
+		Password: "secret",
+	})
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	req.Host = "app.example.com"
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
 	}
 	defer resp.Body.Close()
 

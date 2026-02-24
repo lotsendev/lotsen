@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,7 @@ type Reconciler struct {
 	hasLastDockerReachable bool
 	retryByDeployment      map[string]retryState
 	now                    func() time.Time
+	dashboardDomain        string
 }
 
 type retryState struct {
@@ -67,6 +69,7 @@ func New(s Store, d Docker, n Notifier) *Reconciler {
 		notifier:          n,
 		retryByDeployment: make(map[string]retryState),
 		now:               time.Now,
+		dashboardDomain:   normalizeDomain(os.Getenv("DIRIGENT_DASHBOARD_DOMAIN")),
 	}
 }
 
@@ -122,6 +125,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		}
 
 		c, hasContainer := containerByDeployment[d.ID]
+		if r.dashboardDomain != "" && normalizeDomain(d.Domain) == r.dashboardDomain {
+			if d.Status == store.StatusDeploying {
+				r.updateStatus(d.ID, store.StatusFailed, fmt.Sprintf("domain %q is reserved for dashboard", r.dashboardDomain))
+				continue
+			}
+		}
 
 		switch d.Status {
 		case store.StatusDeploying:
@@ -312,4 +321,10 @@ func (r *Reconciler) notifyStatus(id string, status store.Status, errorMessage s
 			log.Printf("reconciler: notify api status %s → %s: %v", id, status, err)
 		}
 	}
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	domain = strings.TrimSuffix(domain, ".")
+	return strings.ToLower(domain)
 }

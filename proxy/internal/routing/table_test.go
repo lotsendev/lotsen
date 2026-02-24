@@ -57,6 +57,22 @@ func TestTable_UnknownDomain(t *testing.T) {
 	}
 }
 
+func TestTable_StaticRoutePersistsWhenDynamicDeleted(t *testing.T) {
+	tbl := routing.NewTable()
+	tbl.SetStatic("dashboard.example.com", "localhost:3000")
+	tbl.Set("dashboard.example.com", "localhost:8080")
+
+	tbl.Delete("dashboard.example.com")
+
+	upstream, ok := tbl.Get("dashboard.example.com")
+	if !ok {
+		t.Fatal("want static route to exist after dynamic delete")
+	}
+	if upstream != "localhost:3000" {
+		t.Errorf("want static upstream localhost:3000, got %s", upstream)
+	}
+}
+
 func TestTable_MultipleDomains(t *testing.T) {
 	tbl := routing.NewTable()
 	tbl.Set("foo.com", "localhost:3000")

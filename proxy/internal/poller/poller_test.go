@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ercadev/dirigent/proxy/internal/poller"
+	"github.com/ercadev/dirigent/proxy/internal/routing"
 	"github.com/ercadev/dirigent/store"
 )
 
@@ -192,5 +193,22 @@ func TestPoller_UpdatesChangedUpstream(t *testing.T) {
 
 	if u, _ := tbl.get("example.com"); u != "localhost:9090" {
 		t.Errorf("updated upstream: want localhost:9090, got %s", u)
+	}
+}
+
+func TestPoller_DoesNotDeleteStaticRoutes(t *testing.T) {
+	ms := &memStore{}
+	tbl := routing.NewTable()
+	tbl.SetStatic("dashboard.example.com", "localhost:3000")
+	p := poller.New(ms, tbl, 20*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go p.Run(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	if u, ok := tbl.Get("dashboard.example.com"); !ok || u != "localhost:3000" {
+		t.Fatalf("want static dashboard route preserved, got %q (ok=%v)", u, ok)
 	}
 }

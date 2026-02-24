@@ -46,6 +46,15 @@ func main() {
 
 	table := routing.NewTable()
 
+	dashboardAuth, err := dashboardAuthFromEnv()
+	if err != nil {
+		log.Fatalf("proxy: %v", err)
+	}
+	if dashboardAuth != nil {
+		table.SetStatic(dashboardAuth.Domain, "localhost:3000")
+		log.Printf("proxy: registered dashboard domain %s -> localhost:3000", dashboardAuth.Domain)
+	}
+
 	interval := 5 * time.Second
 	if v := os.Getenv("DIRIGENT_POLL_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
@@ -54,7 +63,7 @@ func main() {
 	}
 
 	p := poller.New(s, table, interval)
-	h := handler.New(table)
+	h := handler.New(table, dashboardAuth)
 
 	hostPolicy := hostPolicyFromTable(table)
 	cacheDir := envOrDefault("DIRIGENT_CERT_CACHE_DIR", defaultCertCacheDir)
@@ -206,4 +215,27 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func dashboardAuthFromEnv() (*handler.DashboardAuth, error) {
+	domain := normalizeDomain(os.Getenv("DIRIGENT_DASHBOARD_DOMAIN"))
+	user := os.Getenv("DIRIGENT_DASHBOARD_USER")
+	password := os.Getenv("DIRIGENT_DASHBOARD_PASSWORD")
+
+	if domain == "" {
+		if user != "" || password != "" {
+			log.Printf("proxy: ignoring dashboard auth credentials because DIRIGENT_DASHBOARD_DOMAIN is unset")
+		}
+		return nil, nil
+	}
+
+	if user == "" || password == "" {
+		return nil, fmt.Errorf("DIRIGENT_DASHBOARD_DOMAIN requires both DIRIGENT_DASHBOARD_USER and DIRIGENT_DASHBOARD_PASSWORD")
+	}
+
+	return &handler.DashboardAuth{
+		Domain:   domain,
+		Username: user,
+		Password: password,
+	}, nil
 }

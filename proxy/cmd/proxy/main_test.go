@@ -67,7 +67,7 @@ func TestRedirectToHTTPS_CustomPort(t *testing.T) {
 }
 
 func TestHTTPMux_InternalHealthNotRedirected(t *testing.T) {
-	h := handler.New(newTableStub())
+	h := handler.New(newTableStub(), nil)
 	mux := newHTTPMux(h, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://example.com/", http.StatusMovedPermanently)
 	}))
@@ -85,7 +85,7 @@ func TestHTTPMux_InternalHealthNotRedirected(t *testing.T) {
 
 func TestHTTPMux_InternalRoutesCanBeUpdated(t *testing.T) {
 	tbl := newTableStub()
-	h := handler.New(tbl)
+	h := handler.New(tbl, nil)
 	mux := newHTTPMux(h, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://example.com/", http.StatusMovedPermanently)
 	}))
@@ -128,5 +128,50 @@ func TestNewAutocertManager_UsesDirectoryAndEmail(t *testing.T) {
 	}
 	if mgr.Client.DirectoryURL != letsencryptStagingDirectoryURL {
 		t.Fatalf("want directory %s, got %s", letsencryptStagingDirectoryURL, mgr.Client.DirectoryURL)
+	}
+}
+
+func TestDashboardAuthFromEnv_DomainWithoutCredentialsFails(t *testing.T) {
+	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "dashboard.example.com")
+	t.Setenv("DIRIGENT_DASHBOARD_USER", "")
+	t.Setenv("DIRIGENT_DASHBOARD_PASSWORD", "")
+
+	_, err := dashboardAuthFromEnv()
+	if err == nil {
+		t.Fatal("want validation error when dashboard credentials are missing")
+	}
+}
+
+func TestDashboardAuthFromEnv_ReturnsNormalizedAuth(t *testing.T) {
+	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "Dashboard.Example.com.")
+	t.Setenv("DIRIGENT_DASHBOARD_USER", "admin")
+	t.Setenv("DIRIGENT_DASHBOARD_PASSWORD", "secret")
+
+	auth, err := dashboardAuthFromEnv()
+	if err != nil {
+		t.Fatalf("dashboardAuthFromEnv: %v", err)
+	}
+	if auth == nil {
+		t.Fatal("want dashboard auth config")
+	}
+	if auth.Domain != "dashboard.example.com" {
+		t.Fatalf("want normalized domain dashboard.example.com, got %s", auth.Domain)
+	}
+	if auth.Username != "admin" || auth.Password != "secret" {
+		t.Fatal("want configured credentials")
+	}
+}
+
+func TestDashboardAuthFromEnv_IgnoresCredentialsWithoutDomain(t *testing.T) {
+	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "")
+	t.Setenv("DIRIGENT_DASHBOARD_USER", "admin")
+	t.Setenv("DIRIGENT_DASHBOARD_PASSWORD", "secret")
+
+	auth, err := dashboardAuthFromEnv()
+	if err != nil {
+		t.Fatalf("dashboardAuthFromEnv: %v", err)
+	}
+	if auth != nil {
+		t.Fatal("want nil config when dashboard domain is unset")
 	}
 }

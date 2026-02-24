@@ -23,6 +23,10 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name and image are required", http.StatusBadRequest)
 		return
 	}
+	if conflictsWithDashboardDomain(body.Domain) {
+		http.Error(w, "domain is reserved for dashboard", http.StatusConflict)
+		return
+	}
 
 	if body.Envs == nil {
 		body.Envs = map[string]string{}

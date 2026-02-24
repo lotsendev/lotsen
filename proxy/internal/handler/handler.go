@@ -8,6 +8,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+
+	"github.com/ercadev/dirigent/proxy/internal/middleware"
 )
 
 // RoutingTable is the interface the handler reads from when proxying requests
@@ -21,12 +23,20 @@ type RoutingTable interface {
 // registered for the request's Host header, and exposes a small control API
 // so the orchestrator can trigger upstream swaps during zero-downtime redeploys.
 type Handler struct {
-	table RoutingTable
+	table         RoutingTable
+	dashboardAuth *DashboardAuth
+}
+
+// DashboardAuth configures host-scoped authentication for the dashboard domain.
+type DashboardAuth struct {
+	Domain   string
+	Username string
+	Password string
 }
 
 // New creates a Handler backed by the given routing table.
-func New(table RoutingTable) *Handler {
-	return &Handler{table: table}
+func New(table RoutingTable, dashboardAuth *DashboardAuth) *Handler {
+	return &Handler{table: table, dashboardAuth: dashboardAuth}
 }
 
 // RegisterRoutes wires the proxy catch-all and the internal control API into mux.
@@ -59,6 +69,13 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		host = bare
 	}
 	host = normalizeDomain(host)
+
+	if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
+		if !middleware.ValidBasicAuth(r, h.dashboardAuth.Username, h.dashboardAuth.Password) {
+			middleware.WriteBasicAuthChallenge(w, "Dirigent")
+			return
+		}
+	}
 
 	upstream, ok := h.table.Get(host)
 	if !ok {

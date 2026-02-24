@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"bufio"
 	"encoding/json"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,32 +33,7 @@ type Handler struct {
 	dashboardAuth *DashboardAuth
 	hardening     HardeningProfile
 	scanner       *scannerLimiter
-	accessLogger  AccessLogger
-}
-
-// AccessLogger records per-request proxy metadata.
-type AccessLogger interface {
-	Log(AccessLogEntry)
-}
-
-// AccessLogEntry captures structured request/response metadata.
-type AccessLogEntry struct {
-	Timestamp      time.Time `json:"timestamp"`
-	Method         string    `json:"method"`
-	Path           string    `json:"path"`
-	StatusCode     int       `json:"statusCode"`
-	UpstreamTarget string    `json:"upstreamTarget,omitempty"`
-	DurationMs     int64     `json:"durationMs"`
-	ClientIP       string    `json:"clientIp,omitempty"`
-	Host           string    `json:"host,omitempty"`
-}
-
-// HardeningSettings describes effective hardening/rate-limit behavior.
-type HardeningSettings struct {
-	Profile                   HardeningProfile `json:"profile"`
-	SuspiciousWindowSeconds   int64            `json:"suspiciousWindowSeconds"`
-	SuspiciousThreshold       int              `json:"suspiciousThreshold"`
-	SuspiciousBlockForSeconds int64            `json:"suspiciousBlockForSeconds"`
+	accessLogs    AccessLogger
 }
 
 // HardeningProfile controls request filtering and anti-scan behavior.
@@ -97,10 +75,10 @@ func WithHardeningProfile(profile HardeningProfile) Option {
 	}
 }
 
-// WithAccessLogger installs structured request access logging.
+// WithAccessLogger enables per-request access log writing.
 func WithAccessLogger(logger AccessLogger) Option {
 	return func(h *Handler) {
-		h.accessLogger = logger
+		h.accessLogs = logger
 	}
 }
 
@@ -113,6 +91,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 // RegisterInternalRoutes wires the internal health/control API into mux.
 func (h *Handler) RegisterInternalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/health", h.health)
+	mux.HandleFunc("GET /internal/traffic", h.traffic)
 	mux.HandleFunc("POST /internal/routes", h.setRoute)
 	mux.HandleFunc("GET /internal/access-logs", h.listAccessLogs)
 	mux.HandleFunc("GET /internal/security-config", h.securityConfig)
@@ -127,23 +106,81 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+type blockedIPTrafficStatus struct {
+	IP           string     `json:"ip"`
+	BlockedUntil *time.Time `json:"blockedUntil,omitempty"`
+}
+
+type trafficStatus struct {
+	TotalRequests      int64                    `json:"totalRequests"`
+	SuspiciousRequests int64                    `json:"suspiciousRequests"`
+	BlockedRequests    int64                    `json:"blockedRequests"`
+	ActiveBlockedIPs   int                      `json:"activeBlockedIps"`
+	BlockedIPs         []blockedIPTrafficStatus `json:"blockedIps,omitempty"`
+}
+
+type HardeningSettings struct {
+	Profile                   HardeningProfile `json:"profile"`
+	SuspiciousWindowSeconds   int64            `json:"suspiciousWindowSeconds"`
+	SuspiciousThreshold       int              `json:"suspiciousThreshold"`
+	SuspiciousBlockForSeconds int64            `json:"suspiciousBlockForSeconds"`
+}
+
+func (h *Handler) traffic(w http.ResponseWriter, _ *http.Request) {
+	status := trafficStatus{}
+	if h.scanner != nil {
+		status = h.scanner.Snapshot(time.Now())
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		log.Printf("traffic: encode: %v", err)
+	}
+}
+
 // proxy routes inbound requests to the upstream registered for the Host header.
 // Returns 404 for unknown domains and 502 when the upstream is unreachable.
 func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
+	start := now
 	client := clientIP(r)
+	outcome := "proxied"
+	rw := &accessLogResponseWriter{ResponseWriter: w}
+	defer func() {
+		if h.accessLogs == nil {
+			return
+		}
+		h.accessLogs.Log(AccessLogEvent{
+			Timestamp:    start.UTC(),
+			ClientIP:     client,
+			Host:         normalizeDomain(r.Host),
+			Method:       r.Method,
+			Path:         r.URL.Path,
+			Query:        r.URL.RawQuery,
+			Status:       rw.Status(),
+			DurationMs:   time.Since(start).Milliseconds(),
+			BytesWritten: rw.BytesWritten(),
+			Outcome:      outcome,
+			Headers:      r.Header,
+		})
+	}()
+
+	if h.scanner != nil {
+		h.scanner.RecordRequest()
+	}
 	if h.scanner != nil && client != "" && h.scanner.IsBlocked(client, now) {
-		h.logAccess(AccessLogEntry{Timestamp: now.UTC(), Method: r.Method, Path: r.URL.Path, StatusCode: http.StatusTooManyRequests, DurationMs: 0, ClientIP: client, Host: r.Host})
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		h.scanner.RecordBlockedRequest()
+		outcome = "rate_limited"
+		http.Error(rw, "too many requests", http.StatusTooManyRequests)
 		return
 	}
 
 	if shouldBlockPath(r.URL.Path, h.hardening) {
-		if h.scanner != nil && client != "" {
+		if h.scanner != nil {
 			h.scanner.RecordSuspicious(client, now)
 		}
-		h.logAccess(AccessLogEntry{Timestamp: now.UTC(), Method: r.Method, Path: r.URL.Path, StatusCode: http.StatusNotFound, DurationMs: 0, ClientIP: client, Host: r.Host})
-		http.NotFound(w, r)
+		outcome = "blocked_path"
+		http.NotFound(rw, r)
 		return
 	}
 
@@ -156,16 +193,16 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 
 	if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
 		if !middleware.ValidBasicAuth(r, h.dashboardAuth.Username, h.dashboardAuth.Password) {
-			h.logAccess(AccessLogEntry{Timestamp: now.UTC(), Method: r.Method, Path: r.URL.Path, StatusCode: http.StatusUnauthorized, DurationMs: 0, ClientIP: client, Host: host})
-			middleware.WriteBasicAuthChallenge(w, "Dirigent")
+			outcome = "unauthorized"
+			middleware.WriteBasicAuthChallenge(rw, "Dirigent")
 			return
 		}
 	}
 
 	upstream, ok := h.table.Get(host)
 	if !ok {
-		h.logAccess(AccessLogEntry{Timestamp: now.UTC(), Method: r.Method, Path: r.URL.Path, StatusCode: http.StatusNotFound, DurationMs: 0, ClientIP: client, Host: host})
-		http.Error(w, "unknown domain", http.StatusNotFound)
+		outcome = "unknown_domain"
+		http.Error(rw, "unknown domain", http.StatusNotFound)
 		return
 	}
 
@@ -174,7 +211,6 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		Host:   upstream,
 	}
 
-	rw := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 	rp := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = target.Scheme
@@ -182,39 +218,23 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 			req.Header.Set("X-Forwarded-Host", req.Host)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			outcome = "upstream_error"
 			log.Printf("proxy: upstream %s: %v", upstream, err)
 			http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		},
 	}
 
 	rp.ServeHTTP(rw, r)
-	h.logAccess(AccessLogEntry{
-		Timestamp:      now.UTC(),
-		Method:         r.Method,
-		Path:           r.URL.Path,
-		StatusCode:     rw.statusCode,
-		UpstreamTarget: upstream,
-		DurationMs:     time.Since(now).Milliseconds(),
-		ClientIP:       client,
-		Host:           host,
-	})
-}
-
-func (h *Handler) logAccess(entry AccessLogEntry) {
-	if h.accessLogger == nil {
-		return
-	}
-	h.accessLogger.Log(entry)
 }
 
 func (h *Handler) listAccessLogs(w http.ResponseWriter, r *http.Request) {
-	if h.accessLogger == nil {
-		writeJSON(w, http.StatusOK, []AccessLogEntry{})
+	if h.accessLogs == nil {
+		writeJSON(w, http.StatusOK, []AccessLogEvent{})
 		return
 	}
-	provider, ok := h.accessLogger.(interface{ List(int) []AccessLogEntry })
+	provider, ok := h.accessLogs.(interface{ List(int) []AccessLogEvent })
 	if !ok {
-		writeJSON(w, http.StatusOK, []AccessLogEntry{})
+		writeJSON(w, http.StatusOK, []AccessLogEvent{})
 		return
 	}
 	limit := 200
@@ -236,22 +256,83 @@ func (h *Handler) securityConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-type statusRecorder struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (r *statusRecorder) WriteHeader(statusCode int) {
-	r.statusCode = statusCode
-	r.ResponseWriter.WriteHeader(statusCode)
-}
-
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		log.Printf("proxy: writeJSON: %v", err)
 	}
+}
+
+type accessLogResponseWriter struct {
+	http.ResponseWriter
+	status       int
+	bytesWritten int64
+}
+
+func (w *accessLogResponseWriter) WriteHeader(statusCode int) {
+	w.status = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *accessLogResponseWriter) Write(b []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	n, err := w.ResponseWriter.Write(b)
+	w.bytesWritten += int64(n)
+	return n, err
+}
+
+func (w *accessLogResponseWriter) Status() int {
+	if w.status == 0 {
+		return http.StatusOK
+	}
+	return w.status
+}
+
+func (w *accessLogResponseWriter) BytesWritten() int64 {
+	return w.bytesWritten
+}
+
+func (w *accessLogResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *accessLogResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return h.Hijack()
+}
+
+func (w *accessLogResponseWriter) ReadFrom(r io.Reader) (int64, error) {
+	rf, ok := w.ResponseWriter.(io.ReaderFrom)
+	if !ok {
+		n, err := io.Copy(w.ResponseWriter, r)
+		w.bytesWritten += n
+		if w.status == 0 {
+			w.status = http.StatusOK
+		}
+		return n, err
+	}
+	n, err := rf.ReadFrom(r)
+	w.bytesWritten += n
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return n, err
+}
+
+func (w *accessLogResponseWriter) Push(target string, opts *http.PushOptions) error {
+	p, ok := w.ResponseWriter.(http.Pusher)
+	if !ok {
+		return http.ErrNotSupported
+	}
+	return p.Push(target, opts)
 }
 
 type routeRequest struct {
@@ -358,11 +439,14 @@ func hasPathPrefix(path, prefix string) bool {
 }
 
 type scannerLimiter struct {
-	mu        sync.Mutex
-	entries   map[string]scannerEntry
-	window    time.Duration
-	threshold int
-	blockFor  time.Duration
+	mu                 sync.Mutex
+	entries            map[string]scannerEntry
+	window             time.Duration
+	threshold          int
+	blockFor           time.Duration
+	totalRequests      int64
+	suspiciousRequests int64
+	blockedRequests    int64
 }
 
 type scannerEntry struct {
@@ -405,6 +489,11 @@ func (l *scannerLimiter) IsBlocked(ip string, now time.Time) bool {
 func (l *scannerLimiter) RecordSuspicious(ip string, now time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.suspiciousRequests++
+
+	if ip == "" {
+		return
+	}
 
 	e := l.entries[ip]
 	if e.windowStart.IsZero() || now.Sub(e.windowStart) > l.window {
@@ -418,6 +507,52 @@ func (l *scannerLimiter) RecordSuspicious(ip string, now time.Time) {
 		e.count = 0
 	}
 	l.entries[ip] = e
+}
+
+func (l *scannerLimiter) RecordRequest() {
+	l.mu.Lock()
+	l.totalRequests++
+	l.mu.Unlock()
+}
+
+func (l *scannerLimiter) RecordBlockedRequest() {
+	l.mu.Lock()
+	l.blockedRequests++
+	l.mu.Unlock()
+}
+
+func (l *scannerLimiter) Snapshot(now time.Time) trafficStatus {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	blocked := make([]blockedIPTrafficStatus, 0, len(l.entries))
+	for ip, entry := range l.entries {
+		if now.Before(entry.blockedUntil) {
+			blockedUntil := entry.blockedUntil
+			blocked = append(blocked, blockedIPTrafficStatus{IP: ip, BlockedUntil: &blockedUntil})
+		}
+	}
+
+	slices.SortFunc(blocked, func(a, b blockedIPTrafficStatus) int {
+		if a.BlockedUntil == nil || b.BlockedUntil == nil {
+			return strings.Compare(a.IP, b.IP)
+		}
+		if a.BlockedUntil.Equal(*b.BlockedUntil) {
+			return strings.Compare(a.IP, b.IP)
+		}
+		if a.BlockedUntil.Before(*b.BlockedUntil) {
+			return 1
+		}
+		return -1
+	})
+
+	return trafficStatus{
+		TotalRequests:      l.totalRequests,
+		SuspiciousRequests: l.suspiciousRequests,
+		BlockedRequests:    l.blockedRequests,
+		ActiveBlockedIPs:   len(blocked),
+		BlockedIPs:         blocked,
+	}
 }
 
 func clientIP(r *http.Request) string {

@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -478,6 +480,122 @@ func TestRecordOrchestratorHeartbeat_UpdatesLoadBalancerHealth(t *testing.T) {
 	}
 }
 
+func TestRecordOrchestratorHeartbeat_UpdatesLoadBalancerTrafficTelemetry(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	reqBody := `{"loadBalancer":{"responding":true,"traffic":{"totalRequests":201,"suspiciousRequests":19,"blockedRequests":4,"activeBlockedIps":2,"blockedIps":[{"ip":"203.0.113.7"},{"ip":"198.51.100.11"}]}}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/system-status/orchestrator-heartbeat", bytes.NewBufferString(reqBody))
+	if err != nil {
+		t.Fatalf("POST heartbeat request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/system-status/orchestrator-heartbeat: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", resp.StatusCode)
+	}
+
+	statusResp, err := http.Get(srv.URL + "/api/system-status")
+	if err != nil {
+		t.Fatalf("GET /api/system-status: %v", err)
+	}
+	defer statusResp.Body.Close()
+
+	var body api.SystemStatusSnapshot
+	if err := json.NewDecoder(statusResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.LoadBalancer.Traffic == nil {
+		t.Fatal("want load balancer traffic telemetry")
+	}
+	if body.LoadBalancer.Traffic.TotalRequests != 201 {
+		t.Fatalf("want total requests 201, got %d", body.LoadBalancer.Traffic.TotalRequests)
+	}
+	if body.LoadBalancer.Traffic.ActiveBlockedIPs != 2 {
+		t.Fatalf("want active blocked ips 2, got %d", body.LoadBalancer.Traffic.ActiveBlockedIPs)
+	}
+	if len(body.LoadBalancer.Traffic.BlockedIPs) != 2 {
+		t.Fatalf("want 2 blocked ips, got %d", len(body.LoadBalancer.Traffic.BlockedIPs))
+	}
+}
+
+func TestSystemStatusEvents_StreamSendsHeartbeatUpdates(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/system-status/events", nil)
+	if err != nil {
+		t.Fatalf("build events request: %v", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/system-status/events: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	readEvent := func(r *bufio.Reader) api.SystemStatusSnapshot {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			line, readErr := r.ReadString('\n')
+			if readErr != nil {
+				t.Fatalf("read stream line: %v", readErr)
+			}
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
+			var snapshot api.SystemStatusSnapshot
+			if err := json.Unmarshal([]byte(payload), &snapshot); err != nil {
+				t.Fatalf("unmarshal stream payload: %v", err)
+			}
+			return snapshot
+		}
+		t.Fatal("timed out waiting for system-status event")
+		return api.SystemStatusSnapshot{}
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	_ = readEvent(reader) // initial snapshot
+
+	heartbeatReqBody := `{"loadBalancer":{"responding":false,"traffic":{"totalRequests":88,"blockedRequests":3,"activeBlockedIps":1,"blockedIps":[{"ip":"203.0.113.7"}]}}}`
+	heartbeatReq, err := http.NewRequest(http.MethodPost, srv.URL+"/api/system-status/orchestrator-heartbeat", bytes.NewBufferString(heartbeatReqBody))
+	if err != nil {
+		t.Fatalf("build heartbeat request: %v", err)
+	}
+	heartbeatReq.Header.Set("Content-Type", "application/json")
+
+	heartbeatResp, err := http.DefaultClient.Do(heartbeatReq)
+	if err != nil {
+		t.Fatalf("POST /api/system-status/orchestrator-heartbeat: %v", err)
+	}
+	heartbeatResp.Body.Close()
+
+	if heartbeatResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", heartbeatResp.StatusCode)
+	}
+
+	updated := readEvent(reader)
+	if updated.LoadBalancer.State != api.SystemStatusStateDegraded {
+		t.Fatalf("want degraded load balancer state, got %s", updated.LoadBalancer.State)
+	}
+	if updated.LoadBalancer.Traffic == nil || updated.LoadBalancer.Traffic.BlockedRequests != 3 {
+		t.Fatalf("want blocked request count 3, got %+v", updated.LoadBalancer.Traffic)
+	}
+}
+
 func TestRecordOrchestratorHeartbeat_RejectsInvalidHostMetricPercent(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
@@ -492,6 +610,170 @@ func TestRecordOrchestratorHeartbeat_RejectsInvalidHostMetricPercent(t *testing.
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST /api/system-status/orchestrator-heartbeat: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestLoadBalancerAccessLogs_PaginatesNewestFirst(t *testing.T) {
+	logDir := t.TempDir()
+	t.Setenv("DIRIGENT_PROXY_ACCESS_LOG_DIR", logDir)
+
+	writeAccessLogFile := func(name string, lines []string) {
+		t.Helper()
+		path := filepath.Join(logDir, name)
+		if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+			t.Fatalf("write access log file %s: %v", name, err)
+		}
+	}
+
+	writeAccessLogFile("access-2026-02-24-20.log", []string{
+		`{"timestamp":"2026-02-24T20:30:00Z","clientIp":"203.0.113.5","host":"api.example.com","method":"GET","path":"/health","status":200,"durationMs":4,"bytesWritten":12,"outcome":"proxied","headers":{"user-agent":"ua-3"}}`,
+		`{"timestamp":"2026-02-24T20:31:00Z","clientIp":"203.0.113.6","host":"api.example.com","method":"GET","path":"/ready","status":200,"durationMs":5,"bytesWritten":15,"outcome":"proxied","headers":{"user-agent":"ua-4"}}`,
+	})
+	writeAccessLogFile("access-2026-02-24-19.log", []string{
+		`{"timestamp":"2026-02-24T19:10:00Z","clientIp":"198.51.100.7","host":"api.example.com","method":"POST","path":"/deploy","status":201,"durationMs":12,"bytesWritten":80,"outcome":"proxied","headers":{"user-agent":"ua-2"}}`,
+		`{"timestamp":"2026-02-24T19:09:00Z","clientIp":"198.51.100.8","host":"api.example.com","method":"GET","path":"/metrics","status":200,"durationMs":6,"bytesWritten":22,"outcome":"proxied","headers":{"user-agent":"ua-1"}}`,
+	})
+
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/load-balancer/access-logs?limit=2")
+	if err != nil {
+		t.Fatalf("GET access logs page1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var page1 struct {
+		Items []struct {
+			Path string `json:"path"`
+		} `json:"items"`
+		HasMore    bool   `json:"hasMore"`
+		NextCursor string `json:"nextCursor"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&page1); err != nil {
+		t.Fatalf("decode page1: %v", err)
+	}
+
+	if len(page1.Items) != 2 {
+		t.Fatalf("want 2 items, got %d", len(page1.Items))
+	}
+	if page1.Items[0].Path != "/ready" || page1.Items[1].Path != "/health" {
+		t.Fatalf("unexpected page1 order: %+v", page1.Items)
+	}
+	if !page1.HasMore || page1.NextCursor == "" {
+		t.Fatalf("want next cursor and more=true, got hasMore=%v cursor=%q", page1.HasMore, page1.NextCursor)
+	}
+
+	resp2, err := http.Get(srv.URL + "/api/load-balancer/access-logs?limit=2&cursor=" + page1.NextCursor)
+	if err != nil {
+		t.Fatalf("GET access logs page2: %v", err)
+	}
+	defer resp2.Body.Close()
+
+	var page2 struct {
+		Items []struct {
+			Path string `json:"path"`
+		} `json:"items"`
+		HasMore bool `json:"hasMore"`
+	}
+	if err := json.NewDecoder(resp2.Body).Decode(&page2); err != nil {
+		t.Fatalf("decode page2: %v", err)
+	}
+
+	if len(page2.Items) != 2 {
+		t.Fatalf("want 2 items in page2, got %d", len(page2.Items))
+	}
+	if page2.Items[0].Path != "/metrics" || page2.Items[1].Path != "/deploy" {
+		t.Fatalf("unexpected page2 order: %+v", page2.Items)
+	}
+	if page2.HasMore {
+		t.Fatal("want hasMore=false at end")
+	}
+}
+
+func TestLoadBalancerAccessLogs_InvalidCursorReturns400(t *testing.T) {
+	t.Setenv("DIRIGENT_PROXY_ACCESS_LOG_DIR", t.TempDir())
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/load-balancer/access-logs?cursor=!!!!")
+	if err != nil {
+		t.Fatalf("GET access logs: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestLoadBalancerAccessLogs_FiltersByMethodStatusHostAndIP(t *testing.T) {
+	logDir := t.TempDir()
+	t.Setenv("DIRIGENT_PROXY_ACCESS_LOG_DIR", logDir)
+
+	path := filepath.Join(logDir, "access-2026-02-24-20.log")
+	content := strings.Join([]string{
+		`{"timestamp":"2026-02-24T20:31:00Z","clientIp":"203.0.113.10","host":"api.example.com","method":"GET","path":"/health","status":200,"durationMs":2,"bytesWritten":10,"outcome":"proxied"}`,
+		`{"timestamp":"2026-02-24T20:32:00Z","clientIp":"198.51.100.8","host":"admin.example.com","method":"POST","path":"/login","status":401,"durationMs":5,"bytesWritten":15,"outcome":"unauthorized"}`,
+		`{"timestamp":"2026-02-24T20:33:00Z","clientIp":"203.0.113.7","host":"api.example.com","method":"POST","path":"/deploy","status":201,"durationMs":8,"bytesWritten":25,"outcome":"proxied"}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write access log file: %v", err)
+	}
+
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	url := srv.URL + "/api/load-balancer/access-logs?method=POST&status=201&host=api.example&ip=203.0.113.7"
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET filtered access logs: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Items []struct {
+			Path   string `json:"path"`
+			Method string `json:"method"`
+			Status int    `json:"status"`
+			Host   string `json:"host"`
+			IP     string `json:"clientIp"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(body.Items) != 1 {
+		t.Fatalf("want 1 filtered item, got %d", len(body.Items))
+	}
+	entry := body.Items[0]
+	if entry.Path != "/deploy" || entry.Method != "POST" || entry.Status != 201 || entry.Host != "api.example.com" || entry.IP != "203.0.113.7" {
+		t.Fatalf("unexpected filtered entry: %+v", entry)
+	}
+}
+
+func TestLoadBalancerAccessLogs_InvalidStatusFilterReturns400(t *testing.T) {
+	t.Setenv("DIRIGENT_PROXY_ACCESS_LOG_DIR", t.TempDir())
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/load-balancer/access-logs?status=abc")
+	if err != nil {
+		t.Fatalf("GET access logs: %v", err)
 	}
 	defer resp.Body.Close()
 

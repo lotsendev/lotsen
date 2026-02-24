@@ -6,6 +6,7 @@ import * as api from '../lib/api'
 
 vi.mock('../lib/api', () => ({
   getSystemStatus: vi.fn(),
+  getLoadBalancerAccessLogs: vi.fn(),
 }))
 
 function renderWithQuery(ui: React.ReactElement) {
@@ -19,6 +20,10 @@ function renderWithQuery(ui: React.ReactElement) {
 describe('SystemStatusPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(api.getLoadBalancerAccessLogs).mockResolvedValue({
+      items: [],
+      hasMore: false,
+    })
   })
 
   it('renders loading state while request is pending', () => {
@@ -245,6 +250,62 @@ describe('SystemStatusPanel', () => {
     expect(screen.getAllByText(/Reading: Unavailable/)).toHaveLength(2)
     expect(screen.getAllByText('unavailable telemetry')).toHaveLength(2)
     expect(screen.getAllByText(/No signal yet/, { selector: 'p' })).toHaveLength(3)
+  })
+
+  it('renders load balancer blocked IP telemetry', async () => {
+    const apiUpdated = '2026-02-22T12:00:00.000Z'
+    const blockedUntil = '2026-02-22T12:15:00.000Z'
+    vi.mocked(api.getSystemStatus).mockResolvedValue({
+      api: {
+        state: 'healthy',
+        lastUpdated: apiUpdated,
+      },
+      orchestrator: {
+        state: 'healthy',
+        lastUpdated: apiUpdated,
+      },
+      loadBalancer: {
+        state: 'healthy',
+        lastUpdated: apiUpdated,
+        checks: {
+          processRunning: true,
+          healthcheckResponding: true,
+        },
+        traffic: {
+          totalRequests: 1200,
+          suspiciousRequests: 34,
+          blockedRequests: 7,
+          activeBlockedIps: 2,
+          blockedIps: [
+            { ip: '203.0.113.7', blockedUntil },
+            { ip: '198.51.100.11', blockedUntil },
+          ],
+        },
+      },
+      docker: {
+        state: 'healthy',
+        lastUpdated: apiUpdated,
+      },
+      host: {
+        cpu: {
+          state: 'healthy',
+          usagePercent: 20,
+          lastUpdated: apiUpdated,
+        },
+        ram: {
+          state: 'healthy',
+          usagePercent: 30,
+          lastUpdated: apiUpdated,
+        },
+      },
+    })
+
+    renderWithQuery(<SystemStatusPanel />)
+
+    await waitFor(() => expect(screen.getByText('Traffic and security')).toBeInTheDocument())
+    expect(screen.getByText('Total requests: 1,200')).toBeInTheDocument()
+    expect(screen.getByText('Active blocked IPs: 2')).toBeInTheDocument()
+    expect(screen.getByText('203.0.113.7')).toBeInTheDocument()
   })
 
   it('renders fetch failure UI when endpoint errors', async () => {

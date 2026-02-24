@@ -47,10 +47,24 @@ type LoadBalancerSystemStatusChecks struct {
 	HealthcheckResponding bool `json:"healthcheckResponding"`
 }
 
+type LoadBalancerBlockedIPStatus struct {
+	IP           string     `json:"ip"`
+	BlockedUntil *time.Time `json:"blockedUntil,omitempty"`
+}
+
+type LoadBalancerTrafficSystemStatus struct {
+	TotalRequests      int64                         `json:"totalRequests"`
+	SuspiciousRequests int64                         `json:"suspiciousRequests"`
+	BlockedRequests    int64                         `json:"blockedRequests"`
+	ActiveBlockedIPs   int                           `json:"activeBlockedIps"`
+	BlockedIPs         []LoadBalancerBlockedIPStatus `json:"blockedIps,omitempty"`
+}
+
 type LoadBalancerSystemStatus struct {
-	State       SystemStatusState              `json:"state"`
-	LastUpdated *time.Time                     `json:"lastUpdated,omitempty"`
-	Checks      LoadBalancerSystemStatusChecks `json:"checks"`
+	State       SystemStatusState                `json:"state"`
+	LastUpdated *time.Time                       `json:"lastUpdated,omitempty"`
+	Checks      LoadBalancerSystemStatusChecks   `json:"checks"`
+	Traffic     *LoadBalancerTrafficSystemStatus `json:"traffic,omitempty"`
 }
 
 type DockerSystemStatusChecks struct {
@@ -103,7 +117,7 @@ type DockerConnectivityIngestor interface {
 }
 
 type LoadBalancerHealthIngestor interface {
-	RecordLoadBalancerHealth(ctx context.Context, responding bool, at time.Time) error
+	RecordLoadBalancerHealth(ctx context.Context, responding bool, at time.Time, traffic *LoadBalancerTrafficSystemStatus) error
 }
 
 // CPUUtilizationIngestor accepts host CPU utilization observations.
@@ -146,6 +160,7 @@ type dockerConnectivitySignal struct {
 type loadBalancerHealthSignal struct {
 	lastCheckedUTC time.Time
 	responding     bool
+	traffic        *LoadBalancerTrafficSystemStatus
 	hasSignal      bool
 }
 
@@ -291,15 +306,18 @@ func (p *defaultSystemStatusProvider) dockerStatus() DockerSystemStatus {
 	}
 }
 
-func (p *defaultSystemStatusProvider) RecordLoadBalancerHealth(_ context.Context, responding bool, at time.Time) error {
+func (p *defaultSystemStatusProvider) RecordLoadBalancerHealth(_ context.Context, responding bool, at time.Time, traffic *LoadBalancerTrafficSystemStatus) error {
 	if at.IsZero() {
 		at = p.now()
 	}
+
+	trafficCopy := cloneLoadBalancerTraffic(traffic)
 
 	p.loadBalancerMu.Lock()
 	p.loadBalancerSignal = loadBalancerHealthSignal{
 		lastCheckedUTC: at.UTC(),
 		responding:     responding,
+		traffic:        trafficCopy,
 		hasSignal:      true,
 	}
 	p.loadBalancerMu.Unlock()
@@ -334,7 +352,22 @@ func (p *defaultSystemStatusProvider) loadBalancerStatus() LoadBalancerSystemSta
 			ProcessRunning:        true,
 			HealthcheckResponding: signal.responding,
 		},
+		Traffic: cloneLoadBalancerTraffic(signal.traffic),
 	}
+}
+
+func cloneLoadBalancerTraffic(in *LoadBalancerTrafficSystemStatus) *LoadBalancerTrafficSystemStatus {
+	if in == nil {
+		return nil
+	}
+
+	out := *in
+	if len(in.BlockedIPs) > 0 {
+		out.BlockedIPs = make([]LoadBalancerBlockedIPStatus, len(in.BlockedIPs))
+		copy(out.BlockedIPs, in.BlockedIPs)
+	}
+
+	return &out
 }
 
 func (p *defaultSystemStatusProvider) RecordCPUUtilization(_ context.Context, usagePercent float64, at time.Time) error {
@@ -414,22 +447,35 @@ func (p *defaultSystemStatusProvider) ramStatus() HostMetricSystemStatus {
 func (h *Handler) systemStatus(w http.ResponseWriter, r *http.Request) {
 	snapshot, err := h.statusSource.Snapshot(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, SystemStatusSnapshot{
-			API: APISystemStatus{
-				State:       SystemStatusStateUnavailable,
-				LastUpdated: time.Now().UTC(),
-			},
-			Orchestrator: OrchestratorSystemStatus{State: SystemStatusStateUnavailable},
-			LoadBalancer: LoadBalancerSystemStatus{State: SystemStatusStateUnavailable},
-			Docker:       DockerSystemStatus{State: SystemStatusStateUnavailable},
-			Host: HostSystemStatus{
-				CPU: HostMetricSystemStatus{State: SystemStatusStateUnavailable},
-				RAM: HostMetricSystemStatus{State: SystemStatusStateUnavailable},
-			},
-			Error: "system status unavailable",
-		})
+		writeJSON(w, http.StatusServiceUnavailable, unavailableSystemStatusSnapshot(time.Now().UTC()))
 		return
 	}
 
 	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (h *Handler) currentSystemStatusSnapshot(r *http.Request) SystemStatusSnapshot {
+	snapshot, err := h.statusSource.Snapshot(r.Context())
+	if err != nil {
+		return unavailableSystemStatusSnapshot(time.Now().UTC())
+	}
+
+	return snapshot
+}
+
+func unavailableSystemStatusSnapshot(now time.Time) SystemStatusSnapshot {
+	return SystemStatusSnapshot{
+		API: APISystemStatus{
+			State:       SystemStatusStateUnavailable,
+			LastUpdated: now,
+		},
+		Orchestrator: OrchestratorSystemStatus{State: SystemStatusStateUnavailable},
+		LoadBalancer: LoadBalancerSystemStatus{State: SystemStatusStateUnavailable},
+		Docker:       DockerSystemStatus{State: SystemStatusStateUnavailable},
+		Host: HostSystemStatus{
+			CPU: HostMetricSystemStatus{State: SystemStatusStateUnavailable},
+			RAM: HostMetricSystemStatus{State: SystemStatusStateUnavailable},
+		},
+		Error: "system status unavailable",
+	}
 }

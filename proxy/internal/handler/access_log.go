@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -243,29 +242,4 @@ func (l *fileAccessLogger) cleanupExpired(now time.Time) {
 			_ = os.Remove(filepath.Join(l.dir, name))
 		}
 	}
-}
-
-func listAccessLogFiles(logDir string) ([]string, error) {
-	entries, err := os.ReadDir(logDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []string{}, nil
-		}
-		return nil, err
-	}
-
-	files := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasPrefix(name, accessLogFilenamePrefix) && strings.HasSuffix(name, ".log") {
-			files = append(files, name)
-		}
-	}
-
-	slices.Sort(files)
-	slices.Reverse(files)
-	return files, nil
 }

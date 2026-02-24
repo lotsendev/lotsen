@@ -94,14 +94,12 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
-          cache: false
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum', 'orchestrator/go.sum', 'proxy/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            api/go.sum
+            orchestrator/go.sum
+            proxy/go.sum
 
       - name: Test API
         working-directory: api
@@ -167,14 +165,12 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
-          cache: false
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum', 'orchestrator/go.sum', 'proxy/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            api/go.sum
+            orchestrator/go.sum
+            proxy/go.sum
 
       - uses: oven-sh/setup-bun@v2
         with:

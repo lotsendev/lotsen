@@ -112,7 +112,7 @@ func TestSnapshot_UsesCacheWithinTTL(t *testing.T) {
 	}
 }
 
-func TestSnapshot_DisplayCurrentVersionForBranchBuilds(t *testing.T) {
+func TestSnapshot_ReportsInstalledVersionForBranchBuilds(t *testing.T) {
 	tests := []struct {
 		name           string
 		currentVersion string
@@ -120,8 +120,8 @@ func TestSnapshot_DisplayCurrentVersionForBranchBuilds(t *testing.T) {
 		wantCurrent    string
 		wantUpgrade    bool
 	}{
-		{name: "main resolves to latest release", currentVersion: "main", latestVersion: "v1.2.3", wantCurrent: "v1.2.3", wantUpgrade: false},
-		{name: "master resolves to latest release", currentVersion: "master", latestVersion: "v1.2.3", wantCurrent: "v1.2.3", wantUpgrade: false},
+		{name: "main remains installed version", currentVersion: "main", latestVersion: "v1.2.3", wantCurrent: "main", wantUpgrade: false},
+		{name: "master remains installed version", currentVersion: "master", latestVersion: "v1.2.3", wantCurrent: "master", wantUpgrade: false},
 		{name: "main keeps branch name when latest is not semver", currentVersion: "main", latestVersion: "release-candidate", wantCurrent: "main", wantUpgrade: false},
 		{name: "dev keeps sentinel", currentVersion: "dev", latestVersion: "v1.2.3", wantCurrent: "dev", wantUpgrade: false},
 	}

@@ -39,7 +39,7 @@ export function SettingsPage() {
     refetchIntervalInBackground: true,
   })
 
-  const finishUpgradeRun = (reconnectedVersion?: string) => {
+  const finishUpgradeRun = (reconnectedCurrentVersion?: string, reconnectedLatestVersion?: string) => {
     setAwaitingReconnect(false)
     setIsUpgradeRunning(false)
     setReconnectReady(true)
@@ -48,7 +48,9 @@ export function SettingsPage() {
       queryClient.setQueryData(['version-check'], reconnectProbe.data)
     }
 
-    if (targetVersion && reconnectedVersion && reconnectedVersion !== targetVersion) {
+    const targetReached =
+      targetVersion && (reconnectedCurrentVersion === targetVersion || reconnectedLatestVersion === targetVersion)
+    if (targetVersion && !targetReached) {
       const lastLines = lines.slice(-8).join('\n')
       setUpgradeError(
         lastLines
@@ -70,7 +72,7 @@ export function SettingsPage() {
     }
 
     if (reconnectProbe.isSuccess && reconnectSawOffline) {
-      finishUpgradeRun(reconnectProbe.data.currentVersion)
+      finishUpgradeRun(reconnectProbe.data.currentVersion, reconnectProbe.data.latestVersion)
       return
     }
 
@@ -132,7 +134,7 @@ export function SettingsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold">Version</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Current release and upgrade availability.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Installed release and latest available version.</p>
           </div>
           <Button type="button" disabled={!canUpgrade} onClick={() => setConfirmOpen(true)}>
             {upgradeButtonLabel}
@@ -141,11 +143,11 @@ export function SettingsPage() {
 
         <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-muted-foreground">Current version</dt>
+            <dt className="text-muted-foreground">Installed version</dt>
             <dd className="mt-1 font-mono text-foreground">{currentVersion}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Latest version</dt>
+            <dt className="text-muted-foreground">Latest available</dt>
             <dd className="mt-1 font-mono text-foreground">{latestVersion ?? 'Unavailable'}</dd>
           </div>
           <div>

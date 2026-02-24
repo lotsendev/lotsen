@@ -59,7 +59,11 @@ DIRIGENT_VERSION=v0.1.0 curl -fsSL https://github.com/ercadev/dirigent/releases/
 
 ### Upgrade
 
-Re-run the same install command. The installer stops all services, replaces the binaries, and restarts cleanly.
+Use the dashboard upgrade flow: open **Settings** and click **Upgrade** when a newer version is available.
+The dashboard streams installer logs in real time and prompts you to reload once the API is back online.
+
+If dashboard access is unavailable, you can still run the manual installer command. The installer stops all services,
+replaces the binaries, and restarts cleanly.
 
 ### Manage services
 

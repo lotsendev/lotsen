@@ -18,6 +18,9 @@ This guide covers two paths: running Dirigent on a VPS (production) and running 
 curl -fsSL https://github.com/ercadev/dirigent/releases/latest/download/install.sh | sudo bash
 ```
 
+During install, you'll be prompted (even with the piped command) to optionally expose the
+dashboard on a dedicated domain with HTTPS + Basic Auth.
+
 The installer will:
 1. Install Docker Engine if not already present
 2. Install Bun if not already present
@@ -36,7 +39,17 @@ The installer will:
 
 Open the dashboard at `http://<your-vps-ip>:3000`.
 
-> **Why port 3000?** The dashboard runs on its own port rather than through the Dirigent proxy. This gives you immediate access without any DNS configuration and keeps future dashboard authentication independent of the proxy layer. To serve the dashboard on a custom domain, place a reverse proxy (nginx, Caddy, etc.) in front of port 3000.
+> **Why port 3000?** The dashboard runs on its own port rather than through the Dirigent proxy. This gives you immediate access without any DNS setup. If you want HTTPS + Basic Auth on a dedicated domain through Dirigent's built-in proxy, run `sudo dirigent setup`.
+
+### Configure dashboard access after install
+
+You can re-run dashboard exposure/auth setup at any time:
+
+```bash
+sudo dirigent setup
+```
+
+This command updates `/etc/dirigent/dirigent.env` and restarts `dirigent-proxy`.
 
 ### Pin a specific version
 

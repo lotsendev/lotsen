@@ -78,6 +78,208 @@ write_dashboard_env() {
     rm -f "${tmp}"
 }
 
+install_dirigent_cli() {
+    step "Installing Dirigent CLI to /usr/local/bin/dirigent"
+    cat > /usr/local/bin/dirigent << 'EOF'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ENV_FILE="/etc/dirigent/dirigent.env"
+
+error() {
+    echo "error: $*" >&2
+    exit 1
+}
+
+validate_domain() {
+    local domain="$1"
+    if [ -z "${domain}" ]; then
+        return 1
+    fi
+    if [[ ! "${domain}" =~ ^[A-Za-z0-9.-]+$ ]]; then
+        return 1
+    fi
+    if [[ "${domain}" != *.* ]]; then
+        return 1
+    fi
+    return 0
+}
+
+write_dashboard_env() {
+    local domain="$1"
+    local user="$2"
+    local password="$3"
+    local tmp
+
+    install -m 700 -d /etc/dirigent
+    tmp=$(mktemp)
+
+    if [ -f "${ENV_FILE}" ]; then
+        awk '!/^DIRIGENT_DASHBOARD_(DOMAIN|USER|PASSWORD)=/' "${ENV_FILE}" > "${tmp}"
+    fi
+
+    if [ -n "${domain}" ]; then
+        {
+            echo "DIRIGENT_DASHBOARD_DOMAIN=${domain}"
+            echo "DIRIGENT_DASHBOARD_USER=${user}"
+            echo "DIRIGENT_DASHBOARD_PASSWORD=${password}"
+        } >> "${tmp}"
+    fi
+
+    install -m 600 "${tmp}" "${ENV_FILE}"
+    rm -f "${tmp}"
+}
+
+setup_dashboard() {
+    local dashboard_domain="${DIRIGENT_DASHBOARD_DOMAIN:-}"
+    local dashboard_user="${DIRIGENT_DASHBOARD_USER:-}"
+    local dashboard_password="${DIRIGENT_DASHBOARD_PASSWORD:-}"
+    local expose_default="N"
+    local expose_choice=""
+
+    if [ "$(id -u)" -ne 0 ]; then
+        error "Run with sudo: sudo dirigent setup"
+    fi
+
+    if [ ! -t 0 ]; then
+        error "dirigent setup is interactive and requires a TTY"
+    fi
+
+    if [ -f "${ENV_FILE}" ]; then
+        local existing_domain existing_user existing_password
+        existing_domain=$(grep '^DIRIGENT_DASHBOARD_DOMAIN=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
+        existing_user=$(grep '^DIRIGENT_DASHBOARD_USER=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
+        existing_password=$(grep '^DIRIGENT_DASHBOARD_PASSWORD=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
+
+        if [ -z "${dashboard_domain}" ] && [ -n "${existing_domain}" ]; then
+            dashboard_domain="${existing_domain}"
+        fi
+        if [ -z "${dashboard_user}" ] && [ -n "${existing_user}" ]; then
+            dashboard_user="${existing_user}"
+        fi
+        if [ -z "${dashboard_password}" ] && [ -n "${existing_password}" ]; then
+            dashboard_password="${existing_password}"
+        fi
+    fi
+
+    if [ -n "${dashboard_domain}" ]; then
+        expose_default="Y"
+    fi
+
+    echo "Dashboard public exposure setup"
+    echo "  Configure HTTPS + Basic Auth on a dedicated domain (optional)."
+    read -r -p "Expose dashboard publicly through the proxy? [${expose_default}/$([ "${expose_default}" = "Y" ] && echo n || echo y)]: " expose_choice
+    if [ -z "${expose_choice}" ]; then
+        expose_choice="${expose_default}"
+    fi
+
+    if [[ "${expose_choice}" =~ ^[Yy]$ ]]; then
+        while true; do
+            if [ -n "${dashboard_domain}" ]; then
+                read -r -p "Dashboard domain [${dashboard_domain}]: " input_dashboard_domain
+                if [ -n "${input_dashboard_domain}" ]; then
+                    dashboard_domain="${input_dashboard_domain}"
+                fi
+            else
+                read -r -p "Dashboard domain (e.g. dashboard.example.com): " dashboard_domain
+            fi
+
+            if validate_domain "${dashboard_domain}"; then
+                break
+            fi
+            echo "Invalid domain. Use a valid hostname like dashboard.example.com"
+        done
+
+        while true; do
+            if [ -n "${dashboard_user}" ]; then
+                read -r -p "Dashboard basic auth username [${dashboard_user}]: " input_dashboard_user
+                if [ -n "${input_dashboard_user}" ]; then
+                    dashboard_user="${input_dashboard_user}"
+                fi
+            else
+                read -r -p "Dashboard basic auth username: " dashboard_user
+            fi
+
+            if [ -n "${dashboard_user}" ]; then
+                break
+            fi
+            echo "Username cannot be empty."
+        done
+
+        while true; do
+            read -r -s -p "Dashboard basic auth password (leave blank to keep current): " input_dashboard_password
+            echo ""
+            if [ -z "${input_dashboard_password}" ] && [ -n "${dashboard_password}" ]; then
+                break
+            fi
+            if [ -z "${input_dashboard_password}" ]; then
+                echo "Password cannot be empty."
+                continue
+            fi
+
+            read -r -s -p "Confirm password: " dashboard_password_confirm
+            echo ""
+            if [ "${input_dashboard_password}" != "${dashboard_password_confirm}" ]; then
+                echo "Passwords do not match. Try again."
+                continue
+            fi
+
+            dashboard_password="${input_dashboard_password}"
+            break
+        done
+    else
+        dashboard_domain=""
+        dashboard_user=""
+        dashboard_password=""
+    fi
+
+    if [ -n "${dashboard_domain}" ] || [ -n "${dashboard_user}" ] || [ -n "${dashboard_password}" ]; then
+        if ! validate_domain "${dashboard_domain}"; then
+            error "DIRIGENT_DASHBOARD_DOMAIN is set but invalid. Example: dashboard.example.com"
+        fi
+        if [ -z "${dashboard_user}" ] || [ -z "${dashboard_password}" ]; then
+            error "DIRIGENT_DASHBOARD_DOMAIN requires DIRIGENT_DASHBOARD_USER and DIRIGENT_DASHBOARD_PASSWORD"
+        fi
+    fi
+
+    write_dashboard_env "${dashboard_domain}" "${dashboard_user}" "${dashboard_password}"
+    systemctl restart dirigent-proxy
+
+    if [ -n "${dashboard_domain}" ]; then
+        echo "Done. Dashboard is available at https://${dashboard_domain}"
+        echo "Basic Auth user: ${dashboard_user}"
+    else
+        echo "Done. Dashboard public exposure is disabled."
+    fi
+}
+
+usage() {
+    cat << 'EOUSAGE'
+Dirigent CLI
+
+Usage:
+  dirigent setup    Configure dashboard domain + basic auth for proxy access
+  dirigent help     Show this help
+EOUSAGE
+}
+
+cmd="${1:-help}"
+case "${cmd}" in
+    setup)
+        setup_dashboard
+        ;;
+    help|-h|--help)
+        usage
+        ;;
+    *)
+        error "unknown command: ${cmd}. Run 'dirigent help'."
+        ;;
+esac
+EOF
+    chmod 755 /usr/local/bin/dirigent
+}
+
 # ─── pre-flight: root check ───────────────────────────────────────────────────
 
 step "Checking for root privileges"
@@ -310,20 +512,20 @@ if [ -f "${ENV_FILE}" ]; then
     fi
 fi
 
-if [ -t 0 ]; then
+if [ -r /dev/tty ]; then
     echo ""
     echo "Dashboard public exposure setup"
     echo "  Configure HTTPS + Basic Auth on a dedicated domain (optional)."
-    read -r -p "Expose dashboard publicly through the proxy? [y/N]: " EXPOSE_DASHBOARD
+    read -r -p "Expose dashboard publicly through the proxy? [y/N]: " EXPOSE_DASHBOARD < /dev/tty
     if [[ "${EXPOSE_DASHBOARD}" =~ ^[Yy]$ ]]; then
         while true; do
             if [ -n "${DASHBOARD_DOMAIN}" ]; then
-                read -r -p "Dashboard domain [${DASHBOARD_DOMAIN}]: " INPUT_DASHBOARD_DOMAIN
+                read -r -p "Dashboard domain [${DASHBOARD_DOMAIN}]: " INPUT_DASHBOARD_DOMAIN < /dev/tty
                 if [ -n "${INPUT_DASHBOARD_DOMAIN}" ]; then
                     DASHBOARD_DOMAIN="${INPUT_DASHBOARD_DOMAIN}"
                 fi
             else
-                read -r -p "Dashboard domain (e.g. dashboard.example.com): " DASHBOARD_DOMAIN
+                read -r -p "Dashboard domain (e.g. dashboard.example.com): " DASHBOARD_DOMAIN < /dev/tty
             fi
 
             if validate_domain "${DASHBOARD_DOMAIN}"; then
@@ -334,12 +536,12 @@ if [ -t 0 ]; then
 
         while true; do
             if [ -n "${DASHBOARD_USER}" ]; then
-                read -r -p "Dashboard basic auth username [${DASHBOARD_USER}]: " INPUT_DASHBOARD_USER
+                read -r -p "Dashboard basic auth username [${DASHBOARD_USER}]: " INPUT_DASHBOARD_USER < /dev/tty
                 if [ -n "${INPUT_DASHBOARD_USER}" ]; then
                     DASHBOARD_USER="${INPUT_DASHBOARD_USER}"
                 fi
             else
-                read -r -p "Dashboard basic auth username: " DASHBOARD_USER
+                read -r -p "Dashboard basic auth username: " DASHBOARD_USER < /dev/tty
             fi
 
             if [ -n "${DASHBOARD_USER}" ]; then
@@ -349,9 +551,9 @@ if [ -t 0 ]; then
         done
 
         while true; do
-            read -r -s -p "Dashboard basic auth password: " DASHBOARD_PASSWORD
+            read -r -s -p "Dashboard basic auth password: " DASHBOARD_PASSWORD < /dev/tty
             echo ""
-            read -r -s -p "Confirm password: " DASHBOARD_PASSWORD_CONFIRM
+            read -r -s -p "Confirm password: " DASHBOARD_PASSWORD_CONFIRM < /dev/tty
             echo ""
             if [ -z "${DASHBOARD_PASSWORD}" ]; then
                 echo "Password cannot be empty."
@@ -381,6 +583,8 @@ fi
 
 step "Writing shared environment file"
 write_dashboard_env "${DASHBOARD_DOMAIN}" "${DASHBOARD_USER}" "${DASHBOARD_PASSWORD}"
+
+install_dirigent_cli
 
 # ─── Docker network ───────────────────────────────────────────────────────────
 
@@ -541,4 +745,6 @@ echo "    Bun           ${STEP_BUN}"
 echo "    Network       ${STEP_NETWORK}"
 echo "    Data dir      ${DATA_DIR}"
 echo "    Version       ${DIRIGENT_VERSION}"
+echo ""
+echo "  Tip: Run 'sudo dirigent setup' any time to update dashboard domain/auth."
 echo ""

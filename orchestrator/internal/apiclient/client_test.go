@@ -14,6 +14,13 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 	checkedAt := time.Date(2026, time.February, 22, 14, 0, 0, 0, time.UTC)
 	cpu := 41.7
 	ram := 68.9
+	traffic := &HeartbeatLoadBalancerTraffic{
+		TotalRequests:      99,
+		SuspiciousRequests: 12,
+		BlockedRequests:    5,
+		ActiveBlockedIPs:   1,
+		BlockedIPs:         []HeartbeatLoadBalancerBlockedIPState{{IP: "203.0.113.7", BlockedUntil: &checkedAt}},
+	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -35,6 +42,16 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 			LoadBalancer struct {
 				Responding bool      `json:"responding"`
 				CheckedAt  time.Time `json:"checkedAt"`
+				Traffic    *struct {
+					TotalRequests      int64 `json:"totalRequests"`
+					SuspiciousRequests int64 `json:"suspiciousRequests"`
+					BlockedRequests    int64 `json:"blockedRequests"`
+					ActiveBlockedIPs   int   `json:"activeBlockedIps"`
+					BlockedIPs         []struct {
+						IP           string     `json:"ip"`
+						BlockedUntil *time.Time `json:"blockedUntil"`
+					} `json:"blockedIps"`
+				} `json:"traffic"`
 			} `json:"loadBalancer"`
 			Host *struct {
 				CPU *struct {
@@ -69,6 +86,15 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 		if !body.LoadBalancer.CheckedAt.Equal(checkedAt) {
 			t.Fatalf("want load balancer checkedAt %s, got %s", checkedAt, body.LoadBalancer.CheckedAt)
 		}
+		if body.LoadBalancer.Traffic == nil {
+			t.Fatal("want load balancer traffic included")
+		}
+		if body.LoadBalancer.Traffic.TotalRequests != traffic.TotalRequests {
+			t.Fatalf("want total requests %d, got %d", traffic.TotalRequests, body.LoadBalancer.Traffic.TotalRequests)
+		}
+		if len(body.LoadBalancer.Traffic.BlockedIPs) != 1 || body.LoadBalancer.Traffic.BlockedIPs[0].IP != "203.0.113.7" {
+			t.Fatal("want blocked ip payload")
+		}
 		if body.Host == nil || body.Host.CPU == nil || body.Host.RAM == nil {
 			t.Fatal("want host cpu and ram metrics in heartbeat")
 		}
@@ -90,7 +116,7 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(false, false, false, checkedAt, &cpu, &ram); err != nil {
+	if err := client.NotifyHeartbeat(false, false, traffic, false, checkedAt, &cpu, &ram); err != nil {
 		t.Fatalf("NotifyHeartbeat: %v", err)
 	}
 }
@@ -118,7 +144,7 @@ func TestClient_NotifyHeartbeat_WithoutHostMetrics(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(false, true, true, checkedAt, nil, nil); err != nil {
+	if err := client.NotifyHeartbeat(false, true, nil, true, checkedAt, nil, nil); err != nil {
 		t.Fatalf("NotifyHeartbeat: %v", err)
 	}
 }
@@ -130,7 +156,7 @@ func TestClient_NotifyHeartbeat_UnexpectedResponse(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(true, true, true, time.Time{}, nil, nil); err == nil {
+	if err := client.NotifyHeartbeat(true, true, nil, true, time.Time{}, nil, nil); err == nil {
 		t.Fatal("want error for non-204 heartbeat response")
 	}
 }

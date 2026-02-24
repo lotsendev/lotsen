@@ -27,6 +27,7 @@ const (
 	defaultHTTPAddr                = ":80"
 	defaultHTTPSAddr               = ":443"
 	defaultCertCacheDir            = "/var/lib/dirigent/certs"
+	defaultAccessLogDir            = "/var/lib/dirigent/logs/proxy"
 	letsencryptProdDirectoryURL    = "https://acme-v02.api.letsencrypt.org/directory"
 	letsencryptStagingDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
 )
@@ -54,6 +55,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("proxy: %v", err)
 	}
+	accessLogConfig, err := accessLogConfigFromEnv()
+	if err != nil {
+		log.Fatalf("proxy: %v", err)
+	}
+	accessLogger, err := handler.NewFileAccessLogger(accessLogConfig)
+	if err != nil {
+		log.Fatalf("proxy: initialize access logger: %v", err)
+	}
+	defer accessLogger.Close()
 	if dashboardAuth != nil {
 		table.SetStatic(dashboardAuth.Domain, "localhost:3000")
 		log.Printf("proxy: registered dashboard domain %s -> localhost:3000", dashboardAuth.Domain)
@@ -69,7 +79,7 @@ func main() {
 	}
 
 	p := poller.New(s, table, interval)
-	h := handler.New(table, dashboardAuth, handler.WithHardeningProfile(hardeningProfile))
+	h := handler.New(table, dashboardAuth, handler.WithHardeningProfile(hardeningProfile), handler.WithAccessLogger(accessLogger))
 
 	hostPolicy := hostPolicyFromTable(table)
 	cacheDir := envOrDefault("DIRIGENT_CERT_CACHE_DIR", defaultCertCacheDir)
@@ -254,4 +264,32 @@ func hardeningProfileFromEnv() (handler.HardeningProfile, error) {
 	default:
 		return "", fmt.Errorf("DIRIGENT_PROXY_HARDENING_PROFILE must be one of: off, standard, strict")
 	}
+}
+
+func accessLogConfigFromEnv() (handler.AccessLogConfig, error) {
+	retentionRaw := strings.TrimSpace(envOrDefault("DIRIGENT_PROXY_ACCESS_LOG_RETENTION", "168h"))
+	retention, err := time.ParseDuration(retentionRaw)
+	if err != nil || retention <= 0 {
+		return handler.AccessLogConfig{}, fmt.Errorf("DIRIGENT_PROXY_ACCESS_LOG_RETENTION must be a positive duration")
+	}
+
+	headers := []string{"host", "user-agent", "accept", "accept-encoding", "accept-language", "referer", "x-forwarded-for", "x-real-ip"}
+	if raw := strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_ACCESS_LOG_HEADERS")); raw != "" {
+		headers = headers[:0]
+		for _, part := range strings.Split(raw, ",") {
+			header := strings.ToLower(strings.TrimSpace(part))
+			if header != "" {
+				headers = append(headers, header)
+			}
+		}
+		if len(headers) == 0 {
+			return handler.AccessLogConfig{}, fmt.Errorf("DIRIGENT_PROXY_ACCESS_LOG_HEADERS must contain at least one header")
+		}
+	}
+
+	return handler.AccessLogConfig{
+		Dir:             strings.TrimSpace(envOrDefault("DIRIGENT_PROXY_ACCESS_LOG_DIR", defaultAccessLogDir)),
+		Retention:       retention,
+		WhitelistedKeys: headers,
+	}, nil
 }

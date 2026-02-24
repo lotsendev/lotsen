@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ercadev/dirigent/proxy/internal/handler"
 )
@@ -487,5 +491,174 @@ func TestProxy_StandardHardeningRateLimitsRepeatedScans(t *testing.T) {
 
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("want 429, got %d", resp.StatusCode)
+	}
+}
+
+func TestInternalTraffic_ReportsBlockedIPsAndCounters(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("example.com", backend.Listener.Addr().String())
+
+	proxy := newProxyServer(tbl)
+	defer proxy.Close()
+
+	for i := 0; i < 12; i++ {
+		req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/.env", nil)
+		req.Host = "example.com"
+		req.Header.Set("X-Forwarded-For", "203.0.113.7")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("scan request %d: %v", i, err)
+		}
+		resp.Body.Close()
+	}
+
+	blocked, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	blocked.Host = "example.com"
+	blocked.Header.Set("X-Forwarded-For", "203.0.113.7")
+	blockedResp, err := http.DefaultClient.Do(blocked)
+	if err != nil {
+		t.Fatalf("GET / blocked request: %v", err)
+	}
+	blockedResp.Body.Close()
+
+	trafficResp, err := http.Get(proxy.URL + "/internal/traffic")
+	if err != nil {
+		t.Fatalf("GET /internal/traffic: %v", err)
+	}
+	defer trafficResp.Body.Close()
+
+	if trafficResp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", trafficResp.StatusCode)
+	}
+
+	var body struct {
+		TotalRequests      int64 `json:"totalRequests"`
+		SuspiciousRequests int64 `json:"suspiciousRequests"`
+		BlockedRequests    int64 `json:"blockedRequests"`
+		ActiveBlockedIPs   int   `json:"activeBlockedIps"`
+		BlockedIPs         []struct {
+			IP           string     `json:"ip"`
+			BlockedUntil *time.Time `json:"blockedUntil"`
+		} `json:"blockedIps"`
+	}
+
+	if err := json.NewDecoder(trafficResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode traffic response: %v", err)
+	}
+
+	if body.TotalRequests != 13 {
+		t.Fatalf("want total requests 13, got %d", body.TotalRequests)
+	}
+	if body.SuspiciousRequests != 12 {
+		t.Fatalf("want suspicious requests 12, got %d", body.SuspiciousRequests)
+	}
+	if body.BlockedRequests != 1 {
+		t.Fatalf("want blocked requests 1, got %d", body.BlockedRequests)
+	}
+	if body.ActiveBlockedIPs != 1 {
+		t.Fatalf("want active blocked ips 1, got %d", body.ActiveBlockedIPs)
+	}
+	if len(body.BlockedIPs) != 1 || body.BlockedIPs[0].IP != "203.0.113.7" {
+		t.Fatalf("want blocked ip 203.0.113.7, got %+v", body.BlockedIPs)
+	}
+	if body.BlockedIPs[0].BlockedUntil == nil || body.BlockedIPs[0].BlockedUntil.IsZero() {
+		t.Fatal("want blockedUntil for blocked ip")
+	}
+}
+
+func TestProxy_WritesAccessLogWithWhitelistedHeaders(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := handler.NewFileAccessLogger(handler.AccessLogConfig{
+		Dir:             dir,
+		Retention:       24 * time.Hour,
+		WhitelistedKeys: []string{"host", "user-agent", "x-forwarded-for"},
+	})
+	if err != nil {
+		t.Fatalf("NewFileAccessLogger: %v", err)
+	}
+	defer logger.Close()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("example.com", backend.Listener.Addr().String())
+
+	proxy := newProxyServerWithOptions(tbl, handler.WithAccessLogger(logger))
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/v1/health?deep=1", nil)
+	req.Host = "example.com"
+	req.Header.Set("User-Agent", "dirigent-test")
+	req.Header.Set("Authorization", "secret-token")
+	req.Header.Set("X-Forwarded-For", "203.0.113.7")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("proxy request: %v", err)
+	}
+	resp.Body.Close()
+
+	files, err := filepath.Glob(filepath.Join(dir, "access-*.log"))
+	if err != nil {
+		t.Fatalf("glob access logs: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("want 1 access log file, got %d", len(files))
+	}
+
+	raw, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatalf("read access log file: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("want exactly one log line, got %d", len(lines))
+	}
+
+	var entry struct {
+		Host    string            `json:"host"`
+		Method  string            `json:"method"`
+		Path    string            `json:"path"`
+		Query   string            `json:"query"`
+		Status  int               `json:"status"`
+		Outcome string            `json:"outcome"`
+		Headers map[string]string `json:"headers"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("unmarshal access log line: %v", err)
+	}
+
+	if entry.Host != "example.com" {
+		t.Fatalf("want host example.com, got %q", entry.Host)
+	}
+	if entry.Method != http.MethodGet {
+		t.Fatalf("want method GET, got %q", entry.Method)
+	}
+	if entry.Path != "/v1/health" {
+		t.Fatalf("want path /v1/health, got %q", entry.Path)
+	}
+	if entry.Query != "deep=1" {
+		t.Fatalf("want query deep=1, got %q", entry.Query)
+	}
+	if entry.Status != http.StatusCreated {
+		t.Fatalf("want status 201, got %d", entry.Status)
+	}
+	if entry.Outcome != "proxied" {
+		t.Fatalf("want outcome proxied, got %q", entry.Outcome)
+	}
+	if _, ok := entry.Headers["authorization"]; ok {
+		t.Fatal("authorization header must not be logged")
+	}
+	if entry.Headers["user-agent"] != "dirigent-test" {
+		t.Fatalf("want user-agent header, got %q", entry.Headers["user-agent"])
 	}
 }

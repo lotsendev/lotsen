@@ -15,6 +15,8 @@ import (
 
 const addr = ":8080"
 
+var version = "dev"
+
 func dataPath() string {
 	if p := os.Getenv("DIRIGENT_DATA"); p != "" {
 		return p
@@ -41,7 +43,7 @@ func main() {
 	logStreamer := docker.New(dc)
 
 	mux := http.NewServeMux()
-	api.New(s, broker, logStreamer).RegisterRoutes(mux)
+	api.NewWithVersion(s, broker, logStreamer, version).RegisterRoutes(mux)
 
 	log.Printf("dirigent API listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {

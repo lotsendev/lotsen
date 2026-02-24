@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/ercadev/dirigent/internal/events"
+	"github.com/ercadev/dirigent/internal/upgrade"
+	"github.com/ercadev/dirigent/internal/version"
 	"github.com/ercadev/dirigent/store"
 )
 
@@ -40,6 +42,16 @@ type EventBus interface {
 // container is currently running for the deployment.
 type DockerLogs interface {
 	StreamLogs(ctx context.Context, deploymentID string, tail int) (io.ReadCloser, error)
+}
+
+type VersionInfoProvider interface {
+	Snapshot(ctx context.Context) (version.Snapshot, error)
+}
+
+type UpgradeRunner interface {
+	Start(targetVersion string) error
+	Subscribe() (<-chan string, func(), error)
+	IsRunning() bool
 }
 
 type deploymentRequest struct {
@@ -70,20 +82,47 @@ type Handler struct {
 	loadBalancer LoadBalancerHealthIngestor
 	cpu          CPUUtilizationIngestor
 	ram          RAMUtilizationIngestor
+	versions     VersionInfoProvider
+	upgrade      UpgradeRunner
 }
 
 const defaultOrchestratorStaleAfter = 30 * time.Second
 
 // New creates a Handler backed by the given store, event bus, and Docker log streamer.
 func New(s Store, eb EventBus, dl DockerLogs) *Handler {
-	return NewWithSystemStatus(s, eb, dl, nil)
+	return NewWithVersion(s, eb, dl, "dev")
+}
+
+func NewWithVersion(s Store, eb EventBus, dl DockerLogs, currentVersion string) *Handler {
+	if currentVersion == "" {
+		currentVersion = "dev"
+	}
+
+	return NewWithDependencies(
+		s,
+		eb,
+		dl,
+		nil,
+		version.New(currentVersion),
+		upgrade.New(),
+	)
 }
 
 // NewWithSystemStatus creates a Handler with a custom system-status provider.
 // If statusSource is nil, a default provider is used.
 func NewWithSystemStatus(s Store, eb EventBus, dl DockerLogs, statusSource SystemStatusProvider) *Handler {
+	return NewWithDependencies(s, eb, dl, statusSource, version.New("dev"), upgrade.New())
+}
+
+func NewWithDependencies(s Store, eb EventBus, dl DockerLogs, statusSource SystemStatusProvider, versions VersionInfoProvider, upgrader UpgradeRunner) *Handler {
 	if statusSource == nil {
 		statusSource = newDefaultSystemStatusProvider(time.Now, orchestratorStaleAfterFromEnv(), buildAPIStoreChecker(s))
+	}
+	if versions == nil {
+		versions = version.New("dev")
+	}
+	if upgrader == nil {
+		upgrader = upgrade.New()
 	}
 
 	heartbeatIngestor, _ := statusSource.(OrchestratorHeartbeatIngestor)
@@ -92,7 +131,7 @@ func NewWithSystemStatus(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 	cpuIngestor, _ := statusSource.(CPUUtilizationIngestor)
 	ramIngestor, _ := statusSource.(RAMUtilizationIngestor)
 
-	return &Handler{store: s, events: eb, dockerLogs: dl, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor, loadBalancer: loadBalancerIngestor, cpu: cpuIngestor, ram: ramIngestor}
+	return &Handler{store: s, events: eb, dockerLogs: dl, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor, loadBalancer: loadBalancerIngestor, cpu: cpuIngestor, ram: ramIngestor, versions: versions, upgrade: upgrader}
 }
 
 func buildAPIStoreChecker(s Store) func(context.Context) bool {
@@ -111,6 +150,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/deployments", h.listDeployments)
 	mux.HandleFunc("GET /api/system-status", h.systemStatus)
 	mux.HandleFunc("POST /api/system-status/orchestrator-heartbeat", h.recordOrchestratorHeartbeat)
+	mux.HandleFunc("GET /api/version", h.getVersion)
+	mux.HandleFunc("POST /api/upgrade", h.startUpgrade)
+	mux.HandleFunc("GET /api/upgrade/logs", h.upgradeLogs)
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
 	mux.HandleFunc("GET /api/deployments/events", h.deploymentEvents)
 	mux.HandleFunc("GET /api/deployments/{id}/logs", h.deploymentLogs)

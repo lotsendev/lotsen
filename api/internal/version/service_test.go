@@ -111,3 +111,46 @@ func TestSnapshot_UsesCacheWithinTTL(t *testing.T) {
 		t.Fatalf("GitHub API calls = %d, want 1", got)
 	}
 }
+
+func TestSnapshot_DisplayCurrentVersionForBranchBuilds(t *testing.T) {
+	tests := []struct {
+		name           string
+		currentVersion string
+		latestVersion  string
+		wantCurrent    string
+		wantUpgrade    bool
+	}{
+		{name: "main resolves to latest release", currentVersion: "main", latestVersion: "v1.2.3", wantCurrent: "v1.2.3", wantUpgrade: false},
+		{name: "master resolves to latest release", currentVersion: "master", latestVersion: "v1.2.3", wantCurrent: "v1.2.3", wantUpgrade: false},
+		{name: "main keeps branch name when latest is not semver", currentVersion: "main", latestVersion: "release-candidate", wantCurrent: "main", wantUpgrade: false},
+		{name: "dev keeps sentinel", currentVersion: "dev", latestVersion: "v1.2.3", wantCurrent: "dev", wantUpgrade: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Date(2026, time.February, 24, 10, 0, 0, 0, time.UTC)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"tag_name":"%s","body":"notes","published_at":"2026-02-24T09:00:00Z"}`+"\n", tt.latestVersion)
+			}))
+			defer server.Close()
+
+			oldURL := latestReleaseURL
+			latestReleaseURL = server.URL
+			defer func() { latestReleaseURL = oldURL }()
+
+			svc := NewWithOptions(tt.currentVersion, server.Client(), func() time.Time { return now }, time.Hour)
+
+			snapshot, err := svc.Snapshot(context.Background())
+			if err != nil {
+				t.Fatalf("Snapshot() error = %v", err)
+			}
+
+			if snapshot.CurrentVersion != tt.wantCurrent {
+				t.Fatalf("CurrentVersion = %q, want %q", snapshot.CurrentVersion, tt.wantCurrent)
+			}
+			if snapshot.UpgradeAvailable != tt.wantUpgrade {
+				t.Fatalf("UpgradeAvailable = %v, want %v", snapshot.UpgradeAvailable, tt.wantUpgrade)
+			}
+		})
+	}
+}

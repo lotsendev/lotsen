@@ -15,15 +15,20 @@ This guide covers two paths: running Dirigent on a VPS (production) and running 
 ### Install
 
 ```bash
-curl -fsSL https://github.com/ercadev/dirigent/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
+sudo dirigent setup
 ```
 
-The installer will:
+The bootstrap installer installs the `dirigent` CLI.
+
+Then `dirigent setup` will:
 1. Install Docker Engine if not already present
 2. Install Bun if not already present
 3. Download all Dirigent components for your architecture (`amd64` or `arm64`)
 4. Create and enable four systemd services
 5. Print a summary of running services and their ports
+
+In interactive mode, setup recommends the `strict` security profile.
 
 ### Services after install
 
@@ -41,7 +46,8 @@ Open the dashboard at `http://<your-vps-ip>:3000`.
 ### Pin a specific version
 
 ```bash
-DIRIGENT_VERSION=v0.1.0 curl -fsSL https://github.com/ercadev/dirigent/releases/latest/download/install.sh | sudo bash
+DIRIGENT_VERSION=v0.1.0 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/download/v0.1.0/install.sh | sudo bash
+sudo DIRIGENT_VERSION=v0.1.0 dirigent setup
 ```
 
 ### Upgrade

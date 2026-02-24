@@ -1,132 +1,56 @@
 #!/usr/bin/env bash
 #
-# Dirigent installer
+# Dirigent bootstrap installer
 #
 # Usage:
 #   curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
-#   -- or --
-#   sudo bash install.sh
 #
-# To pin a specific version:
-#   DIRIGENT_VERSION=v0.0.2 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/download/v0.0.2/install.sh | sudo bash
-#
-# Supported operating systems:
-#   Ubuntu 22.04 (Jammy) and later
-#   Debian 11 (Bullseye) and later
-#
-# The script must be run as root or via sudo. It will exit immediately
-# with a descriptive message if that condition is not met.
-#
-# Each phase of the install is announced with a step() call so you can
-# follow progress without needing verbose output from individual commands.
+# This script only installs the Dirigent CLI binary. Run `dirigent setup`
+# afterwards to perform the full host setup.
 
 set -euo pipefail
 
-ENV_FILE="/etc/dirigent/dirigent.env"
-
-# ─── output helpers ───────────────────────────────────────────────────────────
-
-# step prints a human-readable progress line so the user can see what the
-# installer is doing at any point. Keep messages short and imperative.
 step() {
     echo "  -->  $*"
 }
 
-# error prints a message to stderr and exits with status 1. Call this
-# whenever a condition makes it impossible to continue safely.
 error() {
     echo "error: $*" >&2
     exit 1
 }
 
-validate_domain() {
-    local domain="$1"
-    if [ -z "${domain}" ]; then
-        return 1
-    fi
-    if [[ ! "${domain}" =~ ^[A-Za-z0-9.-]+$ ]]; then
-        return 1
-    fi
-    if [[ "${domain}" != *.* ]]; then
-        return 1
-    fi
-    return 0
-}
-
-write_dashboard_env() {
-    local domain="$1"
-    local user="$2"
-    local password="$3"
-    local tmp
-
-    install -m 700 -d /etc/dirigent
-    tmp=$(mktemp)
-
-    if [ -f "${ENV_FILE}" ]; then
-        awk '!/^DIRIGENT_DASHBOARD_(DOMAIN|USER|PASSWORD)=/' "${ENV_FILE}" > "${tmp}"
-    fi
-
-    if [ -n "${domain}" ]; then
-        {
-            echo "DIRIGENT_DASHBOARD_DOMAIN=${domain}"
-            echo "DIRIGENT_DASHBOARD_USER=${user}"
-            echo "DIRIGENT_DASHBOARD_PASSWORD=${password}"
-        } >> "${tmp}"
-    fi
-
-    install -m 600 "${tmp}" "${ENV_FILE}"
-    rm -f "${tmp}"
-}
-
-# ─── pre-flight: root check ───────────────────────────────────────────────────
-
 step "Checking for root privileges"
-
 if [ "$(id -u)" -ne 0 ]; then
-    error "This script must be run as root or with sudo.
-       Re-run with: sudo bash install.sh"
+    error "This script must be run as root or with sudo."
 fi
-
-# ─── pre-flight: OS detection ─────────────────────────────────────────────────
 
 step "Detecting operating system"
-
 if [ ! -f /etc/os-release ]; then
-    error "Cannot determine OS: /etc/os-release not found.
-       Dirigent supports Ubuntu 22.04+ and Debian 11+."
+    error "Cannot determine OS: /etc/os-release not found. Dirigent supports Ubuntu 22.04+ and Debian 11+."
 fi
 
-# Source the file to get ID and VERSION_ID as shell variables.
 # shellcheck source=/dev/null
 . /etc/os-release
 
 OS_ID="${ID:-unknown}"
 OS_VERSION_ID="${VERSION_ID:-0}"
-OS_MAJOR="${OS_VERSION_ID%%.*}"   # e.g. "22" from "22.04", "11" from "11"
+OS_MAJOR="${OS_VERSION_ID%%.*}"
 
 case "${OS_ID}" in
     ubuntu)
-        OS_MAJOR_INT="${OS_VERSION_ID%%.*}"
-        if [ "${OS_MAJOR_INT}" -lt 22 ]; then
-            error "Ubuntu ${OS_VERSION_ID} is not supported.
-       Minimum required version: Ubuntu 22.04 (Jammy)."
+        if [ "${OS_MAJOR}" -lt 22 ]; then
+            error "Ubuntu ${OS_VERSION_ID} is not supported. Minimum required version: Ubuntu 22.04."
         fi
         ;;
     debian)
         if [ "${OS_MAJOR}" -lt 11 ]; then
-            error "Debian ${OS_VERSION_ID} is not supported.
-       Minimum required version: Debian 11 (Bullseye)."
+            error "Debian ${OS_VERSION_ID} is not supported. Minimum required version: Debian 11."
         fi
         ;;
     *)
-        error "Unsupported operating system: ${OS_ID}.
-       Dirigent supports Ubuntu 22.04+ and Debian 11+."
+        error "Unsupported operating system: ${OS_ID}. Dirigent supports Ubuntu 22.04+ and Debian 11+."
         ;;
 esac
-
-step "Detected ${PRETTY_NAME:-${OS_ID} ${OS_VERSION_ID}}"
-
-# ─── pre-flight: architecture detection ──────────────────────────────────────
 
 ARCH="$(uname -m)"
 case "${ARCH}" in
@@ -134,10 +58,6 @@ case "${ARCH}" in
     aarch64) ARCH="arm64" ;;
     *) error "Unsupported architecture: ${ARCH}. Supported: x86_64, aarch64." ;;
 esac
-
-step "Detected architecture: ${ARCH}"
-
-# ─── version resolution ───────────────────────────────────────────────────────
 
 DIRIGENT_VERSION="${DIRIGENT_VERSION:-latest}"
 
@@ -147,398 +67,13 @@ else
     RELEASE_BASE="https://github.com/ercadev/dirigent-releases/releases/download/${DIRIGENT_VERSION}"
 fi
 
-step "Using release: ${DIRIGENT_VERSION}"
-
-# ─── Docker installation ──────────────────────────────────────────────────────
-
-# install_docker installs Docker Engine via the official apt repository for the
-# detected OS. It assumes apt-get is available and OS_ID / VERSION_CODENAME are
-# set from /etc/os-release.
-install_docker() {
-    step "Installing prerequisites"
-    apt-get install -y -q ca-certificates curl gnupg
-
-    step "Adding Docker's official GPG key"
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL "https://download.docker.com/linux/${OS_ID}/gpg" \
-        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
-
-    step "Adding Docker apt repository"
-    echo \
-        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/${OS_ID} ${VERSION_CODENAME} stable" \
-        | tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-    step "Updating apt package index"
-    apt-get update -qq
-
-    step "Installing Docker Engine"
-    apt-get install -y -q \
-        docker-ce docker-ce-cli containerd.io \
-        docker-buildx-plugin docker-compose-plugin
-}
-
-step "Checking for existing Docker installation"
-
-if command -v docker > /dev/null 2>&1; then
-    step "Docker already installed ($(docker --version | head -1)); skipping"
-    STEP_DOCKER="already installed"
-else
-    install_docker
-    step "Docker installed ($(docker --version | head -1))"
-    STEP_DOCKER="installed"
-fi
-
-# ─── Bun installation ─────────────────────────────────────────────────────────
-
-# install_bun downloads the Bun runtime binary directly from GitHub releases
-# and places it at /usr/local/bin/bun, making it available system-wide.
-install_bun() {
-    # Bun uses different arch names than Go.
-    local bun_arch
-    case "${ARCH}" in
-        amd64) bun_arch="x64" ;;
-        arm64) bun_arch="aarch64" ;;
-    esac
-
-    local bun_tmp
-    bun_tmp=$(mktemp -d)
-
-    step "Installing unzip (required to extract Bun)"
-    apt-get install -y -q unzip
-
-    step "Downloading Bun runtime (linux/${ARCH})"
-    curl -fsSL \
-        "https://github.com/oven-sh/bun/releases/latest/download/bun-linux-${bun_arch}.zip" \
-        -o "${bun_tmp}/bun.zip"
-
-    unzip -q "${bun_tmp}/bun.zip" -d "${bun_tmp}"
-    install -m 755 "${bun_tmp}/bun-linux-${bun_arch}/bun" /usr/local/bin/bun
-
-    rm -rf "${bun_tmp}"
-}
-
-step "Checking for existing Bun installation"
-
-if command -v bun > /dev/null 2>&1; then
-    step "Bun already installed ($(bun --version)); skipping"
-    STEP_BUN="already installed"
-else
-    install_bun
-    step "Bun installed ($(bun --version))"
-    STEP_BUN="installed"
-fi
-
-# ─── stop existing services (upgrade flow) ────────────────────────────────────
-
-# Stop all services before replacing any files so binaries are never swapped
-# out from under a running process. Also stop and disable the legacy monolithic
-# service from older installs so it does not hold port 8080.
-SERVICES="dirigent-api dirigent-orchestrator dirigent-proxy dirigent-dashboard"
-
-step "Stopping any running Dirigent services"
-
-if systemctl is-active --quiet dirigent 2>/dev/null; then
-    step "Stopping legacy dirigent.service"
-    systemctl stop dirigent
-    systemctl disable dirigent 2>/dev/null || true
-fi
-
-for svc in ${SERVICES}; do
-    if systemctl is-active --quiet "${svc}" 2>/dev/null; then
-        step "Stopping ${svc}"
-        systemctl stop "${svc}"
-    fi
-done
-
-# ─── download Go binaries ─────────────────────────────────────────────────────
-
-download_binary() {
-    local artifact="$1"
-    local dest="$2"
-    step "Downloading ${artifact}"
-    curl -fsSL "${RELEASE_BASE}/${artifact}" -o "${dest}"
-    chmod 755 "${dest}"
-}
-
-download_binary "dirigent-linux-${ARCH}"              /usr/local/bin/dirigent-api
-download_binary "dirigent-orchestrator-linux-${ARCH}" /usr/local/bin/dirigent-orchestrator
-download_binary "dirigent-proxy-linux-${ARCH}"        /usr/local/bin/dirigent-proxy
-
-# ─── download and install dashboard ──────────────────────────────────────────
-
-DASHBOARD_DIR="/opt/dirigent/dashboard"
-
-step "Installing dashboard to ${DASHBOARD_DIR}"
-mkdir -p "${DASHBOARD_DIR}"
-curl -fsSL "${RELEASE_BASE}/dashboard.tar.gz" | tar -xz -C "${DASHBOARD_DIR}"
-
-step "Installing dashboard production dependencies"
-(cd "${DASHBOARD_DIR}" && bun install --production)
-
-# ─── data directory ───────────────────────────────────────────────────────────
-
-DATA_DIR="/var/lib/dirigent"
-
-if [ ! -d "${DATA_DIR}" ]; then
-    step "Creating data directory ${DATA_DIR}"
-    mkdir -p "${DATA_DIR}"
-else
-    step "Data directory ${DATA_DIR} already exists; skipping"
-fi
-
-# ─── dashboard public exposure setup ──────────────────────────────────────────
-
-DASHBOARD_DOMAIN="${DIRIGENT_DASHBOARD_DOMAIN:-}"
-DASHBOARD_USER="${DIRIGENT_DASHBOARD_USER:-}"
-DASHBOARD_PASSWORD="${DIRIGENT_DASHBOARD_PASSWORD:-}"
-
-if [ -f "${ENV_FILE}" ]; then
-    EXISTING_DASHBOARD_DOMAIN=$(grep '^DIRIGENT_DASHBOARD_DOMAIN=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
-    EXISTING_DASHBOARD_USER=$(grep '^DIRIGENT_DASHBOARD_USER=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
-    EXISTING_DASHBOARD_PASSWORD=$(grep '^DIRIGENT_DASHBOARD_PASSWORD=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
-
-    if [ -z "${DASHBOARD_DOMAIN}" ] && [ -n "${EXISTING_DASHBOARD_DOMAIN}" ]; then
-        DASHBOARD_DOMAIN="${EXISTING_DASHBOARD_DOMAIN}"
-    fi
-    if [ -z "${DASHBOARD_USER}" ] && [ -n "${EXISTING_DASHBOARD_USER}" ]; then
-        DASHBOARD_USER="${EXISTING_DASHBOARD_USER}"
-    fi
-    if [ -z "${DASHBOARD_PASSWORD}" ] && [ -n "${EXISTING_DASHBOARD_PASSWORD}" ]; then
-        DASHBOARD_PASSWORD="${EXISTING_DASHBOARD_PASSWORD}"
-    fi
-fi
-
-if [ -t 0 ]; then
-    echo ""
-    echo "Dashboard public exposure setup"
-    echo "  Configure HTTPS + Basic Auth on a dedicated domain (optional)."
-    read -r -p "Expose dashboard publicly through the proxy? [y/N]: " EXPOSE_DASHBOARD
-    if [[ "${EXPOSE_DASHBOARD}" =~ ^[Yy]$ ]]; then
-        while true; do
-            if [ -n "${DASHBOARD_DOMAIN}" ]; then
-                read -r -p "Dashboard domain [${DASHBOARD_DOMAIN}]: " INPUT_DASHBOARD_DOMAIN
-                if [ -n "${INPUT_DASHBOARD_DOMAIN}" ]; then
-                    DASHBOARD_DOMAIN="${INPUT_DASHBOARD_DOMAIN}"
-                fi
-            else
-                read -r -p "Dashboard domain (e.g. dashboard.example.com): " DASHBOARD_DOMAIN
-            fi
-
-            if validate_domain "${DASHBOARD_DOMAIN}"; then
-                break
-            fi
-            echo "Invalid domain. Use a valid hostname like dashboard.example.com"
-        done
-
-        while true; do
-            if [ -n "${DASHBOARD_USER}" ]; then
-                read -r -p "Dashboard basic auth username [${DASHBOARD_USER}]: " INPUT_DASHBOARD_USER
-                if [ -n "${INPUT_DASHBOARD_USER}" ]; then
-                    DASHBOARD_USER="${INPUT_DASHBOARD_USER}"
-                fi
-            else
-                read -r -p "Dashboard basic auth username: " DASHBOARD_USER
-            fi
-
-            if [ -n "${DASHBOARD_USER}" ]; then
-                break
-            fi
-            echo "Username cannot be empty."
-        done
-
-        while true; do
-            read -r -s -p "Dashboard basic auth password: " DASHBOARD_PASSWORD
-            echo ""
-            read -r -s -p "Confirm password: " DASHBOARD_PASSWORD_CONFIRM
-            echo ""
-            if [ -z "${DASHBOARD_PASSWORD}" ]; then
-                echo "Password cannot be empty."
-                continue
-            fi
-            if [ "${DASHBOARD_PASSWORD}" != "${DASHBOARD_PASSWORD_CONFIRM}" ]; then
-                echo "Passwords do not match. Try again."
-                continue
-            fi
-            break
-        done
-    else
-        DASHBOARD_DOMAIN=""
-        DASHBOARD_USER=""
-        DASHBOARD_PASSWORD=""
-    fi
-fi
-
-if [ -n "${DASHBOARD_DOMAIN}" ] || [ -n "${DASHBOARD_USER}" ] || [ -n "${DASHBOARD_PASSWORD}" ]; then
-    if ! validate_domain "${DASHBOARD_DOMAIN}"; then
-        error "DIRIGENT_DASHBOARD_DOMAIN is set but invalid. Example: dashboard.example.com"
-    fi
-    if [ -z "${DASHBOARD_USER}" ] || [ -z "${DASHBOARD_PASSWORD}" ]; then
-        error "DIRIGENT_DASHBOARD_DOMAIN requires DIRIGENT_DASHBOARD_USER and DIRIGENT_DASHBOARD_PASSWORD"
-    fi
-fi
-
-step "Writing shared environment file"
-write_dashboard_env "${DASHBOARD_DOMAIN}" "${DASHBOARD_USER}" "${DASHBOARD_PASSWORD}"
-
-# ─── Docker network ───────────────────────────────────────────────────────────
-
-DIRIGENT_NETWORK="dirigent"
-
-step "Checking for Dirigent Docker network"
-
-if docker network inspect "${DIRIGENT_NETWORK}" > /dev/null 2>&1; then
-    step "Docker network '${DIRIGENT_NETWORK}' already exists; skipping"
-    STEP_NETWORK="already exists"
-else
-    step "Creating Docker bridge network '${DIRIGENT_NETWORK}'"
-    docker network create --driver bridge "${DIRIGENT_NETWORK}"
-    step "Docker network '${DIRIGENT_NETWORK}' created"
-    STEP_NETWORK="created"
-fi
-
-# ─── systemd units ────────────────────────────────────────────────────────────
-
-step "Writing systemd unit files"
-
-cat > /etc/systemd/system/dirigent-api.service << EOF
-[Unit]
-Description=Dirigent API
-Documentation=https://github.com/ercadev/dirigent
-After=network.target docker.service
-Requires=docker.service
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/dirigent-api
-EnvironmentFile=-${ENV_FILE}
-Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-cat > /etc/systemd/system/dirigent-orchestrator.service << EOF
-[Unit]
-Description=Dirigent orchestrator
-Documentation=https://github.com/ercadev/dirigent
-After=network.target docker.service dirigent-api.service
-Requires=docker.service
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/dirigent-orchestrator
-EnvironmentFile=-${ENV_FILE}
-Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
-Environment=DIRIGENT_API_URL=http://localhost:8080
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-cat > /etc/systemd/system/dirigent-proxy.service << EOF
-[Unit]
-Description=Dirigent reverse proxy
-Documentation=https://github.com/ercadev/dirigent
-After=network.target docker.service dirigent-api.service
-Requires=docker.service
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/dirigent-proxy
-EnvironmentFile=-${ENV_FILE}
-Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-cat > /etc/systemd/system/dirigent-dashboard.service << EOF
-[Unit]
-Description=Dirigent dashboard
-Documentation=https://github.com/ercadev/dirigent
-After=network.target dirigent-api.service
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/bun ${DASHBOARD_DIR}/server.ts
-Environment=PORT=3000
-Environment=DIRIGENT_API_URL=http://localhost:8080
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# ─── enable and start services ────────────────────────────────────────────────
-
-step "Reloading systemd daemon"
-systemctl daemon-reload
-
-for svc in ${SERVICES}; do
-    step "Enabling and starting ${svc}"
-    systemctl enable "${svc}"
-    systemctl start "${svc}"
-done
-
-# ─── verify services ──────────────────────────────────────────────────────────
-
-step "Verifying all services are active"
-
-for svc in ${SERVICES}; do
-    if ! systemctl is-active --quiet "${svc}"; then
-        error "${svc} failed to start. Check logs with: journalctl -u ${svc} -n 50"
-    fi
-done
-
-# ─── completion ───────────────────────────────────────────────────────────────
-
-SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-if [ -z "${SERVER_IP}" ]; then
-    SERVER_IP="<server-ip>"
-fi
+step "Installing Dirigent CLI (${DIRIGENT_VERSION}, linux/${ARCH})"
+curl -fsSL "${RELEASE_BASE}/dirigent-cli-linux-${ARCH}" -o /usr/local/bin/dirigent
+chmod 0755 /usr/local/bin/dirigent
 
 echo ""
-echo "  ┌─────────────────────────────────────────────────────────────────────────┐"
-echo "  │  Dirigent is ready                                                      │"
-echo "  └─────────────────────────────────────────────────────────────────────────┘"
+echo "  Dirigent CLI installed successfully."
 echo ""
-echo "  Services:"
-printf "    %-30s %s\n" "dirigent-api          :8080"  "$(systemctl is-active dirigent-api)"
-printf "    %-30s %s\n" "dirigent-orchestrator  —"     "$(systemctl is-active dirigent-orchestrator)"
-printf "    %-30s %s\n" "dirigent-proxy        :80"    "$(systemctl is-active dirigent-proxy)"
-printf "    %-30s %s\n" "dirigent-dashboard    :3000"  "$(systemctl is-active dirigent-dashboard)"
-echo ""
-if [ -n "${DASHBOARD_DOMAIN}" ]; then
-    echo "  Dashboard:  https://${DASHBOARD_DOMAIN}"
-    echo "              (Basic Auth user: ${DASHBOARD_USER})"
-else
-    echo "  Dashboard:  http://${SERVER_IP}:3000"
-fi
-echo "  API:        http://${SERVER_IP}:8080"
-echo "  Proxy:      http://${SERVER_IP}:80"
-echo ""
-if [ -n "${DASHBOARD_DOMAIN}" ]; then
-    echo "  Note: Ensure DNS A record for ${DASHBOARD_DOMAIN} points to this server"
-    echo "  and port 80 is open so certificates can be issued."
-else
-    echo "  Note: The dashboard runs directly on :3000 rather than through the :80"
-    echo "  reverse proxy. This keeps it accessible even when no deployments are"
-    echo "  configured — the proxy only routes traffic to your deployed containers."
-fi
-echo ""
-echo "  Setup summary:"
-echo "    Docker        ${STEP_DOCKER}"
-echo "    Bun           ${STEP_BUN}"
-echo "    Network       ${STEP_NETWORK}"
-echo "    Data dir      ${DATA_DIR}"
-echo "    Version       ${DIRIGENT_VERSION}"
+echo "  Next step:"
+echo "    sudo dirigent setup"
 echo ""

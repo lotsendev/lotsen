@@ -8,20 +8,26 @@ Run the following command on a fresh Ubuntu 22.04+ or Debian 11+ VPS as root (or
 
 ```bash
 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
+sudo dirigent setup
 ```
 
 To pin a specific version:
 
 ```bash
 DIRIGENT_VERSION=v0.0.2 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/download/v0.0.2/install.sh | sudo bash
+sudo DIRIGENT_VERSION=v0.0.2 dirigent setup
 ```
 
-The installer will:
+The bootstrap installer will:
+- Install the `dirigent` CLI binary
+
+Then `dirigent setup` will:
 - Install Docker Engine if not already present
 - Install Bun if not already present
 - Download all Dirigent components for your architecture (`amd64` / `arm64`)
 - Register and start four systemd services that survive reboots
 - Create the `/var/lib/dirigent/` data directory and the `dirigent` Docker network
+- Offer security profiles in guided mode (`strict` is recommended)
 
 Re-running the installer performs an in-place upgrade.
 

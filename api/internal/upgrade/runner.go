@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"sync"
 	"syscall"
@@ -204,51 +203,14 @@ func defaultProcessBuilder(targetVersion string) (processConfig, error) {
 		targetVersion = "latest"
 	}
 
-	scriptURL := "https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh"
-	if targetVersion != "latest" {
-		scriptURL = fmt.Sprintf("https://github.com/ercadev/dirigent-releases/releases/download/%s/install.sh", targetVersion)
-	}
-
-	resp, err := http.Get(scriptURL)
-	if err != nil {
-		return processConfig{}, fmt.Errorf("download install script: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return processConfig{}, fmt.Errorf("download install script status: %d", resp.StatusCode)
-	}
-
-	tmpFile, err := os.CreateTemp("", "dirigent-install-*.sh")
-	if err != nil {
-		return processConfig{}, fmt.Errorf("create temp install script: %w", err)
-	}
-
-	if _, err := bufio.NewReader(resp.Body).WriteTo(tmpFile); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
-		return processConfig{}, fmt.Errorf("write temp install script: %w", err)
-	}
-	if err := tmpFile.Chmod(0o700); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
-		return processConfig{}, fmt.Errorf("chmod temp install script: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		os.Remove(tmpFile.Name())
-		return processConfig{}, fmt.Errorf("close temp install script: %w", err)
-	}
-
-	path := "/bin/bash"
-	args := []string{"bash", tmpFile.Name()}
-	env := append(os.Environ(), "DIRIGENT_VERSION="+targetVersion, "DIRIGENT_UPGRADE_STARTED_AT="+time.Now().UTC().Format(time.RFC3339))
+	path := "/usr/local/bin/dirigent"
+	args := []string{"dirigent", "upgrade", "--to", targetVersion, "--non-interactive", "--yes"}
+	env := append(os.Environ(), "DIRIGENT_UPGRADE_STARTED_AT="+time.Now().UTC().Format(time.RFC3339))
 
 	return processConfig{
-		path: path,
-		args: args,
-		env:  env,
-		cleanup: func() {
-			_ = os.Remove(tmpFile.Name())
-		},
+		path:    path,
+		args:    args,
+		env:     env,
+		cleanup: func() {},
 	}, nil
 }

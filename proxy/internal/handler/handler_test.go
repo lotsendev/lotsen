@@ -489,3 +489,74 @@ func TestProxy_StandardHardeningRateLimitsRepeatedScans(t *testing.T) {
 		t.Fatalf("want 429, got %d", resp.StatusCode)
 	}
 }
+
+func TestInternalAccessLogs_ReturnsEntries(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("example.com", backend.Listener.Addr().String())
+	buffer := handler.NewAccessLogBuffer(10)
+
+	mux := http.NewServeMux()
+	handler.New(tbl, nil, handler.WithAccessLogger(buffer)).RegisterRoutes(mux)
+	proxy := httptest.NewServer(mux)
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/api", nil)
+	req.Host = "example.com"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api: %v", err)
+	}
+	resp.Body.Close()
+
+	logResp, err := http.Get(proxy.URL + "/internal/access-logs")
+	if err != nil {
+		t.Fatalf("GET /internal/access-logs: %v", err)
+	}
+	defer logResp.Body.Close()
+	if logResp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", logResp.StatusCode)
+	}
+
+	var entries []handler.AccessLogEntry
+	if err := json.NewDecoder(logResp.Body).Decode(&entries); err != nil {
+		t.Fatalf("decode entries: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("want at least one access log entry")
+	}
+	if entries[0].Method != http.MethodGet {
+		t.Fatalf("want GET method, got %s", entries[0].Method)
+	}
+}
+
+func TestInternalSecurityConfig_ReturnsHardeningSettings(t *testing.T) {
+	mux := http.NewServeMux()
+	handler.New(newTestTable(), nil, handler.WithHardeningProfile(handler.HardeningStrict)).RegisterRoutes(mux)
+	proxy := httptest.NewServer(mux)
+	defer proxy.Close()
+
+	resp, err := http.Get(proxy.URL + "/internal/security-config")
+	if err != nil {
+		t.Fatalf("GET /internal/security-config: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var cfg handler.HardeningSettings
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if cfg.Profile != handler.HardeningStrict {
+		t.Fatalf("want strict profile, got %s", cfg.Profile)
+	}
+	if cfg.SuspiciousThreshold == 0 {
+		t.Fatal("want non-zero threshold")
+	}
+}

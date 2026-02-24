@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -69,7 +70,14 @@ func main() {
 	}
 
 	p := poller.New(s, table, interval)
-	h := handler.New(table, dashboardAuth, handler.WithHardeningProfile(hardeningProfile))
+	accessLogCapacity := 2000
+	if v := strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_ACCESS_LOG_CAPACITY")); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			accessLogCapacity = parsed
+		}
+	}
+	accessLogs := handler.NewAccessLogBuffer(accessLogCapacity)
+	h := handler.New(table, dashboardAuth, handler.WithHardeningProfile(hardeningProfile), handler.WithAccessLogger(accessLogs))
 
 	hostPolicy := hostPolicyFromTable(table)
 	cacheDir := envOrDefault("DIRIGENT_CERT_CACHE_DIR", defaultCertCacheDir)

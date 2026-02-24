@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,32 @@ type Handler struct {
 	dashboardAuth *DashboardAuth
 	hardening     HardeningProfile
 	scanner       *scannerLimiter
+	accessLogger  AccessLogger
+}
+
+// AccessLogger records per-request proxy metadata.
+type AccessLogger interface {
+	Log(AccessLogEntry)
+}
+
+// AccessLogEntry captures structured request/response metadata.
+type AccessLogEntry struct {
+	Timestamp      time.Time `json:"timestamp"`
+	Method         string    `json:"method"`
+	Path           string    `json:"path"`
+	StatusCode     int       `json:"statusCode"`
+	UpstreamTarget string    `json:"upstreamTarget,omitempty"`
+	DurationMs     int64     `json:"durationMs"`
+	ClientIP       string    `json:"clientIp,omitempty"`
+	Host           string    `json:"host,omitempty"`
+}
+
+// HardeningSettings describes effective hardening/rate-limit behavior.
+type HardeningSettings struct {
+	Profile                   HardeningProfile `json:"profile"`
+	SuspiciousWindowSeconds   int64            `json:"suspiciousWindowSeconds"`
+	SuspiciousThreshold       int              `json:"suspiciousThreshold"`
+	SuspiciousBlockForSeconds int64            `json:"suspiciousBlockForSeconds"`
 }
 
 // HardeningProfile controls request filtering and anti-scan behavior.
@@ -70,6 +97,13 @@ func WithHardeningProfile(profile HardeningProfile) Option {
 	}
 }
 
+// WithAccessLogger installs structured request access logging.
+func WithAccessLogger(logger AccessLogger) Option {
+	return func(h *Handler) {
+		h.accessLogger = logger
+	}
+}
+
 // RegisterRoutes wires the proxy catch-all and the internal control API into mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.RegisterInternalRoutes(mux)
@@ -80,6 +114,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 func (h *Handler) RegisterInternalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/health", h.health)
 	mux.HandleFunc("POST /internal/routes", h.setRoute)
+	mux.HandleFunc("GET /internal/access-logs", h.listAccessLogs)
+	mux.HandleFunc("GET /internal/security-config", h.securityConfig)
 }
 
 // RegisterProxyRoutes wires the proxy catch-all route into mux.
@@ -97,6 +133,7 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	client := clientIP(r)
 	if h.scanner != nil && client != "" && h.scanner.IsBlocked(client, now) {
+		h.logAccess(AccessLogEntry{Timestamp: now.UTC(), Method: r.Method, Path: r.URL.Path, StatusCode: http.StatusTooManyRequests, DurationMs: 0, ClientIP: client, Host: r.Host})
 		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
@@ -105,6 +142,7 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		if h.scanner != nil && client != "" {
 			h.scanner.RecordSuspicious(client, now)
 		}
+		h.logAccess(AccessLogEntry{Timestamp: now.UTC(), Method: r.Method, Path: r.URL.Path, StatusCode: http.StatusNotFound, DurationMs: 0, ClientIP: client, Host: r.Host})
 		http.NotFound(w, r)
 		return
 	}
@@ -118,6 +156,7 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 
 	if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
 		if !middleware.ValidBasicAuth(r, h.dashboardAuth.Username, h.dashboardAuth.Password) {
+			h.logAccess(AccessLogEntry{Timestamp: now.UTC(), Method: r.Method, Path: r.URL.Path, StatusCode: http.StatusUnauthorized, DurationMs: 0, ClientIP: client, Host: host})
 			middleware.WriteBasicAuthChallenge(w, "Dirigent")
 			return
 		}
@@ -125,6 +164,7 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 
 	upstream, ok := h.table.Get(host)
 	if !ok {
+		h.logAccess(AccessLogEntry{Timestamp: now.UTC(), Method: r.Method, Path: r.URL.Path, StatusCode: http.StatusNotFound, DurationMs: 0, ClientIP: client, Host: host})
 		http.Error(w, "unknown domain", http.StatusNotFound)
 		return
 	}
@@ -134,6 +174,7 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		Host:   upstream,
 	}
 
+	rw := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 	rp := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = target.Scheme
@@ -146,7 +187,71 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	rp.ServeHTTP(w, r)
+	rp.ServeHTTP(rw, r)
+	h.logAccess(AccessLogEntry{
+		Timestamp:      now.UTC(),
+		Method:         r.Method,
+		Path:           r.URL.Path,
+		StatusCode:     rw.statusCode,
+		UpstreamTarget: upstream,
+		DurationMs:     time.Since(now).Milliseconds(),
+		ClientIP:       client,
+		Host:           host,
+	})
+}
+
+func (h *Handler) logAccess(entry AccessLogEntry) {
+	if h.accessLogger == nil {
+		return
+	}
+	h.accessLogger.Log(entry)
+}
+
+func (h *Handler) listAccessLogs(w http.ResponseWriter, r *http.Request) {
+	if h.accessLogger == nil {
+		writeJSON(w, http.StatusOK, []AccessLogEntry{})
+		return
+	}
+	provider, ok := h.accessLogger.(interface{ List(int) []AccessLogEntry })
+	if !ok {
+		writeJSON(w, http.StatusOK, []AccessLogEntry{})
+		return
+	}
+	limit := 200
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 1000 {
+			limit = parsed
+		}
+	}
+	writeJSON(w, http.StatusOK, provider.List(limit))
+}
+
+func (h *Handler) securityConfig(w http.ResponseWriter, _ *http.Request) {
+	cfg := HardeningSettings{Profile: h.hardening}
+	if h.scanner != nil {
+		cfg.SuspiciousWindowSeconds = int64(h.scanner.window.Seconds())
+		cfg.SuspiciousThreshold = h.scanner.threshold
+		cfg.SuspiciousBlockForSeconds = int64(h.scanner.blockFor.Seconds())
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (r *statusRecorder) WriteHeader(statusCode int) {
+	r.statusCode = statusCode
+	r.ResponseWriter.WriteHeader(statusCode)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("proxy: writeJSON: %v", err)
+	}
 }
 
 type routeRequest struct {

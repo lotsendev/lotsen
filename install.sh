@@ -22,6 +22,8 @@
 
 set -euo pipefail
 
+ENV_FILE="/etc/dirigent/dirigent.env"
+
 # ─── output helpers ───────────────────────────────────────────────────────────
 
 # step prints a human-readable progress line so the user can see what the
@@ -35,6 +37,45 @@ step() {
 error() {
     echo "error: $*" >&2
     exit 1
+}
+
+validate_domain() {
+    local domain="$1"
+    if [ -z "${domain}" ]; then
+        return 1
+    fi
+    if [[ ! "${domain}" =~ ^[A-Za-z0-9.-]+$ ]]; then
+        return 1
+    fi
+    if [[ "${domain}" != *.* ]]; then
+        return 1
+    fi
+    return 0
+}
+
+write_dashboard_env() {
+    local domain="$1"
+    local user="$2"
+    local password="$3"
+    local tmp
+
+    install -m 700 -d /etc/dirigent
+    tmp=$(mktemp)
+
+    if [ -f "${ENV_FILE}" ]; then
+        awk '!/^DIRIGENT_DASHBOARD_(DOMAIN|USER|PASSWORD)=/' "${ENV_FILE}" > "${tmp}"
+    fi
+
+    if [ -n "${domain}" ]; then
+        {
+            echo "DIRIGENT_DASHBOARD_DOMAIN=${domain}"
+            echo "DIRIGENT_DASHBOARD_USER=${user}"
+            echo "DIRIGENT_DASHBOARD_PASSWORD=${password}"
+        } >> "${tmp}"
+    fi
+
+    install -m 600 "${tmp}" "${ENV_FILE}"
+    rm -f "${tmp}"
 }
 
 # ─── pre-flight: root check ───────────────────────────────────────────────────
@@ -247,6 +288,100 @@ else
     step "Data directory ${DATA_DIR} already exists; skipping"
 fi
 
+# ─── dashboard public exposure setup ──────────────────────────────────────────
+
+DASHBOARD_DOMAIN="${DIRIGENT_DASHBOARD_DOMAIN:-}"
+DASHBOARD_USER="${DIRIGENT_DASHBOARD_USER:-}"
+DASHBOARD_PASSWORD="${DIRIGENT_DASHBOARD_PASSWORD:-}"
+
+if [ -f "${ENV_FILE}" ]; then
+    EXISTING_DASHBOARD_DOMAIN=$(grep '^DIRIGENT_DASHBOARD_DOMAIN=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
+    EXISTING_DASHBOARD_USER=$(grep '^DIRIGENT_DASHBOARD_USER=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
+    EXISTING_DASHBOARD_PASSWORD=$(grep '^DIRIGENT_DASHBOARD_PASSWORD=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
+
+    if [ -z "${DASHBOARD_DOMAIN}" ] && [ -n "${EXISTING_DASHBOARD_DOMAIN}" ]; then
+        DASHBOARD_DOMAIN="${EXISTING_DASHBOARD_DOMAIN}"
+    fi
+    if [ -z "${DASHBOARD_USER}" ] && [ -n "${EXISTING_DASHBOARD_USER}" ]; then
+        DASHBOARD_USER="${EXISTING_DASHBOARD_USER}"
+    fi
+    if [ -z "${DASHBOARD_PASSWORD}" ] && [ -n "${EXISTING_DASHBOARD_PASSWORD}" ]; then
+        DASHBOARD_PASSWORD="${EXISTING_DASHBOARD_PASSWORD}"
+    fi
+fi
+
+if [ -t 0 ]; then
+    echo ""
+    echo "Dashboard public exposure setup"
+    echo "  Configure HTTPS + Basic Auth on a dedicated domain (optional)."
+    read -r -p "Expose dashboard publicly through the proxy? [y/N]: " EXPOSE_DASHBOARD
+    if [[ "${EXPOSE_DASHBOARD}" =~ ^[Yy]$ ]]; then
+        while true; do
+            if [ -n "${DASHBOARD_DOMAIN}" ]; then
+                read -r -p "Dashboard domain [${DASHBOARD_DOMAIN}]: " INPUT_DASHBOARD_DOMAIN
+                if [ -n "${INPUT_DASHBOARD_DOMAIN}" ]; then
+                    DASHBOARD_DOMAIN="${INPUT_DASHBOARD_DOMAIN}"
+                fi
+            else
+                read -r -p "Dashboard domain (e.g. dashboard.example.com): " DASHBOARD_DOMAIN
+            fi
+
+            if validate_domain "${DASHBOARD_DOMAIN}"; then
+                break
+            fi
+            echo "Invalid domain. Use a valid hostname like dashboard.example.com"
+        done
+
+        while true; do
+            if [ -n "${DASHBOARD_USER}" ]; then
+                read -r -p "Dashboard basic auth username [${DASHBOARD_USER}]: " INPUT_DASHBOARD_USER
+                if [ -n "${INPUT_DASHBOARD_USER}" ]; then
+                    DASHBOARD_USER="${INPUT_DASHBOARD_USER}"
+                fi
+            else
+                read -r -p "Dashboard basic auth username: " DASHBOARD_USER
+            fi
+
+            if [ -n "${DASHBOARD_USER}" ]; then
+                break
+            fi
+            echo "Username cannot be empty."
+        done
+
+        while true; do
+            read -r -s -p "Dashboard basic auth password: " DASHBOARD_PASSWORD
+            echo ""
+            read -r -s -p "Confirm password: " DASHBOARD_PASSWORD_CONFIRM
+            echo ""
+            if [ -z "${DASHBOARD_PASSWORD}" ]; then
+                echo "Password cannot be empty."
+                continue
+            fi
+            if [ "${DASHBOARD_PASSWORD}" != "${DASHBOARD_PASSWORD_CONFIRM}" ]; then
+                echo "Passwords do not match. Try again."
+                continue
+            fi
+            break
+        done
+    else
+        DASHBOARD_DOMAIN=""
+        DASHBOARD_USER=""
+        DASHBOARD_PASSWORD=""
+    fi
+fi
+
+if [ -n "${DASHBOARD_DOMAIN}" ] || [ -n "${DASHBOARD_USER}" ] || [ -n "${DASHBOARD_PASSWORD}" ]; then
+    if ! validate_domain "${DASHBOARD_DOMAIN}"; then
+        error "DIRIGENT_DASHBOARD_DOMAIN is set but invalid. Example: dashboard.example.com"
+    fi
+    if [ -z "${DASHBOARD_USER}" ] || [ -z "${DASHBOARD_PASSWORD}" ]; then
+        error "DIRIGENT_DASHBOARD_DOMAIN requires DIRIGENT_DASHBOARD_USER and DIRIGENT_DASHBOARD_PASSWORD"
+    fi
+fi
+
+step "Writing shared environment file"
+write_dashboard_env "${DASHBOARD_DOMAIN}" "${DASHBOARD_USER}" "${DASHBOARD_PASSWORD}"
+
 # ─── Docker network ───────────────────────────────────────────────────────────
 
 DIRIGENT_NETWORK="dirigent"
@@ -277,6 +412,7 @@ Requires=docker.service
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/dirigent-api
+EnvironmentFile=-${ENV_FILE}
 Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
 Restart=on-failure
 RestartSec=5
@@ -295,6 +431,7 @@ Requires=docker.service
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/dirigent-orchestrator
+EnvironmentFile=-${ENV_FILE}
 Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
 Environment=DIRIGENT_API_URL=http://localhost:8080
 Restart=on-failure
@@ -314,6 +451,7 @@ Requires=docker.service
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/dirigent-proxy
+EnvironmentFile=-${ENV_FILE}
 Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
 Restart=on-failure
 RestartSec=5
@@ -379,13 +517,23 @@ printf "    %-30s %s\n" "dirigent-orchestrator  —"     "$(systemctl is-active 
 printf "    %-30s %s\n" "dirigent-proxy        :80"    "$(systemctl is-active dirigent-proxy)"
 printf "    %-30s %s\n" "dirigent-dashboard    :3000"  "$(systemctl is-active dirigent-dashboard)"
 echo ""
-echo "  Dashboard:  http://${SERVER_IP}:3000"
+if [ -n "${DASHBOARD_DOMAIN}" ]; then
+    echo "  Dashboard:  https://${DASHBOARD_DOMAIN}"
+    echo "              (Basic Auth user: ${DASHBOARD_USER})"
+else
+    echo "  Dashboard:  http://${SERVER_IP}:3000"
+fi
 echo "  API:        http://${SERVER_IP}:8080"
 echo "  Proxy:      http://${SERVER_IP}:80"
 echo ""
-echo "  Note: The dashboard runs directly on :3000 rather than through the :80"
-echo "  reverse proxy. This keeps it accessible even when no deployments are"
-echo "  configured — the proxy only routes traffic to your deployed containers."
+if [ -n "${DASHBOARD_DOMAIN}" ]; then
+    echo "  Note: Ensure DNS A record for ${DASHBOARD_DOMAIN} points to this server"
+    echo "  and port 80 is open so certificates can be issued."
+else
+    echo "  Note: The dashboard runs directly on :3000 rather than through the :80"
+    echo "  reverse proxy. This keeps it accessible even when no deployments are"
+    echo "  configured — the proxy only routes traffic to your deployed containers."
+fi
 echo ""
 echo "  Setup summary:"
 echo "    Docker        ${STEP_DOCKER}"

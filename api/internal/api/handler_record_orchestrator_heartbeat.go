@@ -28,6 +28,16 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 		LoadBalancer *struct {
 			Responding *bool      `json:"responding"`
 			CheckedAt  *time.Time `json:"checkedAt"`
+			Traffic    *struct {
+				TotalRequests      *int64 `json:"totalRequests"`
+				SuspiciousRequests *int64 `json:"suspiciousRequests"`
+				BlockedRequests    *int64 `json:"blockedRequests"`
+				ActiveBlockedIPs   *int   `json:"activeBlockedIps"`
+				BlockedIPs         []struct {
+					IP           string     `json:"ip"`
+					BlockedUntil *time.Time `json:"blockedUntil"`
+				} `json:"blockedIps"`
+			} `json:"traffic"`
 		} `json:"loadBalancer"`
 		Host *struct {
 			CPU *struct {
@@ -89,7 +99,9 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 			checkedAt = body.LoadBalancer.CheckedAt.UTC()
 		}
 
-		if err := h.loadBalancer.RecordLoadBalancerHealth(r.Context(), *body.LoadBalancer.Responding, checkedAt); err != nil {
+		traffic := buildLoadBalancerTraffic(body.LoadBalancer.Traffic)
+
+		if err := h.loadBalancer.RecordLoadBalancerHealth(r.Context(), *body.LoadBalancer.Responding, checkedAt, traffic); err != nil {
 			http.Error(w, "failed to record load balancer health", http.StatusInternalServerError)
 			return
 		}
@@ -141,9 +153,55 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 		}
 	}
 
+	if h.statusEvents != nil {
+		h.statusEvents.Publish(h.currentSystemStatusSnapshot(r))
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func isValidUsagePercent(v float64) bool {
 	return v >= 0 && v <= 100
+}
+
+func buildLoadBalancerTraffic(in *struct {
+	TotalRequests      *int64 `json:"totalRequests"`
+	SuspiciousRequests *int64 `json:"suspiciousRequests"`
+	BlockedRequests    *int64 `json:"blockedRequests"`
+	ActiveBlockedIPs   *int   `json:"activeBlockedIps"`
+	BlockedIPs         []struct {
+		IP           string     `json:"ip"`
+		BlockedUntil *time.Time `json:"blockedUntil"`
+	} `json:"blockedIps"`
+}) *LoadBalancerTrafficSystemStatus {
+	if in == nil {
+		return nil
+	}
+
+	traffic := &LoadBalancerTrafficSystemStatus{}
+	if in.TotalRequests != nil {
+		traffic.TotalRequests = *in.TotalRequests
+	}
+	if in.SuspiciousRequests != nil {
+		traffic.SuspiciousRequests = *in.SuspiciousRequests
+	}
+	if in.BlockedRequests != nil {
+		traffic.BlockedRequests = *in.BlockedRequests
+	}
+	if in.ActiveBlockedIPs != nil {
+		traffic.ActiveBlockedIPs = *in.ActiveBlockedIPs
+	}
+
+	if len(in.BlockedIPs) > 0 {
+		traffic.BlockedIPs = make([]LoadBalancerBlockedIPStatus, 0, len(in.BlockedIPs))
+		for _, blocked := range in.BlockedIPs {
+			ip := blocked.IP
+			if ip == "" {
+				continue
+			}
+			traffic.BlockedIPs = append(traffic.BlockedIPs, LoadBalancerBlockedIPStatus{IP: ip, BlockedUntil: blocked.BlockedUntil})
+		}
+	}
+
+	return traffic
 }

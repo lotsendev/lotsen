@@ -76,6 +76,8 @@ type Handler struct {
 	store        Store
 	events       EventBus
 	dockerLogs   DockerLogs
+	statusEvents *systemStatusBroker
+	accessLogDir string
 	statusSource SystemStatusProvider
 	heartbeats   OrchestratorHeartbeatIngestor
 	docker       DockerConnectivityIngestor
@@ -131,7 +133,7 @@ func NewWithDependencies(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 	cpuIngestor, _ := statusSource.(CPUUtilizationIngestor)
 	ramIngestor, _ := statusSource.(RAMUtilizationIngestor)
 
-	return &Handler{store: s, events: eb, dockerLogs: dl, statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor, loadBalancer: loadBalancerIngestor, cpu: cpuIngestor, ram: ramIngestor, versions: versions, upgrade: upgrader}
+	return &Handler{store: s, events: eb, dockerLogs: dl, statusEvents: newSystemStatusBroker(), accessLogDir: proxyAccessLogDirFromEnv(), statusSource: statusSource, heartbeats: heartbeatIngestor, docker: dockerIngestor, loadBalancer: loadBalancerIngestor, cpu: cpuIngestor, ram: ramIngestor, versions: versions, upgrade: upgrader}
 }
 
 func buildAPIStoreChecker(s Store) func(context.Context) bool {
@@ -149,6 +151,8 @@ func buildAPIStoreChecker(s Store) func(context.Context) bool {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/deployments", h.listDeployments)
 	mux.HandleFunc("GET /api/system-status", h.systemStatus)
+	mux.HandleFunc("GET /api/system-status/events", h.systemStatusEvents)
+	mux.HandleFunc("GET /api/load-balancer/access-logs", h.loadBalancerAccessLogs)
 	mux.HandleFunc("POST /api/system-status/orchestrator-heartbeat", h.recordOrchestratorHeartbeat)
 	mux.HandleFunc("GET /api/version", h.getVersion)
 	mux.HandleFunc("POST /api/upgrade", h.startUpgrade)
@@ -194,6 +198,13 @@ func orchestratorStaleAfterFromEnv() time.Duration {
 	}
 
 	return d
+}
+
+func proxyAccessLogDirFromEnv() string {
+	if dir := strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_ACCESS_LOG_DIR")); dir != "" {
+		return dir
+	}
+	return "/var/lib/dirigent/logs/proxy"
 }
 
 const (

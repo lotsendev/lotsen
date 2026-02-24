@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -64,6 +65,10 @@ func main() {
 	if v := os.Getenv("DIRIGENT_PROXY_HEALTH_URL"); v != "" {
 		proxyHealthURL = v
 	}
+	proxyTrafficURL := "http://localhost/internal/traffic"
+	if v := os.Getenv("DIRIGENT_PROXY_TRAFFIC_URL"); v != "" {
+		proxyTrafficURL = v
+	}
 	notifier := apiclient.New(apiURL)
 	metrics := hostmetrics.NewCollector()
 
@@ -83,6 +88,7 @@ func main() {
 			now := time.Now().UTC()
 			dockerReachable := true
 			loadBalancerResponding := false
+			var loadBalancerTraffic *apiclient.HeartbeatLoadBalancerTraffic
 			storeAccessible := true
 			var cpuUsagePercent *float64
 			var ramUsagePercent *float64
@@ -106,6 +112,12 @@ func main() {
 				loadBalancerResponding = true
 			}
 
+			if traffic, err := probeProxyTraffic(ctx, proxyTrafficURL); err != nil {
+				log.Printf("orchestrator: load balancer traffic telemetry failed: %v", err)
+			} else {
+				loadBalancerTraffic = traffic
+			}
+
 			if usage, ok, err := metrics.CPUUsagePercent(); err != nil {
 				log.Printf("orchestrator: collect cpu telemetry: %v", err)
 			} else if ok {
@@ -119,7 +131,7 @@ func main() {
 			}
 
 			// Heartbeat is always sent, regardless of Docker state.
-			if err := notifier.NotifyHeartbeat(dockerReachable, loadBalancerResponding, storeAccessible, now, cpuUsagePercent, ramUsagePercent); err != nil {
+			if err := notifier.NotifyHeartbeat(dockerReachable, loadBalancerResponding, loadBalancerTraffic, storeAccessible, now, cpuUsagePercent, ramUsagePercent); err != nil {
 				log.Printf("orchestrator: notify heartbeat: %v", err)
 			}
 
@@ -134,6 +146,60 @@ func main() {
 			return
 		}
 	}
+}
+
+func probeProxyTraffic(ctx context.Context, trafficURL string) (*apiclient.HeartbeatLoadBalancerTraffic, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, trafficURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+
+	var body struct {
+		TotalRequests      int64 `json:"totalRequests"`
+		SuspiciousRequests int64 `json:"suspiciousRequests"`
+		BlockedRequests    int64 `json:"blockedRequests"`
+		ActiveBlockedIPs   int   `json:"activeBlockedIps"`
+		BlockedIPs         []struct {
+			IP           string     `json:"ip"`
+			BlockedUntil *time.Time `json:"blockedUntil"`
+		} `json:"blockedIps"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	traffic := &apiclient.HeartbeatLoadBalancerTraffic{
+		TotalRequests:      body.TotalRequests,
+		SuspiciousRequests: body.SuspiciousRequests,
+		BlockedRequests:    body.BlockedRequests,
+		ActiveBlockedIPs:   body.ActiveBlockedIPs,
+	}
+
+	if len(body.BlockedIPs) > 0 {
+		traffic.BlockedIPs = make([]apiclient.HeartbeatLoadBalancerBlockedIPState, 0, len(body.BlockedIPs))
+		for _, blocked := range body.BlockedIPs {
+			if blocked.IP == "" {
+				continue
+			}
+			traffic.BlockedIPs = append(traffic.BlockedIPs, apiclient.HeartbeatLoadBalancerBlockedIPState{IP: blocked.IP, BlockedUntil: blocked.BlockedUntil})
+		}
+	}
+
+	return traffic, nil
 }
 
 func probeProxyHealth(ctx context.Context, healthURL string) error {

@@ -34,8 +34,22 @@ type heartbeatDockerState struct {
 }
 
 type heartbeatLoadBalancerState struct {
-	Responding bool      `json:"responding"`
-	CheckedAt  time.Time `json:"checkedAt"`
+	Responding bool                          `json:"responding"`
+	CheckedAt  time.Time                     `json:"checkedAt"`
+	Traffic    *HeartbeatLoadBalancerTraffic `json:"traffic,omitempty"`
+}
+
+type HeartbeatLoadBalancerTraffic struct {
+	TotalRequests      int64                                 `json:"totalRequests"`
+	SuspiciousRequests int64                                 `json:"suspiciousRequests"`
+	BlockedRequests    int64                                 `json:"blockedRequests"`
+	ActiveBlockedIPs   int                                   `json:"activeBlockedIps"`
+	BlockedIPs         []HeartbeatLoadBalancerBlockedIPState `json:"blockedIps,omitempty"`
+}
+
+type HeartbeatLoadBalancerBlockedIPState struct {
+	IP           string     `json:"ip"`
+	BlockedUntil *time.Time `json:"blockedUntil,omitempty"`
 }
 
 type heartbeatHostState struct {
@@ -89,7 +103,7 @@ func (c *Client) NotifyStatus(id string, status store.Status, errorMessage strin
 
 // NotifyHeartbeat calls POST /api/system-status/orchestrator-heartbeat so the
 // API can update orchestrator liveness, Docker connectivity, and host metrics.
-func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bool, storeAccessible bool, checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64) error {
+func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bool, loadBalancerTraffic *HeartbeatLoadBalancerTraffic, storeAccessible bool, checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64) error {
 	if checkedAt.IsZero() {
 		checkedAt = time.Now().UTC()
 	} else {
@@ -110,6 +124,7 @@ func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bo
 		LoadBalancer: heartbeatLoadBalancerState{
 			Responding: loadBalancerResponding,
 			CheckedAt:  checkedAt,
+			Traffic:    cloneHeartbeatLoadBalancerTraffic(loadBalancerTraffic),
 		},
 		Host: host,
 	})
@@ -134,6 +149,20 @@ func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bo
 	}
 
 	return nil
+}
+
+func cloneHeartbeatLoadBalancerTraffic(in *HeartbeatLoadBalancerTraffic) *HeartbeatLoadBalancerTraffic {
+	if in == nil {
+		return nil
+	}
+
+	out := *in
+	if len(in.BlockedIPs) > 0 {
+		out.BlockedIPs = make([]HeartbeatLoadBalancerBlockedIPState, len(in.BlockedIPs))
+		copy(out.BlockedIPs, in.BlockedIPs)
+	}
+
+	return &out
 }
 
 func buildHeartbeatHostState(checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64) *heartbeatHostState {

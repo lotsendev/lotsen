@@ -64,6 +64,16 @@ export type LoadBalancerSystemStatus = {
     processRunning: boolean
     healthcheckResponding: boolean
   }
+  traffic?: {
+    totalRequests: number
+    suspiciousRequests: number
+    blockedRequests: number
+    activeBlockedIps: number
+    blockedIps?: Array<{
+      ip: string
+      blockedUntil?: string
+    }>
+  }
 }
 
 export type DockerSystemStatus = {
@@ -92,6 +102,33 @@ export type SystemStatusSnapshot = {
   docker: DockerSystemStatus
   host: HostSystemStatus
   error?: string
+}
+
+export type LoadBalancerAccessLogEntry = {
+  timestamp: string
+  clientIp: string
+  host: string
+  method: string
+  path: string
+  query?: string
+  status: number
+  durationMs: number
+  bytesWritten: number
+  outcome: string
+  headers?: Record<string, string>
+}
+
+export type LoadBalancerAccessLogsPage = {
+  items: LoadBalancerAccessLogEntry[]
+  hasMore: boolean
+  nextCursor?: string
+}
+
+export type LoadBalancerAccessLogFilters = {
+  method?: string
+  status?: number
+  host?: string
+  ip?: string
 }
 
 export async function getDeployments(): Promise<Deployment[]> {
@@ -146,6 +183,33 @@ export async function deleteDeployment(id: string): Promise<void> {
 export async function getSystemStatus(): Promise<SystemStatusSnapshot> {
   const res = await fetch('/api/system-status')
   if (!res.ok) throw new Error('Failed to fetch system status')
+  return res.json()
+}
+
+export async function getLoadBalancerAccessLogs(
+  cursor?: string,
+  limit = 100,
+  filters?: LoadBalancerAccessLogFilters
+): Promise<LoadBalancerAccessLogsPage> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (cursor) {
+    params.set('cursor', cursor)
+  }
+  if (filters?.method) {
+    params.set('method', filters.method)
+  }
+  if (typeof filters?.status === 'number') {
+    params.set('status', String(filters.status))
+  }
+  if (filters?.host) {
+    params.set('host', filters.host)
+  }
+  if (filters?.ip) {
+    params.set('ip', filters.ip)
+  }
+
+  const res = await fetch(`/api/load-balancer/access-logs?${params.toString()}`)
+  if (!res.ok) throw new Error('Failed to fetch load balancer access logs')
   return res.json()
 }
 

@@ -64,6 +64,7 @@ func runSetup(args []string) error {
 	nonInteractive := fs.Bool("non-interactive", false, "Disable prompts")
 	yes := fs.Bool("yes", false, "Skip confirmation prompts")
 	profile := fs.String("profile", "", "Security profile: strict, standard, off")
+	proxyHardeningProfile := fs.String("proxy-hardening-profile", "", "Proxy hardening profile: strict, standard, off")
 	version := fs.String("version", "latest", "Dirigent version to install")
 	dashboardExpose := fs.Bool("dashboard-expose", false, "Expose dashboard via proxy")
 	dashboardDomain := fs.String("dashboard-domain", "", "Dashboard domain")
@@ -96,6 +97,20 @@ func runSetup(args []string) error {
 	case "strict", "standard", "off":
 	default:
 		return fmt.Errorf("invalid --profile %q (expected strict, standard, or off)", selectedProfile)
+	}
+
+	selectedProxyHardeningProfile := strings.TrimSpace(*proxyHardeningProfile)
+	if selectedProxyHardeningProfile == "" {
+		selectedProxyHardeningProfile = strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_HARDENING_PROFILE"))
+	}
+	if selectedProxyHardeningProfile == "" {
+		selectedProxyHardeningProfile = selectedProfile
+	}
+
+	switch selectedProxyHardeningProfile {
+	case "strict", "standard", "off":
+	default:
+		return fmt.Errorf("invalid --proxy-hardening-profile %q (expected strict, standard, or off)", selectedProxyHardeningProfile)
 	}
 
 	dashboardPassword := ""
@@ -132,6 +147,7 @@ func runSetup(args []string) error {
 	env := append(os.Environ(),
 		"DIRIGENT_VERSION="+*version,
 		"DIRIGENT_SECURITY_PROFILE="+selectedProfile,
+		"DIRIGENT_PROXY_HARDENING_PROFILE="+selectedProxyHardeningProfile,
 	)
 	if *nonInteractive {
 		env = append(env, "DIRIGENT_NON_INTERACTIVE=1")
@@ -160,6 +176,7 @@ func setupUsage(parseErr error) error {
 	fmt.Fprintln(b, "  --non-interactive         Disable prompts")
 	fmt.Fprintln(b, "  --yes                     Skip confirmation prompts")
 	fmt.Fprintln(b, "  --profile <name>          Security profile: strict, standard, off")
+	fmt.Fprintln(b, "  --proxy-hardening-profile <name> Proxy hardening profile: strict, standard, off")
 	fmt.Fprintln(b, "  --version <value>         Version to install (default: latest)")
 	fmt.Fprintln(b, "  --dashboard-expose        Configure dashboard domain and basic auth")
 	fmt.Fprintln(b, "  --dashboard-domain <fqdn> Dashboard domain")

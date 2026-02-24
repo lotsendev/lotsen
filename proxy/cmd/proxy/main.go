@@ -50,10 +50,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("proxy: %v", err)
 	}
+	hardeningProfile, err := hardeningProfileFromEnv()
+	if err != nil {
+		log.Fatalf("proxy: %v", err)
+	}
 	if dashboardAuth != nil {
 		table.SetStatic(dashboardAuth.Domain, "localhost:3000")
 		log.Printf("proxy: registered dashboard domain %s -> localhost:3000", dashboardAuth.Domain)
 	}
+
+	log.Printf("proxy: hardening profile %s", hardeningProfile)
 
 	interval := 5 * time.Second
 	if v := os.Getenv("DIRIGENT_POLL_INTERVAL"); v != "" {
@@ -63,7 +69,7 @@ func main() {
 	}
 
 	p := poller.New(s, table, interval)
-	h := handler.New(table, dashboardAuth)
+	h := handler.New(table, dashboardAuth, handler.WithHardeningProfile(hardeningProfile))
 
 	hostPolicy := hostPolicyFromTable(table)
 	cacheDir := envOrDefault("DIRIGENT_CERT_CACHE_DIR", defaultCertCacheDir)
@@ -238,4 +244,14 @@ func dashboardAuthFromEnv() (*handler.DashboardAuth, error) {
 		Username: user,
 		Password: password,
 	}, nil
+}
+
+func hardeningProfileFromEnv() (handler.HardeningProfile, error) {
+	profile := handler.HardeningProfile(strings.ToLower(strings.TrimSpace(envOrDefault("DIRIGENT_PROXY_HARDENING_PROFILE", string(handler.HardeningStandard)))))
+	switch profile {
+	case handler.HardeningOff, handler.HardeningStandard, handler.HardeningStrict:
+		return profile, nil
+	default:
+		return "", fmt.Errorf("DIRIGENT_PROXY_HARDENING_PROFILE must be one of: off, standard, strict")
+	}
 }

@@ -22,6 +22,19 @@ export type DeploymentLogEvent = {
   line: string
 }
 
+export type VersionInfo = {
+  currentVersion: string
+  latestVersion?: string
+  releaseNotes?: string
+  publishedAt?: string
+  upgradeAvailable: boolean
+  cachedAt?: string
+}
+
+export type UpgradeLogEvent = {
+  line: string
+}
+
 export type SystemStatusState = 'healthy' | 'degraded' | 'unavailable'
 
 export type APISystemStatus = {
@@ -134,4 +147,16 @@ export async function getSystemStatus(): Promise<SystemStatusSnapshot> {
   const res = await fetch('/api/system-status')
   if (!res.ok) throw new Error('Failed to fetch system status')
   return res.json()
+}
+
+export async function getVersionInfo(): Promise<VersionInfo> {
+  const res = await fetch('/api/version')
+  if (!res.ok) throw new Error('Failed to fetch version info')
+  return res.json()
+}
+
+export async function triggerUpgrade(): Promise<void> {
+  const res = await fetch('/api/upgrade', { method: 'POST' })
+  if (res.status === 409) throw new Error('Upgrade already in progress')
+  if (!res.ok) throw new Error('Failed to start upgrade')
 }

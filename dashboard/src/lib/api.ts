@@ -224,34 +224,3 @@ export async function triggerUpgrade(): Promise<void> {
   if (res.status === 409) throw new Error('Upgrade already in progress')
   if (!res.ok) throw new Error('Failed to start upgrade')
 }
-
-
-export type ProxyAccessLogEntry = {
-  timestamp: string
-  method: string
-  path: string
-  statusCode: number
-  upstreamTarget?: string
-  durationMs: number
-  clientIp?: string
-  host?: string
-}
-
-export type ProxySecurityConfig = {
-  profile: string
-  suspiciousWindowSeconds: number
-  suspiciousThreshold: number
-  suspiciousBlockForSeconds: number
-}
-
-export async function getProxyAccessLogs(limit = 200): Promise<ProxyAccessLogEntry[]> {
-  const res = await fetch(`/api/access-logs?limit=${limit}`)
-  if (!res.ok) throw new Error('Failed to fetch proxy access logs')
-  return res.json()
-}
-
-export async function getProxySecurityConfig(): Promise<ProxySecurityConfig> {
-  const res = await fetch('/api/security-config')
-  if (!res.ok) throw new Error('Failed to fetch proxy security config')
-  return res.json()
-}

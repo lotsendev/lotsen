@@ -1,6 +1,7 @@
 # Go
 /dirigent
 control-plane/dirigent
+orchestrator/orchestrator
 
 # Air hot reload
 control-plane/tmp/

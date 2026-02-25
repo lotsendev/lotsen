@@ -93,11 +93,11 @@ choose_security_profile() {
         return 0
     fi
 
-    echo ""
-    echo "Security profile"
-    echo "  1) strict (recommended)"
-    echo "  2) standard"
-    echo "  3) off"
+    echo "" >&2
+    echo "Security profile" >&2
+    echo "  1) strict (recommended)" >&2
+    echo "  2) standard" >&2
+    echo "  3) off" >&2
     read -r -p "Choose profile [1]: " profile_choice
 
     case "${profile_choice:-}" in

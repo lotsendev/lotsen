@@ -93,6 +93,7 @@ describe('SystemStatusPanel', () => {
     expect(screen.getByText('Load balancer')).toBeInTheDocument()
     expect(screen.getByText('Services')).toBeInTheDocument()
     expect(screen.getByText('Host metrics')).toBeInTheDocument()
+    expect(screen.queryByText('Access logs')).not.toBeInTheDocument()
     expect(screen.getByText('CPU usage')).toBeInTheDocument()
     expect(screen.getByText('RAM usage')).toBeInTheDocument()
     expect(screen.getByText(/Last heartbeat:/)).toBeInTheDocument()

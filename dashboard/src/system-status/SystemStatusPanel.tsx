@@ -1,9 +1,7 @@
 import { useSystemStatus } from './useSystemStatus'
-import { useLoadBalancerAccessLogs } from './useLoadBalancerAccessLogs'
 import { Badge } from '../components/ui/badge'
 import { AlertTriangle, Check, CheckCircle2, CircleHelp, CircleSlash2, X } from 'lucide-react'
 import type { HostMetricSystemStatus, SystemStatusState } from '../lib/api'
-import { useState } from 'react'
 
 type BadgeVariant = 'secondary' | 'info' | 'success' | 'destructive' | 'warning'
 type CheckValue = boolean | undefined
@@ -181,44 +179,6 @@ function ServiceChecks({
 
 export function SystemStatusPanel() {
   const { status, isLoading, isError } = useSystemStatus()
-  const [methodFilter, setMethodFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [hostFilter, setHostFilter] = useState('')
-  const [ipFilter, setIPFilter] = useState('')
-  const [appliedFilters, setAppliedFilters] = useState<{ method?: string; status?: number; host?: string; ip?: string }>({})
-  const accessLogs = useLoadBalancerAccessLogs(appliedFilters)
-
-  const applyAccessLogFilters = () => {
-    const next: { method?: string; status?: number; host?: string; ip?: string } = {}
-    const method = methodFilter.trim().toUpperCase()
-    const status = Number(statusFilter)
-    const host = hostFilter.trim()
-    const ip = ipFilter.trim()
-
-    if (method) {
-      next.method = method
-    }
-    if (statusFilter.trim() && Number.isFinite(status) && status > 0) {
-      next.status = status
-    }
-    if (host) {
-      next.host = host
-    }
-    if (ip) {
-      next.ip = ip
-    }
-
-    setAppliedFilters(next)
-  }
-
-  const clearAccessLogFilters = () => {
-    setMethodFilter('')
-    setStatusFilter('')
-    setHostFilter('')
-    setIPFilter('')
-    setAppliedFilters({})
-  }
-
   return (
     <section className="space-y-6">
       {isLoading && <p className="text-sm text-muted-foreground">Loading system status…</p>}
@@ -389,129 +349,6 @@ export function SystemStatusPanel() {
                     )}
                   </div>
                 )}
-                <div className="mt-3 border-t border-border/50 pt-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Access logs</p>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    <label className="text-[11px] text-muted-foreground">
-                      Method
-                      <select
-                        value={methodFilter}
-                        onChange={event => setMethodFilter(event.target.value)}
-                        className="mt-1 w-full rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
-                      >
-                        <option value="">Any</option>
-                        {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map(method => (
-                          <option key={method} value={method}>
-                            {method}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="text-[11px] text-muted-foreground">
-                      Status
-                      <input
-                        type="number"
-                        min={100}
-                        max={599}
-                        value={statusFilter}
-                        onChange={event => setStatusFilter(event.target.value)}
-                        className="mt-1 w-full rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
-                        placeholder="Any"
-                      />
-                    </label>
-                    <label className="text-[11px] text-muted-foreground">
-                      Host contains
-                      <input
-                        type="text"
-                        value={hostFilter}
-                        onChange={event => setHostFilter(event.target.value)}
-                        className="mt-1 w-full rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
-                        placeholder="api.example.com"
-                      />
-                    </label>
-                    <label className="text-[11px] text-muted-foreground">
-                      IP contains
-                      <input
-                        type="text"
-                        value={ipFilter}
-                        onChange={event => setIPFilter(event.target.value)}
-                        className="mt-1 w-full rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
-                        placeholder="203.0.113"
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={applyAccessLogFilters}
-                      className="rounded border border-border px-2 py-1 text-xs text-foreground"
-                    >
-                      Apply filters
-                    </button>
-                    <button
-                      type="button"
-                      onClick={clearAccessLogFilters}
-                      className="rounded border border-border px-2 py-1 text-xs text-muted-foreground"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  {accessLogs.isError && (
-                    <p className="mt-2 text-xs text-destructive">Unable to load access logs right now.</p>
-                  )}
-                  {!accessLogs.isError && accessLogs.items.length === 0 && !accessLogs.isLoading && (
-                    <p className="mt-2 text-xs text-muted-foreground">No access logs available yet.</p>
-                  )}
-                  {accessLogs.items.length > 0 && (
-                    <div className="mt-2 overflow-x-auto">
-                      <table className="w-full min-w-[560px] text-left text-xs">
-                        <thead>
-                          <tr className="text-muted-foreground">
-                            <th className="py-1 pr-2 font-medium">Time</th>
-                            <th className="py-1 pr-2 font-medium">IP</th>
-                            <th className="py-1 pr-2 font-medium">Request</th>
-                            <th className="py-1 pr-2 font-medium">Status</th>
-                            <th className="py-1 pr-2 font-medium">Outcome</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {accessLogs.items.map((entry, idx) => (
-                            <tr key={`${entry.timestamp}-${entry.clientIp}-${entry.path}-${idx}`} className="border-t border-border/30 align-top">
-                              <td className="py-1 pr-2 whitespace-nowrap">{formatTimestamp(entry.timestamp)}</td>
-                              <td className="py-1 pr-2 font-mono text-[11px]">{entry.clientIp || '-'}</td>
-                              <td className="py-1 pr-2">
-                                <div className="text-foreground">
-                                  {entry.method} {entry.path}
-                                  {entry.query ? `?${entry.query}` : ''}
-                                </div>
-                                {entry.headers && Object.keys(entry.headers).length > 0 && (
-                                  <details className="mt-1 text-[11px] text-muted-foreground">
-                                    <summary className="cursor-pointer select-none">Headers</summary>
-                                    <pre className="mt-1 whitespace-pre-wrap rounded border border-border/40 bg-background/70 p-2 text-[10px] text-foreground">
-                                      {JSON.stringify(entry.headers, null, 2)}
-                                    </pre>
-                                  </details>
-                                )}
-                              </td>
-                              <td className="py-1 pr-2">{entry.status}</td>
-                              <td className="py-1 pr-2">{entry.outcome}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  <div className="mt-2 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={accessLogs.loadOlder}
-                      disabled={!accessLogs.hasMore || accessLogs.isLoading}
-                      className="rounded border border-border px-2 py-1 text-xs text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {accessLogs.isLoading ? 'Loading…' : accessLogs.hasMore ? 'Load older logs' : 'No older logs'}
-                    </button>
-                  </div>
-                </div>
               </article>
             </div>
           </section>

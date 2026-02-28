@@ -2,6 +2,7 @@ package docker_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -33,6 +34,8 @@ type mockClient struct {
 	startErr         error
 	listContainers   []dockertypes.Container
 	listErr          error
+	statsByContainer map[string]container.StatsResponseReader
+	statsErr         error
 	stopErr          error
 	removeErr        error
 	renameErr        error
@@ -72,6 +75,20 @@ func (m *mockClient) ContainerStart(_ context.Context, _ string, _ container.Sta
 
 func (m *mockClient) ContainerList(_ context.Context, _ container.ListOptions) ([]dockertypes.Container, error) {
 	return m.listContainers, m.listErr
+}
+
+func (m *mockClient) ContainerStats(_ context.Context, containerID string, _ bool) (container.StatsResponseReader, error) {
+	if m.statsErr != nil {
+		return container.StatsResponseReader{}, m.statsErr
+	}
+	if m.statsByContainer == nil {
+		return container.StatsResponseReader{}, errors.New("missing stats")
+	}
+	stats, ok := m.statsByContainer[containerID]
+	if !ok {
+		return container.StatsResponseReader{}, errors.New("missing container stats")
+	}
+	return stats, nil
 }
 
 func (m *mockClient) ContainerStop(_ context.Context, id string, _ container.StopOptions) error {
@@ -238,6 +255,70 @@ func TestDocker_ListManagedContainers_OOMKilled_PopulatesExitDetails(t *testing.
 	}
 	if c.ExitDetails.ExitCode != 137 {
 		t.Errorf("want exit code 137, got %d", c.ExitDetails.ExitCode)
+	}
+}
+
+func TestDocker_CollectStats_CollectsRunningManagedContainers(t *testing.T) {
+	statsForC1 := newStatsReader(t, map[string]any{
+		"cpu_stats": map[string]any{
+			"cpu_usage":        map[string]any{"total_usage": uint64(4_500_000_000)},
+			"system_cpu_usage": uint64(10_000_000_000),
+			"online_cpus":      uint32(2),
+		},
+		"precpu_stats": map[string]any{
+			"cpu_usage":        map[string]any{"total_usage": uint64(4_000_000_000)},
+			"system_cpu_usage": uint64(9_000_000_000),
+		},
+		"memory_stats": map[string]any{
+			"usage": uint64(600 * 1024 * 1024),
+			"limit": uint64(1024 * 1024 * 1024),
+			"stats": map[string]any{"inactive_file": uint64(100 * 1024 * 1024)},
+		},
+	})
+
+	mock := &mockClient{
+		listContainers: []dockertypes.Container{
+			{ID: "c1", Labels: map[string]string{"dirigent.id": "d1"}, State: "running"},
+		},
+		statsByContainer: map[string]container.StatsResponseReader{"c1": statsForC1},
+	}
+
+	d := docker.New(mock)
+	stats, err := d.CollectStats(context.Background())
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+
+	collected, ok := stats["d1"]
+	if !ok {
+		t.Fatal("want stats for deployment d1")
+	}
+	if collected.CPUPercent <= 0 {
+		t.Fatalf("want positive cpu percent, got %v", collected.CPUPercent)
+	}
+	if collected.MemoryUsedBytes != uint64(500*1024*1024) {
+		t.Fatalf("want memory used 524288000, got %d", collected.MemoryUsedBytes)
+	}
+	if collected.MemoryLimitBytes != uint64(1024*1024*1024) {
+		t.Fatalf("want memory limit 1073741824, got %d", collected.MemoryLimitBytes)
+	}
+	if collected.MemoryPercent <= 0 {
+		t.Fatalf("want positive memory percent, got %v", collected.MemoryPercent)
+	}
+}
+
+func TestDocker_CollectStats_ReturnsErrorOnStatsFailure(t *testing.T) {
+	mock := &mockClient{
+		listContainers: []dockertypes.Container{
+			{ID: "c1", Labels: map[string]string{"dirigent.id": "d1"}, State: "running"},
+		},
+		statsErr: errors.New("stats unavailable"),
+	}
+
+	d := docker.New(mock)
+	_, err := d.CollectStats(context.Background())
+	if err == nil {
+		t.Fatal("want error, got nil")
 	}
 }
 
@@ -537,6 +618,7 @@ func TestDocker_Start_PinnedImageNotLocal_Pulls(t *testing.T) {
 // Ensure the mock satisfies the docker.Client interface at compile time.
 var _ interface {
 	ContainerList(context.Context, container.ListOptions) ([]dockertypes.Container, error)
+	ContainerStats(context.Context, string, bool) (container.StatsResponseReader, error)
 	ImageList(context.Context, image.ListOptions) ([]image.Summary, error)
 	Ping(context.Context) (dockertypes.Ping, error)
 } = (*mockClient)(nil)
@@ -566,4 +648,15 @@ func inspectWithPort(containerPort, hostPort string) dockertypes.ContainerJSON {
 			},
 		},
 	}
+}
+
+func newStatsReader(t *testing.T, payload map[string]any) container.StatsResponseReader {
+	t.Helper()
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal stats payload: %v", err)
+	}
+
+	return container.StatsResponseReader{Body: io.NopCloser(strings.NewReader(string(body)))}
 }

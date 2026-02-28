@@ -87,6 +87,7 @@ func main() {
 		case <-ticker.C:
 			now := time.Now().UTC()
 			dockerReachable := true
+			containerStats := map[string]apiclient.HeartbeatContainerStats{}
 			loadBalancerResponding := false
 			var loadBalancerTraffic *apiclient.HeartbeatLoadBalancerTraffic
 			storeAccessible := true
@@ -98,6 +99,22 @@ func main() {
 			if err := d.Ping(pingCtx); err != nil {
 				dockerReachable = false
 				log.Printf("orchestrator: docker unreachable: %v", err)
+			} else {
+				statsCtx, statsCancel := context.WithTimeout(ctx, 5*time.Second)
+				statsByDeployment, statsErr := d.CollectStats(statsCtx)
+				statsCancel()
+				if statsErr != nil {
+					log.Printf("orchestrator: collect container stats: %v", statsErr)
+				} else {
+					for deploymentID, stats := range statsByDeployment {
+						containerStats[deploymentID] = apiclient.HeartbeatContainerStats{
+							CPUPercent:       stats.CPUPercent,
+							MemoryUsedBytes:  stats.MemoryUsedBytes,
+							MemoryLimitBytes: stats.MemoryLimitBytes,
+							MemoryPercent:    stats.MemoryPercent,
+						}
+					}
+				}
 			}
 			pingCancel()
 
@@ -131,7 +148,7 @@ func main() {
 			}
 
 			// Heartbeat is always sent, regardless of Docker state.
-			if err := notifier.NotifyHeartbeat(dockerReachable, loadBalancerResponding, loadBalancerTraffic, storeAccessible, now, cpuUsagePercent, ramUsagePercent); err != nil {
+			if err := notifier.NotifyHeartbeat(dockerReachable, loadBalancerResponding, loadBalancerTraffic, storeAccessible, now, cpuUsagePercent, ramUsagePercent, containerStats); err != nil {
 				log.Printf("orchestrator: notify heartbeat: %v", err)
 			}
 

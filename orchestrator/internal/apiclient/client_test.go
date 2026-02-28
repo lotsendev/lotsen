@@ -21,6 +21,14 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 		ActiveBlockedIPs:   1,
 		BlockedIPs:         []HeartbeatLoadBalancerBlockedIPState{{IP: "203.0.113.7", BlockedUntil: &checkedAt}},
 	}
+	containerStats := map[string]HeartbeatContainerStats{
+		"d1": {
+			CPUPercent:       21.4,
+			MemoryUsedBytes:  536870912,
+			MemoryLimitBytes: 1073741824,
+			MemoryPercent:    50,
+		},
+	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -63,6 +71,12 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 					CheckedAt    time.Time `json:"checkedAt"`
 				} `json:"ram"`
 			} `json:"host"`
+			ContainerStats map[string]struct {
+				CPUPercent       float64 `json:"cpuPercent"`
+				MemoryUsedBytes  uint64  `json:"memoryUsedBytes"`
+				MemoryLimitBytes uint64  `json:"memoryLimitBytes"`
+				MemoryPercent    float64 `json:"memoryPercent"`
+			} `json:"containerStats"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -110,13 +124,19 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 		if !body.Host.RAM.CheckedAt.Equal(checkedAt) {
 			t.Fatalf("want ram checkedAt %s, got %s", checkedAt, body.Host.RAM.CheckedAt)
 		}
+		if len(body.ContainerStats) != 1 {
+			t.Fatalf("want 1 container stats entry, got %d", len(body.ContainerStats))
+		}
+		if body.ContainerStats["d1"].MemoryPercent != 50 {
+			t.Fatalf("want memory percent 50, got %v", body.ContainerStats["d1"].MemoryPercent)
+		}
 
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(false, false, traffic, false, checkedAt, &cpu, &ram); err != nil {
+	if err := client.NotifyHeartbeat(false, false, traffic, false, checkedAt, &cpu, &ram, containerStats); err != nil {
 		t.Fatalf("NotifyHeartbeat: %v", err)
 	}
 }
@@ -144,7 +164,7 @@ func TestClient_NotifyHeartbeat_WithoutHostMetrics(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(false, true, nil, true, checkedAt, nil, nil); err != nil {
+	if err := client.NotifyHeartbeat(false, true, nil, true, checkedAt, nil, nil, nil); err != nil {
 		t.Fatalf("NotifyHeartbeat: %v", err)
 	}
 }
@@ -156,7 +176,7 @@ func TestClient_NotifyHeartbeat_UnexpectedResponse(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(true, true, nil, true, time.Time{}, nil, nil); err == nil {
+	if err := client.NotifyHeartbeat(true, true, nil, true, time.Time{}, nil, nil, nil); err == nil {
 		t.Fatal("want error for non-204 heartbeat response")
 	}
 }

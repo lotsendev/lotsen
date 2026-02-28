@@ -17,11 +17,12 @@ type Client struct {
 }
 
 type heartbeatRequest struct {
-	At           time.Time                  `json:"at"`
-	Orchestrator heartbeatOrchestratorState `json:"orchestrator"`
-	Docker       heartbeatDockerState       `json:"docker"`
-	LoadBalancer heartbeatLoadBalancerState `json:"loadBalancer"`
-	Host         *heartbeatHostState        `json:"host,omitempty"`
+	At             time.Time                          `json:"at"`
+	Orchestrator   heartbeatOrchestratorState         `json:"orchestrator"`
+	Docker         heartbeatDockerState               `json:"docker"`
+	LoadBalancer   heartbeatLoadBalancerState         `json:"loadBalancer"`
+	Host           *heartbeatHostState                `json:"host,omitempty"`
+	ContainerStats map[string]HeartbeatContainerStats `json:"containerStats"`
 }
 
 type heartbeatOrchestratorState struct {
@@ -62,6 +63,13 @@ type heartbeatHostState struct {
 type heartbeatHostMetric struct {
 	UsagePercent float64   `json:"usagePercent"`
 	CheckedAt    time.Time `json:"checkedAt"`
+}
+
+type HeartbeatContainerStats struct {
+	CPUPercent       float64 `json:"cpuPercent"`
+	MemoryUsedBytes  uint64  `json:"memoryUsedBytes"`
+	MemoryLimitBytes uint64  `json:"memoryLimitBytes"`
+	MemoryPercent    float64 `json:"memoryPercent"`
 }
 
 // New creates a Client that targets the given API base URL (e.g. "http://localhost:8080").
@@ -105,7 +113,7 @@ func (c *Client) NotifyStatus(id string, status store.Status, errorMessage strin
 
 // NotifyHeartbeat calls POST /api/system-status/orchestrator-heartbeat so the
 // API can update orchestrator liveness, Docker connectivity, and host metrics.
-func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bool, loadBalancerTraffic *HeartbeatLoadBalancerTraffic, storeAccessible bool, checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64) error {
+func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bool, loadBalancerTraffic *HeartbeatLoadBalancerTraffic, storeAccessible bool, checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64, containerStats map[string]HeartbeatContainerStats) error {
 	if checkedAt.IsZero() {
 		checkedAt = time.Now().UTC()
 	} else {
@@ -128,7 +136,8 @@ func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bo
 			CheckedAt:  checkedAt,
 			Traffic:    cloneHeartbeatLoadBalancerTraffic(loadBalancerTraffic),
 		},
-		Host: host,
+		Host:           host,
+		ContainerStats: cloneHeartbeatContainerStats(containerStats),
 	})
 	if err != nil {
 		return fmt.Errorf("apiclient: marshal heartbeat body: %w", err)
@@ -151,6 +160,19 @@ func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bo
 	}
 
 	return nil
+}
+
+func cloneHeartbeatContainerStats(in map[string]HeartbeatContainerStats) map[string]HeartbeatContainerStats {
+	if len(in) == 0 {
+		return map[string]HeartbeatContainerStats{}
+	}
+
+	out := make(map[string]HeartbeatContainerStats, len(in))
+	for deploymentID, stats := range in {
+		out[deploymentID] = stats
+	}
+
+	return out
 }
 
 func cloneHeartbeatLoadBalancerTraffic(in *HeartbeatLoadBalancerTraffic) *HeartbeatLoadBalancerTraffic {

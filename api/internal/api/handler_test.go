@@ -535,6 +535,57 @@ func TestRecordOrchestratorHeartbeat_UpdatesLoadBalancerTrafficTelemetry(t *test
 	}
 }
 
+func TestRecordOrchestratorHeartbeat_ReplacesContainerStatsCache(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	firstHeartbeat := `{"containerStats":{"d1":{"cpuPercent":22.5,"memoryUsedBytes":268435456,"memoryLimitBytes":536870912,"memoryPercent":50}}}`
+	firstReq, err := http.NewRequest(http.MethodPost, srv.URL+"/api/system-status/orchestrator-heartbeat", bytes.NewBufferString(firstHeartbeat))
+	if err != nil {
+		t.Fatalf("build first heartbeat request: %v", err)
+	}
+	firstReq.Header.Set("Content-Type", "application/json")
+
+	firstResp, err := http.DefaultClient.Do(firstReq)
+	if err != nil {
+		t.Fatalf("POST first heartbeat: %v", err)
+	}
+	firstResp.Body.Close()
+
+	secondHeartbeat := `{"containerStats":{}}`
+	secondReq, err := http.NewRequest(http.MethodPost, srv.URL+"/api/system-status/orchestrator-heartbeat", bytes.NewBufferString(secondHeartbeat))
+	if err != nil {
+		t.Fatalf("build second heartbeat request: %v", err)
+	}
+	secondReq.Header.Set("Content-Type", "application/json")
+
+	secondResp, err := http.DefaultClient.Do(secondReq)
+	if err != nil {
+		t.Fatalf("POST second heartbeat: %v", err)
+	}
+	secondResp.Body.Close()
+
+	getResp, err := http.Get(srv.URL + "/api/deployments/d1")
+	if err != nil {
+		t.Fatalf("GET /api/deployments/d1: %v", err)
+	}
+	defer getResp.Body.Close()
+
+	var body struct {
+		Stats any `json:"stats"`
+	}
+	if err := json.NewDecoder(getResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.Stats != nil {
+		t.Fatalf("want stats omitted after cache replace, got %+v", body.Stats)
+	}
+}
+
 func TestSystemStatusEvents_StreamSendsHeartbeatUpdates(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
@@ -841,6 +892,56 @@ func TestListDeployments_WithItems(t *testing.T) {
 	}
 }
 
+func TestListDeployments_IncludesContainerStatsWhenCached(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	heartbeat := `{"containerStats":{"d1":{"cpuPercent":22.5,"memoryUsedBytes":268435456,"memoryLimitBytes":536870912,"memoryPercent":50}}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/system-status/orchestrator-heartbeat", bytes.NewBufferString(heartbeat))
+	if err != nil {
+		t.Fatalf("build heartbeat request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST heartbeat: %v", err)
+	}
+	resp.Body.Close()
+
+	listResp, err := http.Get(srv.URL + "/api/deployments")
+	if err != nil {
+		t.Fatalf("GET /api/deployments: %v", err)
+	}
+	defer listResp.Body.Close()
+
+	var body []struct {
+		ID    string `json:"id"`
+		Stats *struct {
+			CPUPercent       float64 `json:"cpuPercent"`
+			MemoryUsedBytes  uint64  `json:"memoryUsedBytes"`
+			MemoryLimitBytes uint64  `json:"memoryLimitBytes"`
+			MemoryPercent    float64 `json:"memoryPercent"`
+		} `json:"stats"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(body) != 1 {
+		t.Fatalf("want 1 deployment, got %d", len(body))
+	}
+	if body[0].Stats == nil {
+		t.Fatal("want stats payload")
+	}
+	if body[0].Stats.MemoryPercent != 50 {
+		t.Fatalf("want memory percent 50, got %v", body[0].Stats.MemoryPercent)
+	}
+}
+
 func TestGetDeployment_Found(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
@@ -867,6 +968,50 @@ func TestGetDeployment_Found(t *testing.T) {
 	}
 	if d.Status != store.StatusHealthy {
 		t.Errorf("want status healthy, got %s", d.Status)
+	}
+}
+
+func TestGetDeployment_IncludesContainerStatsWhenCached(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	heartbeat := `{"containerStats":{"d1":{"cpuPercent":11.1,"memoryUsedBytes":134217728,"memoryLimitBytes":268435456,"memoryPercent":50}}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/system-status/orchestrator-heartbeat", bytes.NewBufferString(heartbeat))
+	if err != nil {
+		t.Fatalf("build heartbeat request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST heartbeat: %v", err)
+	}
+	resp.Body.Close()
+
+	getResp, err := http.Get(srv.URL + "/api/deployments/d1")
+	if err != nil {
+		t.Fatalf("GET /api/deployments/d1: %v", err)
+	}
+	defer getResp.Body.Close()
+
+	var body struct {
+		ID    string `json:"id"`
+		Stats *struct {
+			CPUPercent float64 `json:"cpuPercent"`
+		} `json:"stats"`
+	}
+	if err := json.NewDecoder(getResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.ID != "d1" {
+		t.Fatalf("want id d1, got %s", body.ID)
+	}
+	if body.Stats == nil || body.Stats.CPUPercent != 11.1 {
+		t.Fatalf("want cpu stats 11.1, got %+v", body.Stats)
 	}
 }
 

@@ -28,6 +28,14 @@ export type Deployment = {
   security?: SecurityConfig
   status: DeploymentStatus
   error?: string
+  stats?: ContainerStats
+}
+
+export type ContainerStats = {
+  cpuPercent: number
+  memoryUsedBytes: number
+  memoryLimitBytes: number
+  memoryPercent: number
 }
 
 export type StatusEvent = {

@@ -17,6 +17,7 @@ export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: P
   const hasDomain = Boolean(d.domain)
   const hasPorts = d.ports.length > 0
   const hasVolumes = d.volumes.length > 0
+  const stats = d.status === 'healthy' ? d.stats : undefined
 
   return (
     <article className="rounded-xl border border-border/60 bg-card px-4 py-4 transition-colors hover:bg-muted/20">
@@ -65,6 +66,16 @@ export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: P
             <Badge variant="secondary" className="px-2 py-0.5 text-[11px]">
               {Object.keys(d.envs).length} env var{Object.keys(d.envs).length === 1 ? '' : 's'}
             </Badge>
+            {stats && (
+              <>
+                <Badge variant="outline" className="px-2 py-0.5 font-mono text-[11px]">
+                  CPU {formatPercent(stats.cpuPercent)}
+                </Badge>
+                <Badge variant="outline" className="px-2 py-0.5 font-mono text-[11px]">
+                  Mem {formatBytes(stats.memoryUsedBytes)} / {formatBytes(stats.memoryLimitBytes)}
+                </Badge>
+              </>
+            )}
           </div>
         </div>
 
@@ -100,4 +111,31 @@ export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: P
       </div>
     </article>
   )
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0.0%'
+  }
+  return `${value.toFixed(1)}%`
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B'
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+
+  if (value >= 100 || unitIndex === 0) {
+    return `${Math.round(value)} ${units[unitIndex]}`
+  }
+
+  return `${value.toFixed(1)} ${units[unitIndex]}`
 }

@@ -51,6 +51,12 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 				CheckedAt    *time.Time `json:"checkedAt"`
 			} `json:"ram"`
 		} `json:"host"`
+		ContainerStats *map[string]struct {
+			CPUPercent       *float64 `json:"cpuPercent"`
+			MemoryUsedBytes  *uint64  `json:"memoryUsedBytes"`
+			MemoryLimitBytes *uint64  `json:"memoryLimitBytes"`
+			MemoryPercent    *float64 `json:"memoryPercent"`
+		} `json:"containerStats"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
@@ -153,6 +159,42 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 				return
 			}
 		}
+	}
+
+	if body.ContainerStats != nil {
+		if h.containerStats == nil {
+			http.Error(w, "system status unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		statsByDeployment := make(map[string]ContainerStats, len(*body.ContainerStats))
+		for deploymentID, payload := range *body.ContainerStats {
+			stats := ContainerStats{}
+			if payload.CPUPercent != nil {
+				if *payload.CPUPercent < 0 {
+					http.Error(w, "invalid container stats", http.StatusBadRequest)
+					return
+				}
+				stats.CPUPercent = *payload.CPUPercent
+			}
+			if payload.MemoryUsedBytes != nil {
+				stats.MemoryUsedBytes = *payload.MemoryUsedBytes
+			}
+			if payload.MemoryLimitBytes != nil {
+				stats.MemoryLimitBytes = *payload.MemoryLimitBytes
+			}
+			if payload.MemoryPercent != nil {
+				if !isValidUsagePercent(*payload.MemoryPercent) {
+					http.Error(w, "invalid container stats", http.StatusBadRequest)
+					return
+				}
+				stats.MemoryPercent = *payload.MemoryPercent
+			}
+
+			statsByDeployment[deploymentID] = stats
+		}
+
+		h.containerStats.ReplaceAll(statsByDeployment)
 	}
 
 	if h.statusEvents != nil {

@@ -73,10 +73,11 @@ jobs:
           else
             echo "RELEASES_TOKEN has no access to ${GITHUB_REPOSITORY}; using default token"
             git push origin "$NEW_TAG"
-            echo "Dispatching release workflow for ${NEW_TAG}"
-            curl -sSf -X POST \
-              -H "Authorization: Bearer ${{ github.token }}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/dispatches" \
-              -d "{\"ref\":\"main\",\"inputs\":{\"tag\":\"${NEW_TAG}\"}}"
           fi
+
+          echo "Dispatching release workflow for ${NEW_TAG}"
+          curl -sSf -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/dispatches" \
+            -d "{\"ref\":\"main\",\"inputs\":{\"tag\":\"${NEW_TAG}\"}}"

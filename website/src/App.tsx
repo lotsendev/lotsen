@@ -4,6 +4,7 @@ import DocsLayout from '@/pages/docs/DocsLayout'
 import GettingStarted from '@/pages/docs/GettingStarted'
 import DeploymentConfiguration from '@/pages/docs/DeploymentConfiguration'
 import StrictModeSetup from '@/pages/docs/StrictModeSetup'
+import ProductionReadiness from '@/pages/docs/ProductionReadiness'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           <Route path="getting-started" element={<GettingStarted />} />
           <Route path="deployment-configuration" element={<DeploymentConfiguration />} />
           <Route path="strict-mode-setup" element={<StrictModeSetup />} />
+          <Route path="production-readiness" element={<ProductionReadiness />} />
         </Route>
       </Routes>
     </BrowserRouter>

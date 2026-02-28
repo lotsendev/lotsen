@@ -5,6 +5,7 @@ import DocsLayout from '@/pages/docs/DocsLayout'
 import GettingStarted from '@/pages/docs/GettingStarted'
 import DeploymentConfiguration from '@/pages/docs/DeploymentConfiguration'
 import StrictModeSetup from '@/pages/docs/StrictModeSetup'
+import ProductionReadiness from '@/pages/docs/ProductionReadiness'
 
 function TestApp({ initialPath }: { initialPath: string }) {
   return (
@@ -16,6 +17,7 @@ function TestApp({ initialPath }: { initialPath: string }) {
           <Route path="getting-started" element={<GettingStarted />} />
           <Route path="deployment-configuration" element={<DeploymentConfiguration />} />
           <Route path="strict-mode-setup" element={<StrictModeSetup />} />
+          <Route path="production-readiness" element={<ProductionReadiness />} />
         </Route>
       </Routes>
     </MemoryRouter>
@@ -48,6 +50,13 @@ describe('Routes', () => {
     render(<TestApp initialPath="/docs/strict-mode-setup" />)
     expect(
       screen.getByRole('heading', { name: /strict mode setup/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the Production Readiness doc at /docs/production-readiness', () => {
+    render(<TestApp initialPath="/docs/production-readiness" />)
+    expect(
+      screen.getByRole('heading', { name: /production readiness/i }),
     ).toBeInTheDocument()
   })
 

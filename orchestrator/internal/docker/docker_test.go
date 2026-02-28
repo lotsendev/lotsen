@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	dockertypes "github.com/docker/docker/api/types"
@@ -36,6 +39,7 @@ type mockClient struct {
 	stopped          []string
 	removed          []string
 	renamed          []string
+	onStop           func(id string)
 }
 
 func (m *mockClient) Ping(_ context.Context) (dockertypes.Ping, error) {
@@ -64,6 +68,9 @@ func (m *mockClient) ContainerList(_ context.Context, _ container.ListOptions) (
 
 func (m *mockClient) ContainerStop(_ context.Context, id string, _ container.StopOptions) error {
 	m.stopped = append(m.stopped, id)
+	if m.onStop != nil {
+		m.onStop(id)
+	}
 	return m.stopErr
 }
 
@@ -345,6 +352,96 @@ func TestDocker_StartAndReplace_SameExplicitPorts_FallsBackToStopThenStart(t *te
 	}
 	if len(mock.removed) != 1 || mock.removed[0] != "old-c1" {
 		t.Fatalf("want old-c1 removed first, got %v", mock.removed)
+	}
+}
+
+func TestDocker_StartAndReplace_DomainConfigured_SwapsProxyBeforeStoppingOld(t *testing.T) {
+	var stopCalled atomic.Bool
+	var swapCalled atomic.Bool
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		swapCalled.Store(true)
+		if stopCalled.Load() {
+			t.Fatal("proxy swap happened after stopping old container")
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/internal/routes" {
+			t.Fatalf("want POST /internal/routes, got %s %s", r.Method, r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		r.Body.Close()
+		if string(body) != `{"domain":"example.com","upstream":"localhost:49123"}` {
+			t.Fatalf("unexpected body: %s", string(body))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer proxy.Close()
+
+	t.Setenv("DIRIGENT_PROXY_URL", proxy.URL)
+
+	mock := &mockClient{
+		containerCreate:  container.CreateResponse{ID: "new-c1"},
+		listContainers:   []dockertypes.Container{{ID: "new-c1", State: "running"}},
+		inspectContainer: inspectWithPort("3001/tcp", "49123"),
+		onStop: func(_ string) {
+			stopCalled.Store(true)
+		},
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	dep.Ports = []string{"3001"}
+	dep.Domain = "Example.com."
+
+	if _, err := d.StartAndReplace(context.Background(), dep, "old-c1"); err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+
+	if !swapCalled.Load() {
+		t.Fatal("want proxy route swap to be called")
+	}
+	if len(mock.stopped) != 1 || mock.stopped[0] != "old-c1" {
+		t.Fatalf("want old-c1 stopped, got %v", mock.stopped)
+	}
+}
+
+func TestDocker_StartAndReplace_ProxySwapFails_CleansUpNewAndKeepsOld(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer proxy.Close()
+
+	t.Setenv("DIRIGENT_PROXY_URL", proxy.URL)
+
+	mock := &mockClient{
+		containerCreate:  container.CreateResponse{ID: "new-c1"},
+		listContainers:   []dockertypes.Container{{ID: "new-c1", State: "running"}},
+		inspectContainer: inspectWithPort("3001/tcp", "49123"),
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	dep.Ports = []string{"3001"}
+	dep.Domain = "example.com"
+
+	_, err := d.StartAndReplace(context.Background(), dep, "old-c1")
+	if err == nil {
+		t.Fatal("want error when proxy swap fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "swap proxy route") {
+		t.Fatalf("want proxy swap error, got %v", err)
+	}
+
+	if len(mock.stopped) != 1 || mock.stopped[0] != "new-c1" {
+		t.Fatalf("want only new-c1 stopped for cleanup, got %v", mock.stopped)
+	}
+	if len(mock.removed) != 1 || mock.removed[0] != "new-c1" {
+		t.Fatalf("want only new-c1 removed for cleanup, got %v", mock.removed)
+	}
+	if len(mock.renamed) != 0 {
+		t.Fatalf("want no rename on failure, got %v", mock.renamed)
 	}
 }
 

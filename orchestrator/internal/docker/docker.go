@@ -1,13 +1,18 @@
 package docker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"os"
 	"sort"
 	"strings"
+	"time"
 
 	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -56,12 +61,18 @@ type Client interface {
 
 // Docker manages container lifecycle for Dirigent deployments.
 type Docker struct {
-	client Client
+	client      Client
+	proxyURL    string
+	proxyClient *http.Client
 }
 
 // New creates a Docker backed by the given client.
 func New(client Client) *Docker {
-	return &Docker{client: client}
+	return &Docker{
+		client:      client,
+		proxyURL:    proxyURLFromEnv(),
+		proxyClient: &http.Client{Timeout: 3 * time.Second},
+	}
 }
 
 // Ping reports whether the Docker daemon is reachable.
@@ -285,6 +296,12 @@ func (d *Docker) StartAndReplace(ctx context.Context, dep store.Deployment, oldC
 		return nil, fmt.Errorf("docker: resolve runtime ports for %s: %w", resp.ID, err)
 	}
 
+	if err := d.swapProxyRoute(ctx, dep.Domain, runtimePorts); err != nil {
+		_ = d.client.ContainerStop(ctx, resp.ID, container.StopOptions{})
+		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+		return nil, fmt.Errorf("docker: swap proxy route for %q: %w", dep.Domain, err)
+	}
+
 	// New container is healthy; tear down the old one.
 	if err := d.StopAndRemove(ctx, oldContainerID); err != nil {
 		log.Printf("docker: remove old container %s: %v", oldContainerID, err)
@@ -432,4 +449,68 @@ func desiredExplicitHostPorts(ports []string) (map[string]string, error) {
 		result[p.Port()] = hostPort
 	}
 	return result, nil
+}
+
+type routeRequest struct {
+	Domain   string `json:"domain"`
+	Upstream string `json:"upstream"`
+}
+
+func (d *Docker) swapProxyRoute(ctx context.Context, domain string, runtimePorts []string) error {
+	domain = normalizeDomain(domain)
+	if domain == "" {
+		return nil
+	}
+
+	upstream := upstreamFromRuntimePorts(runtimePorts)
+	if upstream == "" {
+		return fmt.Errorf("runtime upstream not available")
+	}
+
+	body, err := json.Marshal(routeRequest{Domain: domain, Upstream: upstream})
+	if err != nil {
+		return fmt.Errorf("encode request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.proxyURL+"/internal/routes", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := d.proxyClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func upstreamFromRuntimePorts(runtimePorts []string) string {
+	for _, binding := range runtimePorts {
+		host, _, ok := strings.Cut(binding, ":")
+		if !ok || host == "" {
+			continue
+		}
+		return "localhost:" + host
+	}
+	return ""
+}
+
+func proxyURLFromEnv() string {
+	if baseURL := strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_URL")); baseURL != "" {
+		return strings.TrimSuffix(baseURL, "/")
+	}
+	return "http://localhost:2019"
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	domain = strings.TrimSuffix(domain, ".")
+	return strings.ToLower(domain)
 }

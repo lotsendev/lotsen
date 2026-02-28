@@ -3,6 +3,8 @@ package handler_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -214,6 +216,102 @@ func TestSetRoute_InvalidBody(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestProxy_AtomicSwap_KeepsInflightRequestsAndRoutesNewTraffic(t *testing.T) {
+	oldStarted := make(chan struct{}, 1)
+	oldRelease := make(chan struct{})
+
+	oldBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		oldStarted <- struct{}{}
+		<-oldRelease
+		_, _ = w.Write([]byte("old"))
+	}))
+	defer oldBackend.Close()
+
+	newBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("new"))
+	}))
+	defer newBackend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("example.com", oldBackend.Listener.Addr().String())
+
+	proxy := newProxyServer(tbl)
+	defer proxy.Close()
+
+	firstDone := make(chan string, 1)
+	firstErr := make(chan error, 1)
+	go func() {
+		req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+		req.Host = "example.com"
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			firstErr <- err
+			return
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			firstErr <- err
+			return
+		}
+		if resp.StatusCode != http.StatusOK {
+			firstErr <- errors.New("first request did not return 200")
+			return
+		}
+		firstDone <- string(body)
+	}()
+
+	select {
+	case <-oldStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first request to reach old backend")
+	}
+
+	body, _ := json.Marshal(map[string]string{
+		"domain":   "example.com",
+		"upstream": newBackend.Listener.Addr().String(),
+	})
+	resp, err := http.Post(proxy.URL+"/internal/routes", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /internal/routes: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("want 204 from swap, got %d", resp.StatusCode)
+	}
+
+	secondReq, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	secondReq.Host = "example.com"
+	secondResp, err := http.DefaultClient.Do(secondReq)
+	if err != nil {
+		t.Fatalf("second request through proxy: %v", err)
+	}
+	secondBody, err := io.ReadAll(secondResp.Body)
+	secondResp.Body.Close()
+	if err != nil {
+		t.Fatalf("read second response: %v", err)
+	}
+	if secondResp.StatusCode != http.StatusOK {
+		t.Fatalf("want second request 200, got %d", secondResp.StatusCode)
+	}
+	if string(secondBody) != "new" {
+		t.Fatalf("want second request routed to new backend, got %q", string(secondBody))
+	}
+
+	close(oldRelease)
+
+	select {
+	case err := <-firstErr:
+		t.Fatalf("first request failed: %v", err)
+	case body := <-firstDone:
+		if body != "old" {
+			t.Fatalf("want inflight request to complete on old backend, got %q", body)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first request completion")
 	}
 }
 

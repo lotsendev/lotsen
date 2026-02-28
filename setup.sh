@@ -88,6 +88,11 @@ choose_security_profile() {
         return 0
     fi
 
+    if [ "${DIRIGENT_UPGRADE:-0}" = "1" ]; then
+        echo "standard"
+        return 0
+    fi
+
     if [ "${DIRIGENT_NON_INTERACTIVE:-0}" = "1" ] || [ ! -t 0 ]; then
         echo "standard"
         return 0

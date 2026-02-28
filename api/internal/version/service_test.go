@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+func TestNew_DefaultsToShortCacheTTL(t *testing.T) {
+	svc := New("v1.0.0")
+	if svc.ttl != defaultCacheTTL {
+		t.Fatalf("ttl = %s, want %s", svc.ttl, defaultCacheTTL)
+	}
+}
+
 func TestSnapshot_UpgradeAvailableComparison(t *testing.T) {
 	tests := []struct {
 		name           string

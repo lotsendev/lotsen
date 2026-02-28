@@ -50,6 +50,7 @@ type ManagedContainer struct {
 type Client interface {
 	Ping(ctx context.Context) (dockertypes.Ping, error)
 	ImagePull(ctx context.Context, refStr string, options image.PullOptions) (io.ReadCloser, error)
+	ImageList(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
 	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
 	ContainerList(ctx context.Context, options container.ListOptions) ([]dockertypes.Container, error)
@@ -90,15 +91,9 @@ func (d *Docker) Start(ctx context.Context, dep store.Deployment) ([]string, err
 		return nil, fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
 	}
 
-	rc, err := d.client.ImagePull(ctx, dep.Image, image.PullOptions{})
-	if err != nil {
-		if dockerclient.IsErrConnectionFailed(err) {
-			return nil, fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
-		}
-		return nil, fmt.Errorf("docker: pull image %s: %w", dep.Image, err)
+	if err := d.pullImage(dep.Image); err != nil {
+		return nil, err
 	}
-	_, _ = io.Copy(io.Discard, rc)
-	rc.Close()
 
 	env := envsToSlice(dep.Envs)
 
@@ -228,15 +223,9 @@ func (d *Docker) StartAndReplace(ctx context.Context, dep store.Deployment, oldC
 		return d.Start(ctx, dep)
 	}
 
-	rc, err := d.client.ImagePull(ctx, dep.Image, image.PullOptions{})
-	if err != nil {
-		if dockerclient.IsErrConnectionFailed(err) {
-			return nil, fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
-		}
-		return nil, fmt.Errorf("docker: pull image %s: %w", dep.Image, err)
+	if err := d.pullImage(dep.Image); err != nil {
+		return nil, err
 	}
-	_, _ = io.Copy(io.Discard, rc)
-	rc.Close()
 
 	env := envsToSlice(dep.Envs)
 
@@ -313,6 +302,54 @@ func (d *Docker) StartAndReplace(ctx context.Context, dep store.Deployment, oldC
 	}
 
 	return runtimePorts, nil
+}
+
+// pullImage pulls imageRef from the registry, unless the image already exists
+// locally under an immutable (non-latest) tag, in which case the pull is
+// skipped to avoid an unnecessary CPU spike from layer decompression.
+//
+// The pull runs with its own 10-minute context, decoupled from the reconcile
+// loop's short deadline. Without this, a large image on a slow connection
+// would time out, be retried on every reconcile cycle, and cause multiple
+// concurrent decompression jobs that saturate the host CPU.
+func (d *Docker) pullImage(imageRef string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	// For pinned tags and digest refs, skip the pull when the image already
+	// exists locally — re-pulling is unnecessary and causes a CPU spike.
+	if !isLatestTag(imageRef) {
+		f := filters.NewArgs(filters.Arg("reference", imageRef))
+		imgs, err := d.client.ImageList(ctx, image.ListOptions{Filters: f})
+		if err == nil && len(imgs) > 0 {
+			return nil
+		}
+	}
+
+	log.Printf("docker: pulling image %s", imageRef)
+	rc, err := d.client.ImagePull(ctx, imageRef, image.PullOptions{})
+	if err != nil {
+		if dockerclient.IsErrConnectionFailed(err) {
+			return fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
+		}
+		return fmt.Errorf("docker: pull image %s: %w", imageRef, err)
+	}
+	_, _ = io.Copy(io.Discard, rc)
+	rc.Close()
+	return nil
+}
+
+// isLatestTag reports whether imageRef resolves to the mutable :latest tag.
+// Digest-pinned refs (image@sha256:…) and explicit non-latest tags are
+// considered immutable.
+func isLatestTag(imageRef string) bool {
+	// Digest-pinned refs are immutable.
+	if strings.Contains(imageRef, "@") {
+		return false
+	}
+	_, tag, found := strings.Cut(imageRef, ":")
+	// No tag specified → Docker defaults to :latest.
+	return !found || tag == "" || tag == "latest"
 }
 
 // envsToSlice converts a map of environment variables to the KEY=VALUE slice

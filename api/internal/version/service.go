@@ -14,6 +14,8 @@ import (
 var latestReleaseURL = "https://api.github.com/repos/ercadev/dirigent-releases/releases/latest"
 var releasesURL = "https://api.github.com/repos/ercadev/dirigent-releases/releases"
 
+const defaultCacheTTL = 5 * time.Minute
+
 type Snapshot struct {
 	CurrentVersion   string
 	LatestVersion    string
@@ -76,7 +78,7 @@ func New(currentVersion string) *Service {
 		currentVersion: currentVersion,
 		client:         &http.Client{Timeout: 10 * time.Second},
 		now:            time.Now,
-		ttl:            time.Hour,
+		ttl:            defaultCacheTTL,
 	}
 }
 
@@ -91,15 +93,23 @@ func NewWithOptions(currentVersion string, client *http.Client, now func() time.
 		now = time.Now
 	}
 	if ttl <= 0 {
-		ttl = time.Hour
+		ttl = defaultCacheTTL
 	}
 
 	return &Service{currentVersion: currentVersion, client: client, now: now, ttl: ttl}
 }
 
 func (s *Service) Snapshot(ctx context.Context) (Snapshot, error) {
+	return s.snapshot(ctx, false)
+}
+
+func (s *Service) RefreshSnapshot(ctx context.Context) (Snapshot, error) {
+	return s.snapshot(ctx, true)
+}
+
+func (s *Service) snapshot(ctx context.Context, forceRefresh bool) (Snapshot, error) {
 	s.mu.RLock()
-	if s.hasHit && s.now().Sub(s.cached.cachedAt) < s.ttl {
+	if !forceRefresh && s.hasHit && s.now().Sub(s.cached.cachedAt) < s.ttl {
 		snap := s.snapshotFromCache(s.cached)
 		s.mu.RUnlock()
 		return snap, nil

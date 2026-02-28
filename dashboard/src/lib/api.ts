@@ -225,8 +225,9 @@ export async function getLoadBalancerAccessLogs(
   return res.json()
 }
 
-export async function getVersionInfo(): Promise<VersionInfo> {
-  const res = await fetch('/api/version')
+export async function getVersionInfo(options?: { forceRefresh?: boolean }): Promise<VersionInfo> {
+  const suffix = options?.forceRefresh ? "?refresh=1" : ""
+  const res = await fetch(`/api/version${suffix}`)
   if (!res.ok) throw new Error('Failed to fetch version info')
   return res.json()
 }

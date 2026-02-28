@@ -29,6 +29,23 @@ func (s *versionProviderStub) Snapshot(_ context.Context) (version.Snapshot, err
 	return s.snapshot, nil
 }
 
+type versionProviderWithRefreshStub struct {
+	snapshot        version.Snapshot
+	refreshSnapshot version.Snapshot
+	snapshotCalls   int
+	refreshCalls    int
+}
+
+func (s *versionProviderWithRefreshStub) Snapshot(_ context.Context) (version.Snapshot, error) {
+	s.snapshotCalls++
+	return s.snapshot, nil
+}
+
+func (s *versionProviderWithRefreshStub) RefreshSnapshot(_ context.Context) (version.Snapshot, error) {
+	s.refreshCalls++
+	return s.refreshSnapshot, nil
+}
+
 type upgradeRunnerStub struct {
 	startErr error
 	lines    chan string
@@ -115,6 +132,40 @@ func TestGetVersion_ReturnsExpectedJSON(t *testing.T) {
 	}
 	if !body.CachedAt.Equal(now) {
 		t.Fatalf("cachedAt = %s, want %s", body.CachedAt, now)
+	}
+}
+
+func TestGetVersion_RefreshQueryUsesFreshSnapshot(t *testing.T) {
+	provider := &versionProviderWithRefreshStub{
+		snapshot:        version.Snapshot{CurrentVersion: "v1.0.0", LatestVersion: "v1.1.0"},
+		refreshSnapshot: version.Snapshot{CurrentVersion: "v1.0.0", LatestVersion: "v1.2.0", UpgradeAvailable: true},
+	}
+
+	srv := newTestServerWithUpgradeAndVersion(newMemStore(), provider, &upgradeRunnerStub{})
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/version?refresh=1")
+	if err != nil {
+		t.Fatalf("GET /api/version?refresh=1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var body struct {
+		LatestVersion string `json:"latestVersion"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.LatestVersion != "v1.2.0" {
+		t.Fatalf("latestVersion = %q, want v1.2.0", body.LatestVersion)
+	}
+	if provider.refreshCalls != 1 {
+		t.Fatalf("refreshCalls = %d, want 1", provider.refreshCalls)
 	}
 }
 

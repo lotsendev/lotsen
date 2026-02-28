@@ -28,11 +28,28 @@ export function SettingsPage() {
 
   const { currentVersion, latestVersion, publishedAt, releaseNotes, upgradeAvailable, cachedAt, isLoading, isError } =
     useVersionCheck()
+
+  useEffect(() => {
+    let active = true
+
+    getVersionInfo({ forceRefresh: true })
+      .then(snapshot => {
+        if (!active) return
+        queryClient.setQueryData(['version-check'], snapshot)
+      })
+      .catch(() => {
+        // keep cached version info if force refresh fails
+      })
+
+    return () => {
+      active = false
+    }
+  }, [queryClient])
   const { lines, streamClosed } = useUpgradeLogsSSE(isUpgradeRunning)
 
   const reconnectProbe = useQuery({
     queryKey: ['upgrade-reconnect-probe', attemptId],
-    queryFn: getVersionInfo,
+    queryFn: () => getVersionInfo(),
     enabled: awaitingReconnect,
     retry: false,
     refetchInterval: 3000,

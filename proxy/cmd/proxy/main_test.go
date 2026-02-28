@@ -31,10 +31,10 @@ func (t *tableStub) Get(domain string) (routing.Route, bool) {
 	return route, ok
 }
 
-func (t *tableStub) Set(domain, upstream string, basicAuth *store.BasicAuthConfig) {
+func (t *tableStub) Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.routes[domain] = routing.Route{Upstream: upstream, BasicAuth: basicAuth}
+	t.routes[domain] = routing.Route{Upstream: upstream, BasicAuth: basicAuth, Security: security}
 }
 
 func TestRedirectToHTTPS_DefaultPort(t *testing.T) {
@@ -108,7 +108,7 @@ func TestHTTPMux_InternalRoutesCanBeUpdated(t *testing.T) {
 
 func TestHostPolicyFromTable(t *testing.T) {
 	tbl := newTableStub()
-	tbl.Set("example.com", "localhost:3000", nil)
+	tbl.Set("example.com", "localhost:3000", nil, nil)
 	policy := hostPolicyFromTable(tbl)
 
 	if err := policy(context.Background(), "example.com"); err != nil {

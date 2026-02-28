@@ -67,22 +67,24 @@ type basicAuthRequest struct {
 }
 
 type deploymentRequest struct {
-	Name      string            `json:"name"`
-	Image     string            `json:"image"`
-	Envs      map[string]string `json:"envs"`
-	Ports     []string          `json:"ports"`
-	Volumes   []string          `json:"volumes"`
-	Domain    string            `json:"domain"`
-	BasicAuth *basicAuthRequest `json:"basic_auth"`
+	Name      string                `json:"name"`
+	Image     string                `json:"image"`
+	Envs      map[string]string     `json:"envs"`
+	Ports     []string              `json:"ports"`
+	Volumes   []string              `json:"volumes"`
+	Domain    string                `json:"domain"`
+	BasicAuth *basicAuthRequest     `json:"basic_auth"`
+	Security  *store.SecurityConfig `json:"security"`
 }
 
 type patchDeploymentRequest struct {
-	Image     string            `json:"image"`
-	Envs      map[string]string `json:"envs"`
-	Ports     []string          `json:"ports"`
-	Volumes   []string          `json:"volumes"`
-	Domain    string            `json:"domain"`
-	BasicAuth *basicAuthRequest `json:"basic_auth"`
+	Image     string                `json:"image"`
+	Envs      map[string]string     `json:"envs"`
+	Ports     []string              `json:"ports"`
+	Volumes   []string              `json:"volumes"`
+	Domain    string                `json:"domain"`
+	BasicAuth *basicAuthRequest     `json:"basic_auth"`
+	Security  *store.SecurityConfig `json:"security"`
 }
 
 // Handler holds the dependencies for the API layer.

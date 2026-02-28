@@ -4,11 +4,12 @@ import (
 	"testing"
 
 	"github.com/ercadev/dirigent/proxy/internal/routing"
+	"github.com/ercadev/dirigent/store"
 )
 
 func TestTable_SetAndGet(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("example.com", "localhost:8080", nil)
+	tbl.Set("example.com", "localhost:8080", nil, nil)
 
 	route, ok := tbl.Get("example.com")
 	if !ok {
@@ -21,8 +22,8 @@ func TestTable_SetAndGet(t *testing.T) {
 
 func TestTable_Update(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("example.com", "localhost:8080", nil)
-	tbl.Set("example.com", "localhost:9090", nil)
+	tbl.Set("example.com", "localhost:8080", nil, nil)
+	tbl.Set("example.com", "localhost:9090", nil, nil)
 
 	route, ok := tbl.Get("example.com")
 	if !ok {
@@ -35,7 +36,7 @@ func TestTable_Update(t *testing.T) {
 
 func TestTable_Delete(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("example.com", "localhost:8080", nil)
+	tbl.Set("example.com", "localhost:8080", nil, nil)
 	tbl.Delete("example.com")
 
 	if _, ok := tbl.Get("example.com"); ok {
@@ -60,7 +61,7 @@ func TestTable_UnknownDomain(t *testing.T) {
 func TestTable_StaticRoutePersistsWhenDynamicDeleted(t *testing.T) {
 	tbl := routing.NewTable()
 	tbl.SetStatic("dashboard.example.com", "localhost:3000")
-	tbl.Set("dashboard.example.com", "localhost:8080", nil)
+	tbl.Set("dashboard.example.com", "localhost:8080", nil, nil)
 
 	tbl.Delete("dashboard.example.com")
 
@@ -75,8 +76,8 @@ func TestTable_StaticRoutePersistsWhenDynamicDeleted(t *testing.T) {
 
 func TestTable_MultipleDomains(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("foo.com", "localhost:3000", nil)
-	tbl.Set("bar.com", "localhost:4000", nil)
+	tbl.Set("foo.com", "localhost:3000", nil, nil)
+	tbl.Set("bar.com", "localhost:4000", nil, nil)
 
 	if route, ok := tbl.Get("foo.com"); !ok || route.Upstream != "localhost:3000" {
 		t.Errorf("foo.com: want localhost:3000, got %s (ok=%v)", route.Upstream, ok)
@@ -92,5 +93,18 @@ func TestTable_MultipleDomains(t *testing.T) {
 	}
 	if route, ok := tbl.Get("bar.com"); !ok || route.Upstream != "localhost:4000" {
 		t.Errorf("bar.com must survive after foo.com deleted: got %s (ok=%v)", route.Upstream, ok)
+	}
+}
+
+func TestTable_SetStoresSecurityConfig(t *testing.T) {
+	tbl := routing.NewTable()
+	tbl.Set("example.com", "localhost:8080", nil, &store.SecurityConfig{WAFEnabled: true})
+
+	route, ok := tbl.Get("example.com")
+	if !ok {
+		t.Fatal("want route to exist, got not found")
+	}
+	if route.Security == nil || !route.Security.WAFEnabled {
+		t.Fatalf("want security config stored, got %#v", route.Security)
 	}
 }

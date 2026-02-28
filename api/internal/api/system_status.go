@@ -56,6 +56,8 @@ type LoadBalancerTrafficSystemStatus struct {
 	TotalRequests      int64                         `json:"totalRequests"`
 	SuspiciousRequests int64                         `json:"suspiciousRequests"`
 	BlockedRequests    int64                         `json:"blockedRequests"`
+	WAFBlockedRequests int64                         `json:"wafBlockedRequests"`
+	UABlockedRequests  int64                         `json:"uaBlockedRequests"`
 	ActiveBlockedIPs   int                           `json:"activeBlockedIps"`
 	BlockedIPs         []LoadBalancerBlockedIPStatus `json:"blockedIps,omitempty"`
 }

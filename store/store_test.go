@@ -304,7 +304,11 @@ func TestJSONStore_Patch_MergesFields(t *testing.T) {
 		Ports:   []string{"80:80"},
 		Volumes: []string{"/data:/data"},
 		Domain:  "example.com",
-		Status:  store.StatusHealthy,
+		Security: &store.SecurityConfig{
+			WAFEnabled: true,
+			IPDenylist: []string{"10.0.0.0/8"},
+		},
+		Status: store.StatusHealthy,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -341,6 +345,12 @@ func TestJSONStore_Patch_MergesFields(t *testing.T) {
 	if updated.Domain != "example.com" {
 		t.Errorf("want domain example.com, got %s", updated.Domain)
 	}
+	if updated.Security == nil || !updated.Security.WAFEnabled {
+		t.Fatalf("want security config retained, got %#v", updated.Security)
+	}
+	if len(updated.Security.IPDenylist) != 1 || updated.Security.IPDenylist[0] != "10.0.0.0/8" {
+		t.Fatalf("want security denylist retained, got %#v", updated.Security)
+	}
 
 	// Verify persistence.
 	reloaded, err := s.Get("d1")
@@ -349,6 +359,39 @@ func TestJSONStore_Patch_MergesFields(t *testing.T) {
 	}
 	if reloaded.Image != "nginx:2" {
 		t.Errorf("want persisted image nginx:2, got %s", reloaded.Image)
+	}
+}
+
+func TestJSONStore_Patch_UpdatesSecurityConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	updated, err := s.Patch("d1", store.Deployment{Security: &store.SecurityConfig{
+		WAFEnabled:  true,
+		IPDenylist:  []string{"10.0.0.0/8"},
+		IPAllowlist: []string{"203.0.113.0/24"},
+		CustomRules: []string{"SecRule ARGS:test \"@streq blocked\" \"id:10001,phase:2,deny,status:403\""},
+	}})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+
+	if updated.Security == nil || !updated.Security.WAFEnabled {
+		t.Fatalf("want security waf enabled, got %#v", updated.Security)
+	}
+	if len(updated.Security.IPAllowlist) != 1 || updated.Security.IPAllowlist[0] != "203.0.113.0/24" {
+		t.Fatalf("want security allowlist persisted, got %#v", updated.Security)
+	}
+	if len(updated.Security.CustomRules) != 1 {
+		t.Fatalf("want custom rules persisted, got %#v", updated.Security)
 	}
 }
 

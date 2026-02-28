@@ -78,6 +78,7 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		Volumes:   body.Volumes,
 		Domain:    body.Domain,
 		BasicAuth: basicAuth,
+		Security:  body.Security,
 		Status:    nextStatus,
 	}
 

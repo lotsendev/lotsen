@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/ercadev/dirigent/proxy/internal/handler"
+	"github.com/ercadev/dirigent/proxy/internal/middleware"
 	"github.com/ercadev/dirigent/proxy/internal/poller"
 	"github.com/ercadev/dirigent/proxy/internal/routing"
 	"github.com/ercadev/dirigent/store"
@@ -55,6 +56,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("proxy: %v", err)
 	}
+	ipDenylist := parseCSVList(os.Getenv("DIRIGENT_IP_DENYLIST"))
+	ipAllowlist := parseCSVList(os.Getenv("DIRIGENT_IP_ALLOWLIST"))
+	ipFilter, err := middleware.NewIPFilter(ipDenylist, ipAllowlist)
+	if err != nil {
+		log.Fatalf("proxy: %v", err)
+	}
+	uaFilter := middleware.NewUAFilter(hardeningProfile == handler.HardeningStrict, parseCSVList(os.Getenv("DIRIGENT_UA_BLOCK_LIST")))
+	wafEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("DIRIGENT_WAF_ENABLED")), "true")
+	wafMode, err := wafModeFromEnv()
+	if err != nil {
+		log.Fatalf("proxy: %v", err)
+	}
+	waf, err := middleware.NewWAF(wafEnabled, wafMode)
+	if err != nil {
+		log.Fatalf("proxy: initialize waf: %v", err)
+	}
 	accessLogConfig, err := accessLogConfigFromEnv()
 	if err != nil {
 		log.Fatalf("proxy: %v", err)
@@ -70,6 +87,11 @@ func main() {
 	}
 
 	log.Printf("proxy: hardening profile %s", hardeningProfile)
+	if wafEnabled {
+		log.Printf("proxy: waf enabled (mode=%s)", wafMode)
+	} else {
+		log.Printf("proxy: waf disabled")
+	}
 
 	interval := 5 * time.Second
 	if v := os.Getenv("DIRIGENT_POLL_INTERVAL"); v != "" {
@@ -79,7 +101,15 @@ func main() {
 	}
 
 	p := poller.New(s, table, interval)
-	h := handler.New(table, dashboardAuth, handler.WithHardeningProfile(hardeningProfile), handler.WithAccessLogger(accessLogger))
+	h := handler.New(
+		table,
+		dashboardAuth,
+		handler.WithHardeningProfile(hardeningProfile),
+		handler.WithAccessLogger(accessLogger),
+		handler.WithIPFilter(ipFilter),
+		handler.WithUAFilter(uaFilter),
+		handler.WithWAF(waf),
+	)
 
 	hostPolicy := hostPolicyFromTable(table)
 	cacheDir := envOrDefault("DIRIGENT_CERT_CACHE_DIR", defaultCertCacheDir)
@@ -294,4 +324,31 @@ func accessLogConfigFromEnv() (handler.AccessLogConfig, error) {
 		Retention:       retention,
 		WhitelistedKeys: headers,
 	}, nil
+}
+
+func wafModeFromEnv() (middleware.WAFMode, error) {
+	raw := strings.ToLower(strings.TrimSpace(envOrDefault("DIRIGENT_WAF_MODE", string(middleware.WAFModeDetection))))
+	switch middleware.WAFMode(raw) {
+	case middleware.WAFModeDetection, middleware.WAFModeEnforcement:
+		return middleware.WAFMode(raw), nil
+	default:
+		return "", fmt.Errorf("DIRIGENT_WAF_MODE must be one of: detection, enforcement")
+	}
+}
+
+func parseCSVList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		result = append(result, part)
+	}
+	return result
 }

@@ -12,13 +12,14 @@ import (
 
 // Table is the routing table the poller updates as deployments change.
 type Table interface {
-	Set(domain, upstream string, basicAuth *store.BasicAuthConfig)
+	Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig)
 	Delete(domain string)
 }
 
 type routeState struct {
 	Upstream      string
 	BasicAuthJSON string
+	SecurityJSON  string
 }
 
 // Store is the persistence interface the poller reads from.
@@ -86,20 +87,31 @@ func (p *Poller) sync() {
 		if upstream == "" {
 			continue
 		}
-		current[domain] = routeState{Upstream: upstream, BasicAuthJSON: mustBasicAuthJSON(d.BasicAuth)}
+		current[domain] = routeState{
+			Upstream:      upstream,
+			BasicAuthJSON: mustBasicAuthJSON(d.BasicAuth),
+			SecurityJSON:  mustSecurityJSON(d.Security),
+		}
 	}
 
 	// Register new routes and update changed upstreams.
 	for domain, route := range current {
 		if p.last[domain] != route {
 			var basicAuth *store.BasicAuthConfig
+			var security *store.SecurityConfig
 			if route.BasicAuthJSON != "" {
 				if err := json.Unmarshal([]byte(route.BasicAuthJSON), &basicAuth); err != nil {
 					log.Printf("proxy poller: decode basic auth for %s: %v", domain, err)
 					continue
 				}
 			}
-			p.table.Set(domain, route.Upstream, basicAuth)
+			if route.SecurityJSON != "" {
+				if err := json.Unmarshal([]byte(route.SecurityJSON), &security); err != nil {
+					log.Printf("proxy poller: decode security config for %s: %v", domain, err)
+					continue
+				}
+			}
+			p.table.Set(domain, route.Upstream, basicAuth, security)
 		}
 	}
 
@@ -118,6 +130,17 @@ func mustBasicAuthJSON(auth *store.BasicAuthConfig) string {
 		return ""
 	}
 	b, err := json.Marshal(auth)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func mustSecurityJSON(security *store.SecurityConfig) string {
+	if security == nil {
+		return ""
+	}
+	b, err := json.Marshal(security)
 	if err != nil {
 		return ""
 	}

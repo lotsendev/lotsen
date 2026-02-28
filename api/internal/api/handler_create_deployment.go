@@ -67,6 +67,7 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		Volumes:   body.Volumes,
 		Domain:    body.Domain,
 		BasicAuth: basicAuth,
+		Security:  body.Security,
 		Status:    store.StatusDeploying,
 	}
 

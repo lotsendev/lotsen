@@ -36,6 +36,7 @@ type Deployment struct {
 	Volumes   []string          `json:"volumes"`
 	Domain    string            `json:"domain"`
 	BasicAuth *BasicAuthConfig  `json:"basic_auth,omitempty"`
+	Security  *SecurityConfig   `json:"security,omitempty"`
 	Status    Status            `json:"status"`
 	Error     string            `json:"error,omitempty"`
 }
@@ -47,6 +48,13 @@ type BasicAuthConfig struct {
 type BasicAuthUser struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type SecurityConfig struct {
+	WAFEnabled  bool     `json:"waf_enabled"`
+	IPDenylist  []string `json:"ip_denylist,omitempty"`
+	IPAllowlist []string `json:"ip_allowlist,omitempty"`
+	CustomRules []string `json:"custom_rules,omitempty"`
 }
 
 // JSONStore persists deployments as a JSON array on disk.
@@ -286,6 +294,9 @@ func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 		}
 		if patch.BasicAuth != nil {
 			d.BasicAuth = patch.BasicAuth
+		}
+		if patch.Security != nil {
+			d.Security = patch.Security
 		}
 		if patch.Status != "" {
 			d.Status = patch.Status

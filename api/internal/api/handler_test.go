@@ -106,8 +106,17 @@ func (m *memStore) Patch(id string, patch store.Deployment) (store.Deployment, e
 	if patch.Domain != "" {
 		d.Domain = patch.Domain
 	}
+	if patch.BasicAuth != nil {
+		d.BasicAuth = patch.BasicAuth
+	}
+	if patch.Security != nil {
+		d.Security = patch.Security
+	}
 	if patch.Status != "" {
 		d.Status = patch.Status
+		d.Error = patch.Error
+	} else if patch.Error != "" {
+		d.Error = patch.Error
 	}
 	m.deployments[id] = d
 	return d, nil
@@ -2409,5 +2418,75 @@ func TestCreateDeployment_RejectsEmptyBasicAuthUsername(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestCreateDeployment_PersistsSecurityConfig(t *testing.T) {
+	s := newMemStore()
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body := []byte(`{"name":"web","image":"nginx:latest","envs":{},"ports":["80"],"volumes":[],"domain":"app.example.com","security":{"waf_enabled":true,"ip_denylist":["10.0.0.0/8"],"ip_allowlist":["203.0.113.0/24"],"custom_rules":["SecRule REQUEST_URI \"@contains blocked\" \"id:10001,phase:1,deny,status:403\""]}}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("want 201, got %d", resp.StatusCode)
+	}
+
+	var created store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if created.Security == nil || !created.Security.WAFEnabled {
+		t.Fatalf("want security config persisted, got %#v", created.Security)
+	}
+	if len(created.Security.IPAllowlist) != 1 || created.Security.IPAllowlist[0] != "203.0.113.0/24" {
+		t.Fatalf("want ip allowlist persisted, got %#v", created.Security)
+	}
+}
+
+func TestPatchDeployment_UpdatesSecurityConfig(t *testing.T) {
+	s := newMemStore()
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	createBody := []byte(`{"name":"web","image":"nginx:1","envs":{},"ports":["80"],"volumes":[]}`)
+	createResp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(createBody))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer createResp.Body.Close()
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("want 201, got %d", createResp.StatusCode)
+	}
+
+	var created store.Deployment
+	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	patchBody := []byte(`{"security":{"waf_enabled":true,"ip_denylist":["10.0.0.0/8"]}}`)
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/"+created.ID, bytes.NewReader(patchBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/%s: %v", created.ID, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("want 202, got %d", resp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode patch response: %v", err)
+	}
+	if updated.Security == nil || !updated.Security.WAFEnabled {
+		t.Fatalf("want security config updated, got %#v", updated.Security)
 	}
 }

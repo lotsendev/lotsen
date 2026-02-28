@@ -32,6 +32,8 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 				TotalRequests      *int64 `json:"totalRequests"`
 				SuspiciousRequests *int64 `json:"suspiciousRequests"`
 				BlockedRequests    *int64 `json:"blockedRequests"`
+				WAFBlockedRequests *int64 `json:"wafBlockedRequests"`
+				UABlockedRequests  *int64 `json:"uaBlockedRequests"`
 				ActiveBlockedIPs   *int   `json:"activeBlockedIps"`
 				BlockedIPs         []struct {
 					IP           string     `json:"ip"`
@@ -168,6 +170,8 @@ func buildLoadBalancerTraffic(in *struct {
 	TotalRequests      *int64 `json:"totalRequests"`
 	SuspiciousRequests *int64 `json:"suspiciousRequests"`
 	BlockedRequests    *int64 `json:"blockedRequests"`
+	WAFBlockedRequests *int64 `json:"wafBlockedRequests"`
+	UABlockedRequests  *int64 `json:"uaBlockedRequests"`
 	ActiveBlockedIPs   *int   `json:"activeBlockedIps"`
 	BlockedIPs         []struct {
 		IP           string     `json:"ip"`
@@ -187,6 +191,12 @@ func buildLoadBalancerTraffic(in *struct {
 	}
 	if in.BlockedRequests != nil {
 		traffic.BlockedRequests = *in.BlockedRequests
+	}
+	if in.WAFBlockedRequests != nil {
+		traffic.WAFBlockedRequests = *in.WAFBlockedRequests
+	}
+	if in.UABlockedRequests != nil {
+		traffic.UABlockedRequests = *in.UABlockedRequests
 	}
 	if in.ActiveBlockedIPs != nil {
 		traffic.ActiveBlockedIPs = *in.ActiveBlockedIPs

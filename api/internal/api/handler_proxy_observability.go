@@ -21,10 +21,14 @@ type AccessLogEntry struct {
 }
 
 type SecurityConfig struct {
-	Profile                   string `json:"profile"`
-	SuspiciousWindowSeconds   int64  `json:"suspiciousWindowSeconds"`
-	SuspiciousThreshold       int    `json:"suspiciousThreshold"`
-	SuspiciousBlockForSeconds int64  `json:"suspiciousBlockForSeconds"`
+	Profile                   string   `json:"profile"`
+	SuspiciousWindowSeconds   int64    `json:"suspiciousWindowSeconds"`
+	SuspiciousThreshold       int      `json:"suspiciousThreshold"`
+	SuspiciousBlockForSeconds int64    `json:"suspiciousBlockForSeconds"`
+	WAFEnabled                bool     `json:"wafEnabled"`
+	WAFMode                   string   `json:"wafMode,omitempty"`
+	GlobalIPDenylist          []string `json:"globalIpDenylist,omitempty"`
+	GlobalIPAllowlist         []string `json:"globalIpAllowlist,omitempty"`
 }
 
 func (h *Handler) accessLogs(w http.ResponseWriter, r *http.Request) {

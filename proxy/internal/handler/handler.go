@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ercadev/dirigent/proxy/internal/middleware"
@@ -24,7 +25,7 @@ import (
 // and the control API writes to when swapping upstreams.
 type RoutingTable interface {
 	Get(domain string) (routing.Route, bool)
-	Set(domain, upstream string, basicAuth *store.BasicAuthConfig)
+	Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig)
 }
 
 // Handler serves inbound HTTP requests by routing them to the upstream
@@ -36,6 +37,11 @@ type Handler struct {
 	hardening     HardeningProfile
 	scanner       *scannerLimiter
 	accessLogs    AccessLogger
+	ipFilter      *middleware.IPFilter
+	uaFilter      *middleware.UAFilter
+	waf           *middleware.WAF
+	wafBlocked    atomic.Int64
+	uaBlocked     atomic.Int64
 }
 
 // HardeningProfile controls request filtering and anti-scan behavior.
@@ -117,6 +123,8 @@ type trafficStatus struct {
 	TotalRequests      int64                    `json:"totalRequests"`
 	SuspiciousRequests int64                    `json:"suspiciousRequests"`
 	BlockedRequests    int64                    `json:"blockedRequests"`
+	WAFBlockedRequests int64                    `json:"wafBlockedRequests"`
+	UABlockedRequests  int64                    `json:"uaBlockedRequests"`
 	ActiveBlockedIPs   int                      `json:"activeBlockedIps"`
 	BlockedIPs         []blockedIPTrafficStatus `json:"blockedIps,omitempty"`
 }
@@ -126,6 +134,10 @@ type HardeningSettings struct {
 	SuspiciousWindowSeconds   int64            `json:"suspiciousWindowSeconds"`
 	SuspiciousThreshold       int              `json:"suspiciousThreshold"`
 	SuspiciousBlockForSeconds int64            `json:"suspiciousBlockForSeconds"`
+	WAFEnabled                bool             `json:"wafEnabled"`
+	WAFMode                   string           `json:"wafMode,omitempty"`
+	GlobalIPDenylist          []string         `json:"globalIpDenylist,omitempty"`
+	GlobalIPAllowlist         []string         `json:"globalIpAllowlist,omitempty"`
 }
 
 func (h *Handler) traffic(w http.ResponseWriter, _ *http.Request) {
@@ -133,6 +145,8 @@ func (h *Handler) traffic(w http.ResponseWriter, _ *http.Request) {
 	if h.scanner != nil {
 		status = h.scanner.Snapshot(time.Now())
 	}
+	status.WAFBlockedRequests = h.wafBlocked.Load()
+	status.UABlockedRequests = h.uaBlocked.Load()
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(status); err != nil {
@@ -176,6 +190,18 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(rw, "too many requests", http.StatusTooManyRequests)
 		return
 	}
+	if h.ipFilter != nil {
+		switch h.ipFilter.EvaluateGlobal(client) {
+		case middleware.IPFilterDenied:
+			outcome = "ip_denied"
+			http.Error(rw, "forbidden", http.StatusForbidden)
+			return
+		case middleware.IPFilterNotAllowed:
+			outcome = "ip_not_allowed"
+			http.Error(rw, "forbidden", http.StatusForbidden)
+			return
+		}
+	}
 
 	if shouldBlockPath(r.URL.Path, h.hardening) {
 		if h.scanner != nil {
@@ -198,6 +224,51 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		outcome = "unknown_domain"
 		http.Error(rw, "unknown domain", http.StatusNotFound)
 		return
+	}
+
+	if h.ipFilter != nil {
+		switch h.ipFilter.EvaluateDeployment(client, route.Security) {
+		case middleware.IPFilterDenied:
+			outcome = "ip_denied"
+			http.Error(rw, "forbidden", http.StatusForbidden)
+			return
+		case middleware.IPFilterNotAllowed:
+			outcome = "ip_not_allowed"
+			http.Error(rw, "forbidden", http.StatusForbidden)
+			return
+		}
+	}
+
+	if h.uaFilter != nil && h.uaFilter.Blocked(r.UserAgent()) {
+		h.uaBlocked.Add(1)
+		outcome = "ua_blocked"
+		http.Error(rw, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	applyWAF := true
+	if route.Security != nil {
+		applyWAF = route.Security.WAFEnabled
+	}
+	if h.waf != nil && applyWAF {
+		customRules := []string(nil)
+		if route.Security != nil {
+			customRules = route.Security.CustomRules
+		}
+		result, err := h.waf.Evaluate(r, client, customRules)
+		if err != nil {
+			log.Printf("proxy: waf evaluate: %v", err)
+		} else {
+			if result.Detected {
+				outcome = "waf_detected"
+			}
+			if result.Blocked {
+				h.wafBlocked.Add(1)
+				outcome = "waf_blocked"
+				http.Error(rw, "forbidden", result.Status)
+				return
+			}
+		}
 	}
 
 	if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
@@ -260,6 +331,13 @@ func (h *Handler) securityConfig(w http.ResponseWriter, _ *http.Request) {
 		cfg.SuspiciousWindowSeconds = int64(h.scanner.window.Seconds())
 		cfg.SuspiciousThreshold = h.scanner.threshold
 		cfg.SuspiciousBlockForSeconds = int64(h.scanner.blockFor.Seconds())
+	}
+	if h.waf != nil {
+		cfg.WAFEnabled = h.waf.Enabled()
+		cfg.WAFMode = string(h.waf.Mode())
+	}
+	if h.ipFilter != nil {
+		cfg.GlobalIPDenylist, cfg.GlobalIPAllowlist = h.ipFilter.GlobalConfig()
 	}
 	writeJSON(w, http.StatusOK, cfg)
 }
@@ -365,8 +443,26 @@ func (h *Handler) setRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.table.Set(normalizeDomain(body.Domain), body.Upstream, nil)
+	h.table.Set(normalizeDomain(body.Domain), body.Upstream, nil, nil)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func WithIPFilter(filter *middleware.IPFilter) Option {
+	return func(h *Handler) {
+		h.ipFilter = filter
+	}
+}
+
+func WithUAFilter(filter *middleware.UAFilter) Option {
+	return func(h *Handler) {
+		h.uaFilter = filter
+	}
+}
+
+func WithWAF(waf *middleware.WAF) Option {
+	return func(h *Handler) {
+		h.waf = waf
+	}
 }
 
 func normalizeDomain(domain string) string {

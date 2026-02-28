@@ -10,6 +10,7 @@ import (
 type Route struct {
 	Upstream  string
 	BasicAuth *store.BasicAuthConfig
+	Security  *store.SecurityConfig
 }
 
 // Table is an in-memory domain→upstream routing table safe for concurrent use.
@@ -28,10 +29,10 @@ func NewTable() *Table {
 }
 
 // Set registers or replaces the route for domain.
-func (t *Table) Set(domain, upstream string, basicAuth *store.BasicAuthConfig) {
+func (t *Table) Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.dynamicRoutes[domain] = Route{Upstream: upstream, BasicAuth: basicAuth}
+	t.dynamicRoutes[domain] = Route{Upstream: upstream, BasicAuth: basicAuth, Security: security}
 }
 
 // SetStatic registers or replaces a static upstream for domain.

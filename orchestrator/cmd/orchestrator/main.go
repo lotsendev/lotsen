@@ -168,6 +168,8 @@ func probeProxyTraffic(ctx context.Context, trafficURL string) (*apiclient.Heart
 		TotalRequests      int64 `json:"totalRequests"`
 		SuspiciousRequests int64 `json:"suspiciousRequests"`
 		BlockedRequests    int64 `json:"blockedRequests"`
+		WAFBlockedRequests int64 `json:"wafBlockedRequests"`
+		UABlockedRequests  int64 `json:"uaBlockedRequests"`
 		ActiveBlockedIPs   int   `json:"activeBlockedIps"`
 		BlockedIPs         []struct {
 			IP           string     `json:"ip"`
@@ -183,6 +185,8 @@ func probeProxyTraffic(ctx context.Context, trafficURL string) (*apiclient.Heart
 		TotalRequests:      body.TotalRequests,
 		SuspiciousRequests: body.SuspiciousRequests,
 		BlockedRequests:    body.BlockedRequests,
+		WAFBlockedRequests: body.WAFBlockedRequests,
+		UABlockedRequests:  body.UABlockedRequests,
 		ActiveBlockedIPs:   body.ActiveBlockedIPs,
 	}
 

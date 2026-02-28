@@ -60,6 +60,7 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		Volumes:   body.Volumes,
 		Domain:    body.Domain,
 		BasicAuth: basicAuth,
+		Security:  body.Security,
 	}
 	if patchRequiresRedeploy(existing, body) {
 		patch.Status = store.StatusDeploying

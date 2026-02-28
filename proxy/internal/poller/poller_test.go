@@ -36,10 +36,10 @@ func newSpyTable() *spyTable {
 	return &spyTable{routes: make(map[string]routing.Route)}
 }
 
-func (s *spyTable) Set(domain, upstream string, basicAuth *store.BasicAuthConfig) {
+func (s *spyTable) Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.routes[domain] = routing.Route{Upstream: upstream, BasicAuth: basicAuth}
+	s.routes[domain] = routing.Route{Upstream: upstream, BasicAuth: basicAuth, Security: security}
 }
 
 func (s *spyTable) Delete(domain string) {
@@ -210,5 +210,39 @@ func TestPoller_DoesNotDeleteStaticRoutes(t *testing.T) {
 
 	if route, ok := tbl.Get("dashboard.example.com"); !ok || route.Upstream != "localhost:3000" {
 		t.Fatalf("want static dashboard route preserved, got %q (ok=%v)", route.Upstream, ok)
+	}
+}
+
+func TestPoller_PropagatesSecurityConfig(t *testing.T) {
+	ms := &memStore{
+		deployments: []store.Deployment{{
+			ID:     "d1",
+			Domain: "example.com",
+			Ports:  []string{"8080:80"},
+			Security: &store.SecurityConfig{
+				WAFEnabled:  true,
+				IPDenylist:  []string{"10.0.0.0/8"},
+				IPAllowlist: []string{"203.0.113.0/24"},
+			},
+		}},
+	}
+	tbl := newSpyTable()
+	p := poller.New(ms, tbl, time.Minute)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go p.Run(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	route, ok := tbl.get("example.com")
+	if !ok {
+		t.Fatal("want example.com registered, got not found")
+	}
+	if route.Security == nil || !route.Security.WAFEnabled {
+		t.Fatalf("want security config with waf enabled, got %#v", route.Security)
+	}
+	if len(route.Security.IPAllowlist) != 1 || route.Security.IPAllowlist[0] != "203.0.113.0/24" {
+		t.Fatalf("want security allowlist propagated, got %#v", route.Security)
 	}
 }

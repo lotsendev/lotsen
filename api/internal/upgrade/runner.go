@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"sync"
 	"syscall"
 	"time"
@@ -203,9 +204,33 @@ func defaultProcessBuilder(targetVersion string) (processConfig, error) {
 		targetVersion = "latest"
 	}
 
+	startedAt := time.Now().UTC().Format(time.RFC3339)
+
+	if systemdRunPath, err := exec.LookPath("systemd-run"); err == nil {
+		unit := fmt.Sprintf("dirigent-upgrade-%d", time.Now().UnixNano())
+		return processConfig{
+			path: systemdRunPath,
+			args: []string{
+				"systemd-run",
+				"--unit", unit,
+				"--collect",
+				"--no-block",
+				"--setenv=DIRIGENT_UPGRADE_STARTED_AT=" + startedAt,
+				"/bin/sh",
+				"-c",
+				"exec /usr/local/bin/dirigent upgrade --to \"$1\" --non-interactive --yes >> /tmp/dirigent-upgrade.log 2>&1",
+				"sh",
+				targetVersion,
+			},
+			env: os.Environ(),
+			cleanup: func() {
+			},
+		}, nil
+	}
+
 	path := "/usr/local/bin/dirigent"
 	args := []string{"dirigent", "upgrade", "--to", targetVersion, "--non-interactive", "--yes"}
-	env := append(os.Environ(), "DIRIGENT_UPGRADE_STARTED_AT="+time.Now().UTC().Format(time.RFC3339))
+	env := append(os.Environ(), "DIRIGENT_UPGRADE_STARTED_AT="+startedAt)
 
 	return processConfig{
 		path:    path,

@@ -15,7 +15,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASES_TOKEN }}
 
       - name: Calculate next semver from conventional commits
         run: |
@@ -67,4 +66,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "$NEW_TAG"
-          git push origin "$NEW_TAG"
+          RELEASES_REMOTE="https://x-access-token:${{ secrets.RELEASES_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote "$RELEASES_REMOTE" >/dev/null 2>&1; then
+            git push "$RELEASES_REMOTE" "$NEW_TAG"
+          else
+            echo "RELEASES_TOKEN has no access to ${GITHUB_REPOSITORY}; using default token"
+            git push origin "$NEW_TAG"
+          fi

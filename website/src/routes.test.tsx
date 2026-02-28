@@ -4,6 +4,7 @@ import Landing from '@/pages/Landing'
 import DocsLayout from '@/pages/docs/DocsLayout'
 import GettingStarted from '@/pages/docs/GettingStarted'
 import DeploymentConfiguration from '@/pages/docs/DeploymentConfiguration'
+import StrictModeSetup from '@/pages/docs/StrictModeSetup'
 
 function TestApp({ initialPath }: { initialPath: string }) {
   return (
@@ -14,6 +15,7 @@ function TestApp({ initialPath }: { initialPath: string }) {
           <Route index element={<Navigate to="getting-started" replace />} />
           <Route path="getting-started" element={<GettingStarted />} />
           <Route path="deployment-configuration" element={<DeploymentConfiguration />} />
+          <Route path="strict-mode-setup" element={<StrictModeSetup />} />
         </Route>
       </Routes>
     </MemoryRouter>
@@ -42,6 +44,13 @@ describe('Routes', () => {
     ).toBeInTheDocument()
   })
 
+  it('renders the Strict Mode Setup doc at /docs/strict-mode-setup', () => {
+    render(<TestApp initialPath="/docs/strict-mode-setup" />)
+    expect(
+      screen.getByRole('heading', { name: /strict mode setup/i }),
+    ).toBeInTheDocument()
+  })
+
   it('/docs redirects to /docs/getting-started', () => {
     render(<TestApp initialPath="/docs" />)
     expect(
@@ -57,7 +66,7 @@ describe('Routes', () => {
       'href',
       '/docs/deployment-configuration',
     )
-    expect(screen.getByText(/curl -fsSL/i).tagName).toBe('CODE')
+    expect(screen.getAllByText(/curl -fsSL/i)[0].tagName).toBe('CODE')
     expect(screen.getByText(/OS:/i)).toBeInTheDocument()
   })
 })

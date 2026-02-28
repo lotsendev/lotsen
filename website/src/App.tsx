@@ -3,6 +3,7 @@ import Landing from '@/pages/Landing'
 import DocsLayout from '@/pages/docs/DocsLayout'
 import GettingStarted from '@/pages/docs/GettingStarted'
 import DeploymentConfiguration from '@/pages/docs/DeploymentConfiguration'
+import StrictModeSetup from '@/pages/docs/StrictModeSetup'
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
           <Route index element={<Navigate to="getting-started" replace />} />
           <Route path="getting-started" element={<GettingStarted />} />
           <Route path="deployment-configuration" element={<DeploymentConfiguration />} />
+          <Route path="strict-mode-setup" element={<StrictModeSetup />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -12,6 +12,7 @@ A deployment is the central object in Dirigent. It describes a container you wan
 | volumes | string[] | No       | Volume mounts in `host-path:container-path` format. The host path must be an absolute path on the VPS. Example: `["/data/postgres:/var/lib/postgresql/data"]`. |
 | envs    | object   | No       | Environment variables passed into the container as a key-value map. Values are stored in the Dirigent data file on disk. Example: `{"DATABASE_URL": "postgres://..."}`. |
 | domain  | string   | No       | A fully-qualified domain name to route to this container via the integrated reverse proxy. Point your DNS A record to the VPS IP, and Dirigent will forward HTTP traffic on port 80. Example: `api.example.com`. |
+| basic_auth | object | No       | Require HTTP Basic Auth on the proxy route for this deployment. Only applies when `domain` is set. Contains a `users` list of `{ username, password }` pairs. |
 
 ## Ports
 
@@ -66,6 +67,14 @@ To expose a deployment via a domain:
 3. Ensure the container exposes a port on its internal network (no host port mapping required — the proxy communicates over the `dirigent` Docker network).
 
 > **Note:** The proxy currently handles HTTP only. TLS termination is on the roadmap for a future release.
+
+## Basic Auth
+
+You can protect a domain-exposed deployment with HTTP Basic Auth. When configured, the proxy challenges any incoming request before forwarding it to the container.
+
+Set credentials in the dashboard when creating or editing a deployment. Multiple users can be added — useful for granting access to teammates without sharing a single credential.
+
+> **Security note:** Basic Auth over plain HTTP transmits credentials in base64. Combine with HTTPS termination (via an upstream proxy or CDN) for production use.
 
 ## Deployment lifecycle
 

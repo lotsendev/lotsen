@@ -174,7 +174,14 @@ export default function DocsPage({ markdown }: DocsPageProps) {
       {blocks.map((block, index) => {
         switch (block.type) {
           case 'h2':
-            return <h2 key={index}>{block.text}</h2>
+            return (
+              <h2
+                key={index}
+                id={block.text.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}
+              >
+                {block.text}
+              </h2>
+            )
           case 'h3':
             return <h3 key={index}>{block.text}</h3>
           case 'p':

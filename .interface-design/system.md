@@ -89,6 +89,18 @@
   - success strip with reload action,
   - failure strip with log excerpt preserved in monospace.
 
+### Deployment Detail Page Pattern
+- Back navigation is a styled `Link` (not a `Button`) — `text-muted-foreground hover:text-foreground transition-colors` — navigation weight, not action weight.
+- Service identity block (`rounded-xl border border-border/60 bg-card p-5`):
+  - Left: display-font name + StatusBadge inline, image with Package icon below.
+  - Right: Edit button (`variant="outline" size="sm" h-7 gap-1.5 px-2.5 text-xs`) at top, domain link + ID below.
+  - Domain, when present, is an `<a href="https://...">` with `ExternalLink` icon that fades in on `group-hover` (`opacity-0 group-hover:opacity-60`).
+  - ID uses `text-[11px] text-muted-foreground/40` — tertiary, only for debugging.
+- Section labels: `text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60`.
+- Config list items: `rounded-md bg-background/70 px-2.5 py-1.5 font-mono text-xs text-muted-foreground`.
+- Store snapshot: collapsible section using `useState`, ChevronDown rotates 180° when open. Content is `JSON.stringify(deployment, null, 2)` in a `bg-background/70 rounded-lg border border-border/40 p-4` pre block.
+- Edit action opens a Dialog reusing `EditDeploymentForm` with `hideHeader` + `className="mb-0 border-0 shadow-none"`.
+
 ### Dialog Pattern
 - Dialogs use softened overlays and card-like content surfaces:
   - overlay: `bg-foreground/35` + slight blur,

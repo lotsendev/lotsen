@@ -3,11 +3,16 @@ import type { DeploymentLogEvent } from '../lib/api'
 
 export function useDeploymentLogsSSE(deploymentId: string) {
   const [lines, setLines] = useState<string[]>([])
+  const [connected, setConnected] = useState(false)
 
   useEffect(() => {
     setLines([])
+    setConnected(false)
 
     const es = new EventSource(`/api/deployments/${deploymentId}/logs`)
+
+    es.onopen = () => setConnected(true)
+    es.onerror = () => setConnected(false)
 
     es.onmessage = (event: MessageEvent) => {
       try {
@@ -21,5 +26,5 @@ export function useDeploymentLogsSSE(deploymentId: string) {
     return () => es.close()
   }, [deploymentId])
 
-  return { lines }
+  return { lines, connected }
 }

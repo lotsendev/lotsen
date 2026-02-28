@@ -64,6 +64,32 @@ sudo dirigent setup
 
 The setup command writes values to `/etc/dirigent/dirigent.env`, restarts the proxy, and enables dashboard access at `https://dashboard.example.com` and protected by HTTP Basic Auth.
 
+### Proxy hardening
+
+The proxy ships with three hardening profiles:
+
+- `standard` (default): blocks `.env`, `.git`, and similar file probes.
+- `strict`: adds broader scanner-target blocks and tighter rate limits — recommended for internet-facing hosts.
+- `off`: disables hardening checks.
+
+Pass the flag during setup:
+
+```bash
+sudo dirigent setup --proxy-hardening-profile strict
+```
+
+### Strict mode (recommended for public VPS)
+
+Use strict host hardening and strict proxy hardening together when your server is internet-facing:
+
+```bash
+sudo dirigent setup --profile strict --proxy-hardening-profile strict
+```
+
+This applies stricter firewall and SSH defaults on the host, plus stronger scanner/path protections at the proxy layer.
+
+For the full checklist (SSH key prerequisites, DNS, verification, and troubleshooting), see [Strict Mode Setup](/docs/strict-mode-setup).
+
 ## Your first deployment
 
 ### 1. Open the Deployments page
@@ -93,4 +119,16 @@ Back on the Deployments table, wait for status to become `healthy`.
 ## Next steps
 
 - Learn all available deployment fields in [Deployment Configuration](/docs/deployment-configuration).
-- Re-run installer to upgrade Dirigent safely.
+
+## Upgrading
+
+Dirigent can be upgraded in two ways:
+
+- **Dashboard:** Open **Settings → System** and click **Check for updates**. If a new version is available, click **Upgrade** to trigger an in-place upgrade without leaving the browser.
+- **CLI:** Re-run the installer on your VPS:
+  ```bash
+  curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
+  sudo dirigent setup
+  ```
+
+Both paths perform an in-place upgrade and restart the services.

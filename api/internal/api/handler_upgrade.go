@@ -6,17 +6,33 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/ercadev/dirigent/internal/upgrade"
 )
 
 func (h *Handler) startUpgrade(w http.ResponseWriter, r *http.Request) {
-	targetVersion := "latest"
+	targetVersion := ""
+	if r.ContentLength > 0 {
+		var body struct {
+			TargetVersion string `json:"targetVersion"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid upgrade payload", http.StatusBadRequest)
+			return
+		}
+		targetVersion = strings.TrimSpace(body.TargetVersion)
+	}
+
+	if targetVersion == "" {
+		targetVersion = "latest"
+	}
+
 	snapshot, err := h.versions.Snapshot(r.Context())
 	if err != nil {
 		log.Printf("startUpgrade: version snapshot failed: %v", err)
 	}
-	if snapshot.LatestVersion != "" {
+	if targetVersion == "latest" && snapshot.LatestVersion != "" {
 		targetVersion = snapshot.LatestVersion
 	}
 

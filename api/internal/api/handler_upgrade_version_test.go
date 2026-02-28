@@ -20,6 +20,7 @@ import (
 type versionProviderStub struct {
 	snapshot version.Snapshot
 	err      error
+	releases []version.Release
 }
 
 func (s *versionProviderStub) Snapshot(_ context.Context) (version.Snapshot, error) {
@@ -27,6 +28,13 @@ func (s *versionProviderStub) Snapshot(_ context.Context) (version.Snapshot, err
 		return version.Snapshot{}, s.err
 	}
 	return s.snapshot, nil
+}
+
+func (s *versionProviderStub) Releases(_ context.Context, _ int) ([]version.Release, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.releases, nil
 }
 
 type versionProviderWithRefreshStub struct {
@@ -46,12 +54,18 @@ func (s *versionProviderWithRefreshStub) RefreshSnapshot(_ context.Context) (ver
 	return s.refreshSnapshot, nil
 }
 
+func (s *versionProviderWithRefreshStub) Releases(_ context.Context, _ int) ([]version.Release, error) {
+	return nil, nil
+}
+
 type upgradeRunnerStub struct {
 	startErr error
 	lines    chan string
+	started  string
 }
 
-func (s *upgradeRunnerStub) Start(_ string) error {
+func (s *upgradeRunnerStub) Start(target string) error {
+	s.started = target
 	return s.startErr
 }
 
@@ -170,10 +184,11 @@ func TestGetVersion_RefreshQueryUsesFreshSnapshot(t *testing.T) {
 }
 
 func TestPostUpgrade_Returns202WhenIdle(t *testing.T) {
+	upgrader := &upgradeRunnerStub{}
 	srv := newTestServerWithUpgradeAndVersion(
 		newMemStore(),
 		&versionProviderStub{snapshot: version.Snapshot{LatestVersion: "v1.1.0"}},
-		&upgradeRunnerStub{},
+		upgrader,
 	)
 	defer srv.Close()
 
@@ -186,6 +201,36 @@ func TestPostUpgrade_Returns202WhenIdle(t *testing.T) {
 
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("want 202, got %d", resp.StatusCode)
+	}
+
+	if upgrader.started != "v1.1.0" {
+		t.Fatalf("upgrade target = %q, want v1.1.0", upgrader.started)
+	}
+}
+
+func TestPostUpgrade_UsesRequestedTargetVersion(t *testing.T) {
+	upgrader := &upgradeRunnerStub{}
+	srv := newTestServerWithUpgradeAndVersion(
+		newMemStore(),
+		&versionProviderStub{snapshot: version.Snapshot{LatestVersion: "v1.1.0"}},
+		upgrader,
+	)
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/upgrade", strings.NewReader(`{"targetVersion":"v1.0.9"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/upgrade: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("want 202, got %d", resp.StatusCode)
+	}
+
+	if upgrader.started != "v1.0.9" {
+		t.Fatalf("upgrade target = %q, want v1.0.9", upgrader.started)
 	}
 }
 
@@ -262,5 +307,47 @@ func TestUpgradeLogs_StreamsAndCloses(t *testing.T) {
 
 	if len(readLines) != 2 {
 		t.Fatalf("want 2 SSE lines, got %d (%v)", len(readLines), readLines)
+	}
+}
+
+func TestGetVersionReleases_ReturnsReleaseList(t *testing.T) {
+	published := time.Date(2026, time.February, 28, 9, 30, 0, 0, time.UTC)
+	srv := newTestServerWithUpgradeAndVersion(
+		newMemStore(),
+		&versionProviderStub{releases: []version.Release{{TagName: "v1.2.0", Body: "notes", PublishedAt: published}}},
+		&upgradeRunnerStub{},
+	)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/version/releases?limit=10")
+	if err != nil {
+		t.Fatalf("GET /api/version/releases: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var body []struct {
+		Version      string    `json:"version"`
+		ReleaseNotes string    `json:"releaseNotes"`
+		PublishedAt  time.Time `json:"publishedAt"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(body) != 1 {
+		t.Fatalf("want 1 release, got %d", len(body))
+	}
+	if body[0].Version != "v1.2.0" {
+		t.Fatalf("version = %q, want v1.2.0", body[0].Version)
+	}
+	if body[0].ReleaseNotes != "notes" {
+		t.Fatalf("releaseNotes = %q, want notes", body[0].ReleaseNotes)
+	}
+	if !body[0].PublishedAt.Equal(published) {
+		t.Fatalf("publishedAt = %s, want %s", body[0].PublishedAt, published)
 	}
 }

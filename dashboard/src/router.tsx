@@ -9,7 +9,6 @@ import {
 } from '@tanstack/react-router'
 import { Activity, Boxes, Moon, Rocket, Server, Settings, Sun } from 'lucide-react'
 import { Button } from './components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 import {
   Sidebar,
   SidebarContent,
@@ -123,25 +122,19 @@ function DashboardLayout() {
 
       <SidebarInset>
         <p className="mb-4 text-sm text-muted-foreground">{isSystemStatusPage || isTrafficPage ? 'Observability' : isSettingsPage ? 'Configuration' : 'Deployments'}</p>
-        {isDeploymentDetailPage ? (
-          <div className="mx-auto w-full max-w-5xl space-y-4">
-            <div>
-              <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">{pageTitle}</h1>
-              <p className="text-sm text-muted-foreground">{pageDescription}</p>
-            </div>
-            <Outlet />
+        <div className="mx-auto w-full max-w-5xl space-y-4">
+          <div>
+            <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">{pageTitle}</h1>
+            <p className="text-sm text-muted-foreground">{pageDescription}</p>
           </div>
-        ) : (
-          <Card className="mx-auto w-full max-w-5xl">
-            <CardHeader>
-              <CardTitle>{pageTitle}</CardTitle>
-              <CardDescription>{pageDescription}</CardDescription>
-            </CardHeader>
-            <CardContent>
+          {isDeploymentPage ? (
+            <Outlet />
+          ) : (
+            <div className="space-y-4">
               <Outlet />
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          )}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   )

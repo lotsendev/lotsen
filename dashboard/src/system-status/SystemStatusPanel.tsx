@@ -1,10 +1,11 @@
-import { useSystemStatus } from './useSystemStatus'
-import { Badge } from '../components/ui/badge'
 import { AlertTriangle, Check, CheckCircle2, CircleHelp, CircleSlash2, X } from 'lucide-react'
+import { Badge } from '../components/ui/badge'
 import type { HostMetricSystemStatus, SystemStatusState } from '../lib/api'
+import { useSystemStatus } from './useSystemStatus'
 
 type BadgeVariant = 'secondary' | 'info' | 'success' | 'destructive' | 'warning'
 type CheckValue = boolean | undefined
+const SERVICE_CHECK_ROWS = 3
 
 const STATE_VARIANT: Record<SystemStatusState, BadgeVariant> = {
   healthy: 'success',
@@ -12,12 +13,10 @@ const STATE_VARIANT: Record<SystemStatusState, BadgeVariant> = {
   unavailable: 'secondary',
 }
 
-const DEGRADED_PRESSURE_THRESHOLD = 80
-
-const CARD_TONE: Record<SystemStatusState, string> = {
-  healthy: 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/60 dark:bg-emerald-950/30',
-  degraded: 'border-amber-200 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/30',
-  unavailable: 'border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/40',
+const STATE_TONE: Record<SystemStatusState, string> = {
+  healthy: 'text-emerald-700 dark:text-emerald-300',
+  degraded: 'text-amber-700 dark:text-amber-300',
+  unavailable: 'text-muted-foreground',
 }
 
 const ICON_TONE: Record<SystemStatusState, string> = {
@@ -25,6 +24,8 @@ const ICON_TONE: Record<SystemStatusState, string> = {
   degraded: 'text-amber-600 dark:text-amber-400',
   unavailable: 'text-slate-500 dark:text-slate-400',
 }
+
+const DEGRADED_PRESSURE_THRESHOLD = 80
 
 function formatTimestamp(timestamp?: string) {
   if (!timestamp) {
@@ -151,14 +152,18 @@ function ServiceChecks({
   serviceId: string
   checks: Array<{ label: string; value: CheckValue }>
 }) {
+  const placeholders = Math.max(0, SERVICE_CHECK_ROWS - checks.length)
+
   return (
-    <div className="mt-3 border-t border-border/50 pt-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Checks</p>
+    <div className="mt-3 rounded-md border border-border/60 bg-background p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Checks</p>
       <ul className="mt-2 space-y-1.5 text-xs">
         {checks.map((check, index) => (
-          <li key={check.label} className="flex items-center justify-between gap-3">
-            <span>{check.label}</span>
-            <Badge variant={checkVariant(check.value)}>
+          <li key={check.label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+            <span className="truncate text-foreground" title={check.label}>
+              {check.label}
+            </span>
+            <Badge variant={checkVariant(check.value)} className="min-w-13 justify-center">
               {(() => {
                 const Icon = checkIcon(check.value)
                 return (
@@ -172,6 +177,9 @@ function ServiceChecks({
             </Badge>
           </li>
         ))}
+        {Array.from({ length: placeholders }).map((_, index) => (
+          <li key={`placeholder-${serviceId}-${index}`} aria-hidden className="h-[22px] rounded bg-background/40" />
+        ))}
       </ul>
     </div>
   )
@@ -179,166 +187,162 @@ function ServiceChecks({
 
 export function SystemStatusPanel() {
   const { status, isLoading, isError } = useSystemStatus()
+
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground">Loading system status…</p>
+  }
+
+  if (isError || !status) {
+    return <p className="text-sm text-destructive">Unable to fetch system status right now.</p>
+  }
+
+  const serviceStates = [status.api.state, status.orchestrator.state, status.docker.state, status.loadBalancer.state]
+  const serviceSummary = {
+    total: serviceStates.length,
+    healthy: serviceStates.filter(state => state === 'healthy').length,
+    degraded: serviceStates.filter(state => state === 'degraded').length,
+    unavailable: serviceStates.filter(state => state === 'unavailable').length,
+  }
+
+  const statusCards = [
+    {
+      id: 'api',
+      title: 'API signal',
+      description: 'Control plane availability.',
+      state: status.api.state,
+      lastUpdatedLabel: `Last updated: ${formatTimestamp(status.api.lastUpdated)}`,
+      testId: 'api-status-icon',
+      checks: [
+        { label: 'Process running', value: status.api.checks?.processRunning },
+        { label: 'Dashboard reachability', value: status.api.checks?.dashboardReachable },
+        { label: 'Store access', value: status.api.checks?.storeAccessible },
+      ],
+      notes: [] as string[],
+    },
+    {
+      id: 'orchestrator',
+      title: 'Orchestrator',
+      description: 'Agent liveness signal.',
+      state: status.orchestrator.state,
+      lastUpdatedLabel: `Last heartbeat: ${formatTimestamp(status.orchestrator.lastUpdated)}`,
+      testId: 'orchestrator-status-icon',
+      checks: [
+        { label: 'Process running', value: status.orchestrator.checks?.processRunning },
+        { label: 'Docker daemon reachability', value: status.orchestrator.checks?.dockerReachable },
+        { label: 'Store access', value: status.orchestrator.checks?.storeAccessible },
+      ],
+      notes: [`Freshness: ${formatFreshness(status.orchestrator.lastUpdated)}`, 'Orchestrator heartbeat stream is active'],
+    },
+    {
+      id: 'docker',
+      title: 'Docker connectivity',
+      description: 'Container runtime reachability.',
+      state: status.docker.state,
+      lastUpdatedLabel: `Last checked: ${formatTimestamp(status.docker.lastUpdated)}`,
+      testId: 'docker-status-icon',
+      checks: [{ label: 'Daemon healthy', value: status.docker.checks?.daemonHealthy }],
+      notes: [
+        `Signal age: ${formatFreshness(status.docker.lastUpdated)}`,
+        status.docker.state === 'healthy'
+          ? 'Docker is reachable from orchestrator'
+          : status.docker.state === 'degraded'
+            ? 'Docker check failed at last probe'
+            : 'No Docker connectivity telemetry yet',
+      ],
+    },
+    {
+      id: 'load-balancer',
+      title: 'Load balancer',
+      description: 'Reverse proxy health signal.',
+      state: status.loadBalancer.state,
+      lastUpdatedLabel: `Last checked: ${formatTimestamp(status.loadBalancer.lastUpdated)}`,
+      testId: 'load-balancer-status-icon',
+      checks: [
+        { label: 'Process running', value: status.loadBalancer.checks?.processRunning },
+        { label: 'Healthcheck response', value: status.loadBalancer.checks?.healthcheckResponding },
+      ],
+      notes: [
+        `Signal age: ${formatFreshness(status.loadBalancer.lastUpdated)}`,
+        status.loadBalancer.state === 'healthy'
+          ? 'Load balancer healthcheck is responding'
+          : status.loadBalancer.state === 'degraded'
+            ? 'Load balancer healthcheck failed at last probe'
+            : 'No load balancer telemetry yet',
+      ],
+    },
+  ]
+
+  statusCards[0].notes = [`Signal age: ${formatFreshness(status.api.lastUpdated)}`, 'API control plane endpoint is responding']
+
   return (
-    <section className="space-y-6">
-      {isLoading && <p className="text-sm text-muted-foreground">Loading system status…</p>}
+    <section className="space-y-5">
+      <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Signal grid</p>
+        <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">
+          Control plane and runtime health
+        </h2>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <article className="rounded-lg border border-border/60 bg-background/70 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Services tracked</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{serviceSummary.total}</p>
+          </article>
+          <article className="rounded-lg border border-border/60 bg-background/70 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Healthy</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{serviceSummary.healthy}</p>
+          </article>
+          <article className="rounded-lg border border-border/60 bg-background/70 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Degraded</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{serviceSummary.degraded}</p>
+          </article>
+          <article className="rounded-lg border border-border/60 bg-background/70 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Unavailable</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{serviceSummary.unavailable}</p>
+          </article>
+        </div>
+      </section>
 
-      {isError && (
-        <p className="text-sm text-destructive">Unable to fetch system status right now.</p>
-      )}
-
-      {status && !isLoading && !isError && (
-        <div className="space-y-8">
-          <section className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Services</p>
-            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-              <article className={`rounded-lg border p-5 text-sm text-muted-foreground ${CARD_TONE[status.api.state]}`}>
-                <div className="flex items-start justify-between gap-3">
+      <section className="space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Services</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {statusCards.map(card => {
+            const Icon = statusIcon(card.state)
+            return (
+              <article key={card.id} className="flex h-full flex-col rounded-lg border border-border/60 bg-card p-4 text-sm">
+                <div className="flex min-h-20 items-start justify-between gap-3">
                   <div>
-                    <p className="font-semibold text-foreground">API signal</p>
-                    <p className="mt-1 text-xs">Control plane availability.</p>
+                    <p className="font-semibold text-foreground">{card.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{card.description}</p>
                   </div>
-                  {(() => {
-                    const Icon = statusIcon(status.api.state)
-                    return (
-                      <div className="rounded-md bg-background/70 p-2">
-                        <Icon data-testid="api-status-icon" className={`h-8 w-8 ${ICON_TONE[status.api.state]}`} />
-                      </div>
-                    )
-                  })()}
+                  <div className="rounded-md border border-border/60 bg-background/70 p-2">
+                    <Icon data-testid={card.testId} className={`h-5 w-5 ${ICON_TONE[card.state]}`} />
+                  </div>
                 </div>
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-wide">State</p>
-                  <Badge variant={STATE_VARIANT[status.api.state]}>{status.api.state}</Badge>
-                </div>
-                <ServiceChecks
-                  serviceId="api"
-                  checks={[
-                    { label: 'Process running', value: status.api.checks?.processRunning },
-                    { label: 'Dashboard reachability', value: status.api.checks?.dashboardReachable },
-                    { label: 'Store access', value: status.api.checks?.storeAccessible },
-                  ]}
-                />
-                <p className="mt-3 border-t border-border/50 pt-3 text-xs">Last updated: {formatTimestamp(status.api.lastUpdated)}</p>
-              </article>
 
-              <article className={`rounded-lg border p-5 text-sm text-muted-foreground ${CARD_TONE[status.orchestrator.state]}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-foreground">Orchestrator</p>
-                    <p className="mt-1 text-xs">Agent liveness signal.</p>
-                  </div>
-                  {(() => {
-                    const Icon = statusIcon(status.orchestrator.state)
-                    return (
-                      <div className="rounded-md bg-background/70 p-2">
-                        <Icon
-                          data-testid="orchestrator-status-icon"
-                          className={`h-8 w-8 ${ICON_TONE[status.orchestrator.state]}`}
-                        />
-                      </div>
-                    )
-                  })()}
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border/60 bg-background/70 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.13em] text-muted-foreground">State</p>
+                  <Badge variant={STATE_VARIANT[card.state]} className={`min-w-24 justify-center ${STATE_TONE[card.state]}`}>
+                    {card.state}
+                  </Badge>
                 </div>
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-wide">State</p>
-                  <Badge variant={STATE_VARIANT[status.orchestrator.state]}>{status.orchestrator.state}</Badge>
-                </div>
-                <ServiceChecks
-                  serviceId="orchestrator"
-                  checks={[
-                    { label: 'Process running', value: status.orchestrator.checks?.processRunning },
-                    { label: 'Docker daemon reachability', value: status.orchestrator.checks?.dockerReachable },
-                    { label: 'Store access', value: status.orchestrator.checks?.storeAccessible },
-                  ]}
-                />
-                <div className="mt-3 space-y-1 border-t border-border/50 pt-3 text-xs">
-                  <p>Last heartbeat: {formatTimestamp(status.orchestrator.lastUpdated)}</p>
-                  <p>Freshness: {formatFreshness(status.orchestrator.lastUpdated)}</p>
-                </div>
-              </article>
 
-              <article className={`rounded-lg border p-5 text-sm text-muted-foreground ${CARD_TONE[status.docker.state]}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-foreground">Docker connectivity</p>
-                    <p className="mt-1 text-xs">Container runtime reachability.</p>
-                  </div>
-                  {(() => {
-                    const Icon = statusIcon(status.docker.state)
-                    return (
-                      <div className="rounded-md bg-background/70 p-2">
-                        <Icon data-testid="docker-status-icon" className={`h-8 w-8 ${ICON_TONE[status.docker.state]}`} />
-                      </div>
-                    )
-                  })()}
-                </div>
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-wide">State</p>
-                  <Badge variant={STATE_VARIANT[status.docker.state]}>{status.docker.state}</Badge>
-                </div>
-                <ServiceChecks
-                  serviceId="docker"
-                  checks={[{ label: 'Daemon healthy', value: status.docker.checks?.daemonHealthy }]}
-                />
-                <p className="mt-3 border-t border-border/50 pt-3 text-xs">Last checked: {formatTimestamp(status.docker.lastUpdated)}</p>
-                <p className="mt-1 text-xs">
-                  {status.docker.state === 'healthy' && 'Docker is reachable from orchestrator'}
-                  {status.docker.state === 'degraded' && 'Docker check failed at last probe'}
-                  {status.docker.state === 'unavailable' && 'No Docker connectivity telemetry yet'}
-                </p>
-              </article>
+                <ServiceChecks serviceId={card.id} checks={card.checks} />
 
-              <article className={`rounded-lg border p-5 text-sm text-muted-foreground ${CARD_TONE[status.loadBalancer.state]}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-foreground">Load balancer</p>
-                    <p className="mt-1 text-xs">Reverse proxy health signal.</p>
-                  </div>
-                  {(() => {
-                    const Icon = statusIcon(status.loadBalancer.state)
-                    return (
-                      <div className="rounded-md bg-background/70 p-2">
-                        <Icon
-                          data-testid="load-balancer-status-icon"
-                          className={`h-8 w-8 ${ICON_TONE[status.loadBalancer.state]}`}
-                        />
-                      </div>
-                    )
-                  })()}
-                </div>
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-wide">State</p>
-                  <Badge variant={STATE_VARIANT[status.loadBalancer.state]}>{status.loadBalancer.state}</Badge>
-                </div>
-                <ServiceChecks
-                  serviceId="load-balancer"
-                  checks={[
-                    { label: 'Process running', value: status.loadBalancer.checks?.processRunning },
-                    { label: 'Healthcheck response', value: status.loadBalancer.checks?.healthcheckResponding },
-                  ]}
-                />
-                <p className="mt-3 border-t border-border/50 pt-3 text-xs">
-                  Last checked: {formatTimestamp(status.loadBalancer.lastUpdated)}
-                </p>
-                <p className="mt-1 text-xs">
-                  {status.loadBalancer.state === 'healthy' && 'Load balancer healthcheck is responding'}
-                  {status.loadBalancer.state === 'degraded' && 'Load balancer healthcheck failed at last probe'}
-                  {status.loadBalancer.state === 'unavailable' && 'No load balancer telemetry yet'}
-                </p>
-                {status.loadBalancer.traffic && (
-                  <div className="mt-3 border-t border-border/50 pt-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Traffic and security</p>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                {card.id === 'load-balancer' && status.loadBalancer.traffic && (
+                  <div className="mt-3 rounded-md border border-border/60 bg-background/70 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Traffic and security</p>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-foreground">
                       <p>Total requests: {formatCount(status.loadBalancer.traffic.totalRequests)}</p>
                       <p>Suspicious: {formatCount(status.loadBalancer.traffic.suspiciousRequests)}</p>
                       <p>Blocked requests: {formatCount(status.loadBalancer.traffic.blockedRequests)}</p>
                       <p>Active blocked IPs: {formatCount(status.loadBalancer.traffic.activeBlockedIps)}</p>
                     </div>
                     {status.loadBalancer.traffic.blockedIps && status.loadBalancer.traffic.blockedIps.length > 0 ? (
-                      <ul className="mt-2 max-h-28 space-y-1 overflow-auto text-xs">
+                      <ul className="mt-2 max-h-32 space-y-1.5 overflow-auto text-xs">
                         {status.loadBalancer.traffic.blockedIps.map(ip => (
-                          <li key={ip.ip} className="flex items-center justify-between gap-2 rounded border border-border/50 px-2 py-1">
+                          <li
+                            key={ip.ip}
+                            className="flex items-center justify-between gap-2 rounded border border-border/50 bg-background px-2.5 py-1.5"
+                          >
                             <span className="font-mono text-[11px] text-foreground">{ip.ip}</span>
                             <span className="text-muted-foreground">{formatBlockedUntil(ip.blockedUntil)}</span>
                           </li>
@@ -349,48 +353,53 @@ export function SystemStatusPanel() {
                     )}
                   </div>
                 )}
-              </article>
-            </div>
-          </section>
 
-          <section className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Host metrics</p>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <article
-                className={`rounded-lg border p-5 text-sm text-muted-foreground ${CARD_TONE[pressureState(status.host.cpu)]}`}
-              >
-                <p className="font-semibold text-foreground">CPU usage</p>
-                <div className="mt-3 flex items-end justify-between">
-                  <p className="text-3xl font-bold text-foreground">{formatUsageValue(status.host.cpu)}</p>
-                  <p className="text-xs uppercase tracking-wide">host load</p>
+                <div className="mt-auto border-t border-border/50 pt-3 text-xs text-muted-foreground">
+                  <p>{card.lastUpdatedLabel}</p>
+                  <div className="mt-1 space-y-1">
+                    {card.notes.map(note => (
+                      <p key={note}>{note}</p>
+                    ))}
+                  </div>
                 </div>
-                <p className="mt-3">
-                  Pressure{' '}
-                  <Badge variant={STATE_VARIANT[pressureState(status.host.cpu)]}>{pressureLabel(status.host.cpu)}</Badge>
-                </p>
-                <p className="mt-2 text-xs">Reading: {formatUsagePercent(status.host.cpu)}</p>
-                <p className="mt-1 text-xs">Last updated: {formatTimestamp(status.host.cpu.lastUpdated)}</p>
               </article>
-
-              <article
-                className={`rounded-lg border p-5 text-sm text-muted-foreground ${CARD_TONE[pressureState(status.host.ram)]}`}
-              >
-                <p className="font-semibold text-foreground">RAM usage</p>
-                <div className="mt-3 flex items-end justify-between">
-                  <p className="text-3xl font-bold text-foreground">{formatUsageValue(status.host.ram)}</p>
-                  <p className="text-xs uppercase tracking-wide">memory load</p>
-                </div>
-                <p className="mt-3">
-                  Pressure{' '}
-                  <Badge variant={STATE_VARIANT[pressureState(status.host.ram)]}>{pressureLabel(status.host.ram)}</Badge>
-                </p>
-                <p className="mt-2 text-xs">Reading: {formatUsagePercent(status.host.ram)}</p>
-                <p className="mt-1 text-xs">Last updated: {formatTimestamp(status.host.ram.lastUpdated)}</p>
-              </article>
-            </div>
-          </section>
+            )
+          })}
         </div>
-      )}
+      </section>
+
+      <section className="space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Host metrics</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <article className="rounded-lg border border-border/60 bg-card p-4 text-sm">
+            <p className="font-semibold text-foreground">CPU usage</p>
+            <div className="mt-3 flex items-end justify-between rounded-md border border-border/60 bg-background/70 px-3 py-2">
+              <p className="font-mono text-2xl font-semibold text-foreground">{formatUsageValue(status.host.cpu)}</p>
+              <p className="text-[11px] uppercase tracking-[0.13em] text-muted-foreground">host load</p>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Pressure</span>
+              <Badge variant={STATE_VARIANT[pressureState(status.host.cpu)]}>{pressureLabel(status.host.cpu)}</Badge>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Reading: {formatUsagePercent(status.host.cpu)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Last updated: {formatTimestamp(status.host.cpu.lastUpdated)}</p>
+          </article>
+
+          <article className="rounded-lg border border-border/60 bg-card p-4 text-sm">
+            <p className="font-semibold text-foreground">RAM usage</p>
+            <div className="mt-3 flex items-end justify-between rounded-md border border-border/60 bg-background/70 px-3 py-2">
+              <p className="font-mono text-2xl font-semibold text-foreground">{formatUsageValue(status.host.ram)}</p>
+              <p className="text-[11px] uppercase tracking-[0.13em] text-muted-foreground">memory load</p>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Pressure</span>
+              <Badge variant={STATE_VARIANT[pressureState(status.host.ram)]}>{pressureLabel(status.host.ram)}</Badge>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Reading: {formatUsagePercent(status.host.ram)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Last updated: {formatTimestamp(status.host.ram.lastUpdated)}</p>
+          </article>
+        </div>
+      </section>
     </section>
   )
 }

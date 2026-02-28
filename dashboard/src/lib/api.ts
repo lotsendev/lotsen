@@ -41,6 +41,12 @@ export type VersionInfo = {
   cachedAt?: string
 }
 
+export type VersionRelease = {
+  version: string
+  releaseNotes: string
+  publishedAt?: string
+}
+
 export type UpgradeLogEvent = {
   line: string
 }
@@ -232,8 +238,19 @@ export async function getVersionInfo(options?: { forceRefresh?: boolean }): Prom
   return res.json()
 }
 
-export async function triggerUpgrade(): Promise<void> {
-  const res = await fetch('/api/upgrade', { method: 'POST' })
+export async function getVersionReleases(limit = 25): Promise<VersionRelease[]> {
+  const res = await fetch(`/api/version/releases?limit=${limit}`)
+  if (!res.ok) throw new Error('Failed to fetch version releases')
+  return res.json()
+}
+
+export async function triggerUpgrade(targetVersion?: string): Promise<void> {
+  const body = targetVersion ? JSON.stringify({ targetVersion }) : undefined
+  const res = await fetch('/api/upgrade', {
+    method: 'POST',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body,
+  })
   if (res.status === 409) throw new Error('Upgrade already in progress')
   if (!res.ok) throw new Error('Failed to start upgrade')
 }

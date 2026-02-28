@@ -1,4 +1,4 @@
-.PHONY: setup dev build test clean proxy
+.PHONY: setup dev build test clean proxy release
 
 AIR := $(shell go env GOPATH)/bin/air
 
@@ -36,6 +36,10 @@ test:
 # Start the Vite dev server for the marketing website.
 dev-website:
 	cd website && bun run dev
+
+# Trigger a release via conventional-commit analysis (requires gh CLI).
+release:
+	gh workflow run auto-tag.yml --repo ercadev/dirigent
 
 # Remove build artifacts.
 clean:

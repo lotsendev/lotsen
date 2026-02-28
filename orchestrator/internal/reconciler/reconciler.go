@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -106,10 +107,10 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("reconcile: list containers: %w", err)
 	}
 
-	// Build a map of deploymentID → container for quick lookup.
-	containerByDeployment := make(map[string]docker.ManagedContainer, len(containers))
+	// Build a map of deploymentID → containers for quick lookup.
+	containersByDeployment := make(map[string][]docker.ManagedContainer, len(containers))
 	for _, c := range containers {
-		containerByDeployment[c.DeploymentID] = c
+		containersByDeployment[c.DeploymentID] = append(containersByDeployment[c.DeploymentID], c)
 	}
 
 	// Build a set of known deployment IDs for orphan detection.
@@ -124,7 +125,17 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 			r.clearRetryState(d.ID)
 		}
 
-		c, hasContainer := containerByDeployment[d.ID]
+		candidates := containersByDeployment[d.ID]
+		c, hasContainer := choosePrimaryContainer(d.Name, candidates)
+		for _, extra := range candidates {
+			if hasContainer && extra.ID == c.ID {
+				continue
+			}
+			if err := r.docker.StopAndRemove(ctx, extra.ID); err != nil {
+				log.Printf("reconciler: stop+remove stale container %s for deployment %s: %v", extra.ID, d.ID, err)
+			}
+		}
+
 		if r.dashboardDomain != "" && normalizeDomain(d.Domain) == r.dashboardDomain {
 			if d.Status == store.StatusDeploying {
 				r.updateStatus(d.ID, store.StatusFailed, fmt.Sprintf("domain %q is reserved for dashboard", r.dashboardDomain))
@@ -327,4 +338,38 @@ func normalizeDomain(domain string) string {
 	domain = strings.TrimSpace(domain)
 	domain = strings.TrimSuffix(domain, ".")
 	return strings.ToLower(domain)
+}
+
+func choosePrimaryContainer(deploymentName string, containers []docker.ManagedContainer) (docker.ManagedContainer, bool) {
+	if len(containers) == 0 {
+		return docker.ManagedContainer{}, false
+	}
+
+	canonical := strings.TrimSpace(deploymentName)
+	sort.Slice(containers, func(i, j int) bool {
+		scoreI := containerSelectionScore(containers[i], canonical)
+		scoreJ := containerSelectionScore(containers[j], canonical)
+		if scoreI == scoreJ {
+			return containers[i].ID < containers[j].ID
+		}
+		return scoreI > scoreJ
+	})
+
+	return containers[0], true
+}
+
+func containerSelectionScore(c docker.ManagedContainer, canonicalName string) int {
+	name := strings.TrimPrefix(strings.TrimSpace(c.Name), "/")
+	canonical := canonicalName != "" && name == canonicalName
+
+	switch {
+	case c.Running && canonical:
+		return 4
+	case c.Running:
+		return 3
+	case canonical:
+		return 2
+	default:
+		return 1
+	}
 }

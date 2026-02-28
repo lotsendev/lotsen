@@ -89,21 +89,22 @@ type patchDeploymentRequest struct {
 
 // Handler holds the dependencies for the API layer.
 type Handler struct {
-	store        Store
-	events       EventBus
-	dockerLogs   DockerLogs
-	statusEvents *systemStatusBroker
-	accessLogDir string
-	statusSource SystemStatusProvider
-	heartbeats   OrchestratorHeartbeatIngestor
-	docker       DockerConnectivityIngestor
-	loadBalancer LoadBalancerHealthIngestor
-	proxyClient  *http.Client
-	proxyBaseURL string
-	cpu          CPUUtilizationIngestor
-	ram          RAMUtilizationIngestor
-	versions     VersionInfoProvider
-	upgrade      UpgradeRunner
+	store          Store
+	events         EventBus
+	dockerLogs     DockerLogs
+	statusEvents   *systemStatusBroker
+	accessLogDir   string
+	statusSource   SystemStatusProvider
+	heartbeats     OrchestratorHeartbeatIngestor
+	docker         DockerConnectivityIngestor
+	loadBalancer   LoadBalancerHealthIngestor
+	proxyClient    *http.Client
+	proxyBaseURL   string
+	cpu            CPUUtilizationIngestor
+	ram            RAMUtilizationIngestor
+	versions       VersionInfoProvider
+	upgrade        UpgradeRunner
+	containerStats *ContainerStatsCache
 }
 
 const defaultOrchestratorStaleAfter = 30 * time.Second
@@ -152,21 +153,22 @@ func NewWithDependencies(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 	ramIngestor, _ := statusSource.(RAMUtilizationIngestor)
 
 	return &Handler{
-		store:        s,
-		events:       eb,
-		dockerLogs:   dl,
-		statusEvents: newSystemStatusBroker(),
-		accessLogDir: proxyAccessLogDirFromEnv(),
-		statusSource: statusSource,
-		heartbeats:   heartbeatIngestor,
-		docker:       dockerIngestor,
-		loadBalancer: loadBalancerIngestor,
-		proxyClient:  &http.Client{Timeout: 3 * time.Second},
-		proxyBaseURL: proxyInternalBaseURLFromEnv(),
-		cpu:          cpuIngestor,
-		ram:          ramIngestor,
-		versions:     versions,
-		upgrade:      upgrader,
+		store:          s,
+		events:         eb,
+		dockerLogs:     dl,
+		statusEvents:   newSystemStatusBroker(),
+		accessLogDir:   proxyAccessLogDirFromEnv(),
+		statusSource:   statusSource,
+		heartbeats:     heartbeatIngestor,
+		docker:         dockerIngestor,
+		loadBalancer:   loadBalancerIngestor,
+		proxyClient:    &http.Client{Timeout: 3 * time.Second},
+		proxyBaseURL:   proxyInternalBaseURLFromEnv(),
+		cpu:            cpuIngestor,
+		ram:            ramIngestor,
+		versions:       versions,
+		upgrade:        upgrader,
+		containerStats: NewContainerStatsCache(),
 	}
 }
 

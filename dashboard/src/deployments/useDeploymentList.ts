@@ -7,6 +7,7 @@ export function useDeploymentList() {
   const { data: deployments, isLoading, isError, refetch } = useQuery({
     queryKey: ['deployments'],
     queryFn: getDeployments,
+    refetchInterval: 30_000,
   })
 
   const deleteMutation = useMutation({

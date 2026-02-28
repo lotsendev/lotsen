@@ -20,5 +20,13 @@ func (h *Handler) getDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, d)
+	response := deploymentResponse{Deployment: d}
+	if h.containerStats != nil {
+		if stats, ok := h.containerStats.Get(d.ID); ok {
+			statsCopy := stats
+			response.Stats = &statsCopy
+		}
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }

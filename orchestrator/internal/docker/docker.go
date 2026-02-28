@@ -54,10 +54,19 @@ type Client interface {
 	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
 	ContainerList(ctx context.Context, options container.ListOptions) ([]dockertypes.Container, error)
+	ContainerStats(ctx context.Context, containerID string, stream bool) (container.StatsResponseReader, error)
 	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
 	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
 	ContainerRename(ctx context.Context, containerID string, newName string) error
 	ContainerInspect(ctx context.Context, containerID string) (dockertypes.ContainerJSON, error)
+}
+
+// ContainerStats captures point-in-time runtime usage for a running container.
+type ContainerStats struct {
+	CPUPercent       float64
+	MemoryUsedBytes  uint64
+	MemoryLimitBytes uint64
+	MemoryPercent    float64
 }
 
 // Docker manages container lifecycle for Dirigent deployments.
@@ -181,6 +190,49 @@ func (d *Docker) ListManagedContainers(ctx context.Context) ([]ManagedContainer,
 	}
 
 	return result, nil
+}
+
+// CollectStats returns runtime CPU and memory usage for each running managed
+// container keyed by deployment ID.
+func (d *Docker) CollectStats(ctx context.Context) (map[string]ContainerStats, error) {
+	f := filters.NewArgs(
+		filters.Arg("label", "dirigent.managed=true"),
+		filters.Arg("status", "running"),
+	)
+
+	containers, err := d.client.ContainerList(ctx, container.ListOptions{All: false, Filters: f})
+	if err != nil {
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
+		}
+		return nil, fmt.Errorf("docker: list running containers: %w", err)
+	}
+
+	statsByDeployment := make(map[string]ContainerStats, len(containers))
+	for _, c := range containers {
+		deploymentID := strings.TrimSpace(c.Labels["dirigent.id"])
+		if deploymentID == "" {
+			continue
+		}
+
+		reader, err := d.client.ContainerStats(ctx, c.ID, false)
+		if err != nil {
+			if dockerclient.IsErrConnectionFailed(err) {
+				return nil, fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
+			}
+			return nil, fmt.Errorf("docker: stats for container %s: %w", c.ID, err)
+		}
+
+		stat, decodeErr := decodeContainerStats(reader.Body)
+		_ = reader.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("docker: decode stats for container %s: %w", c.ID, decodeErr)
+		}
+
+		statsByDeployment[deploymentID] = stat
+	}
+
+	return statsByDeployment, nil
 }
 
 // StopAndRemove stops and removes the container with the given ID.
@@ -548,4 +600,89 @@ func normalizeDomain(domain string) string {
 	domain = strings.TrimSpace(domain)
 	domain = strings.TrimSuffix(domain, ".")
 	return strings.ToLower(domain)
+}
+
+func decodeContainerStats(body io.Reader) (ContainerStats, error) {
+	var payload struct {
+		CPUStats struct {
+			CPUUsage struct {
+				TotalUsage uint64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemUsage uint64 `json:"system_cpu_usage"`
+			OnlineCPUs  uint32 `json:"online_cpus"`
+		} `json:"cpu_stats"`
+		PreCPUStats struct {
+			CPUUsage struct {
+				TotalUsage uint64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemUsage uint64 `json:"system_cpu_usage"`
+		} `json:"precpu_stats"`
+		MemoryStats struct {
+			Usage uint64            `json:"usage"`
+			Limit uint64            `json:"limit"`
+			Stats map[string]uint64 `json:"stats"`
+		} `json:"memory_stats"`
+	}
+
+	if err := json.NewDecoder(body).Decode(&payload); err != nil {
+		return ContainerStats{}, fmt.Errorf("decode body: %w", err)
+	}
+
+	return ContainerStats{
+		CPUPercent:       calculateCPUPercent(payload.CPUStats, payload.PreCPUStats),
+		MemoryUsedBytes:  calculateMemoryUsedBytes(payload.MemoryStats.Usage, payload.MemoryStats.Stats),
+		MemoryLimitBytes: payload.MemoryStats.Limit,
+		MemoryPercent:    calculateMemoryPercent(payload.MemoryStats.Usage, payload.MemoryStats.Limit, payload.MemoryStats.Stats),
+	}, nil
+}
+
+func calculateCPUPercent(current struct {
+	CPUUsage struct {
+		TotalUsage uint64 `json:"total_usage"`
+	} `json:"cpu_usage"`
+	SystemUsage uint64 `json:"system_cpu_usage"`
+	OnlineCPUs  uint32 `json:"online_cpus"`
+}, previous struct {
+	CPUUsage struct {
+		TotalUsage uint64 `json:"total_usage"`
+	} `json:"cpu_usage"`
+	SystemUsage uint64 `json:"system_cpu_usage"`
+}) float64 {
+	cpuDelta := int64(current.CPUUsage.TotalUsage) - int64(previous.CPUUsage.TotalUsage)
+	systemDelta := int64(current.SystemUsage) - int64(previous.SystemUsage)
+	if cpuDelta <= 0 || systemDelta <= 0 {
+		return 0
+	}
+
+	onlineCPUs := current.OnlineCPUs
+	if onlineCPUs == 0 {
+		onlineCPUs = 1
+	}
+
+	return (float64(cpuDelta) / float64(systemDelta)) * float64(onlineCPUs) * 100
+}
+
+func calculateMemoryUsedBytes(usage uint64, stats map[string]uint64) uint64 {
+	if usage == 0 {
+		return 0
+	}
+
+	cache := stats["total_inactive_file"]
+	if cache == 0 {
+		cache = stats["inactive_file"]
+	}
+	if usage > cache {
+		return usage - cache
+	}
+
+	return usage
+}
+
+func calculateMemoryPercent(usage uint64, limit uint64, stats map[string]uint64) float64 {
+	if limit == 0 {
+		return 0
+	}
+
+	used := calculateMemoryUsedBytes(usage, stats)
+	return (float64(used) / float64(limit)) * 100
 }

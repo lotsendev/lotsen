@@ -6,6 +6,11 @@ import (
 	"github.com/ercadev/dirigent/store"
 )
 
+type deploymentResponse struct {
+	store.Deployment
+	Stats *ContainerStats `json:"stats,omitempty"`
+}
+
 func (h *Handler) listDeployments(w http.ResponseWriter, _ *http.Request) {
 	deployments, err := h.store.List()
 	if err != nil {
@@ -15,5 +20,18 @@ func (h *Handler) listDeployments(w http.ResponseWriter, _ *http.Request) {
 	if deployments == nil {
 		deployments = []store.Deployment{}
 	}
-	writeJSON(w, http.StatusOK, deployments)
+
+	responses := make([]deploymentResponse, 0, len(deployments))
+	for _, deployment := range deployments {
+		response := deploymentResponse{Deployment: deployment}
+		if h.containerStats != nil {
+			if stats, ok := h.containerStats.Get(deployment.ID); ok {
+				statsCopy := stats
+				response.Stats = &statsCopy
+			}
+		}
+		responses = append(responses, response)
+	}
+
+	writeJSON(w, http.StatusOK, responses)
 }

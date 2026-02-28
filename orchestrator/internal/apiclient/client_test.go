@@ -190,8 +190,9 @@ func TestClient_NotifyStatus(t *testing.T) {
 			t.Fatalf("want path /api/deployments/d1/status, got %s", r.URL.Path)
 		}
 		var body struct {
-			Status store.Status `json:"status"`
-			Error  string       `json:"error"`
+			Status store.Status       `json:"status"`
+			Reason store.StatusReason `json:"reason"`
+			Error  string             `json:"error"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode body: %v", err)
@@ -202,12 +203,15 @@ func TestClient_NotifyStatus(t *testing.T) {
 		if body.Error != "" {
 			t.Fatalf("want empty error, got %q", body.Error)
 		}
+		if body.Reason != store.StatusReasonDeployStartSucceeded {
+			t.Fatalf("want deploy_start_succeeded reason, got %q", body.Reason)
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyStatus("d1", store.StatusHealthy, ""); err != nil {
+	if err := client.NotifyStatus("d1", store.StatusHealthy, store.StatusReasonDeployStartSucceeded, ""); err != nil {
 		t.Fatalf("NotifyStatus: %v", err)
 	}
 }
@@ -215,8 +219,9 @@ func TestClient_NotifyStatus(t *testing.T) {
 func TestClient_NotifyStatus_WithError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Status store.Status `json:"status"`
-			Error  string       `json:"error"`
+			Status store.Status       `json:"status"`
+			Reason store.StatusReason `json:"reason"`
+			Error  string             `json:"error"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode body: %v", err)
@@ -227,12 +232,15 @@ func TestClient_NotifyStatus_WithError(t *testing.T) {
 		if body.Error == "" {
 			t.Fatal("want failure error message")
 		}
+		if body.Reason != store.StatusReasonDeployStartFailed {
+			t.Fatalf("want deploy_start_failed reason, got %q", body.Reason)
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyStatus("d1", store.StatusFailed, "image not found"); err != nil {
+	if err := client.NotifyStatus("d1", store.StatusFailed, store.StatusReasonDeployStartFailed, "image not found"); err != nil {
 		t.Fatalf("NotifyStatus: %v", err)
 	}
 }

@@ -82,11 +82,12 @@ func New(baseURL string) *Client {
 
 // NotifyStatus calls PATCH /api/deployments/{id}/status so the API's event
 // broker emits an SSE event to all connected clients.
-func (c *Client) NotifyStatus(id string, status store.Status, errorMessage string) error {
+func (c *Client) NotifyStatus(id string, status store.Status, reason store.StatusReason, errorMessage string) error {
 	body, err := json.Marshal(struct {
-		Status store.Status `json:"status"`
-		Error  string       `json:"error,omitempty"`
-	}{Status: status, Error: errorMessage})
+		Status store.Status       `json:"status"`
+		Reason store.StatusReason `json:"reason,omitempty"`
+		Error  string             `json:"error,omitempty"`
+	}{Status: status, Reason: reason, Error: errorMessage})
 	if err != nil {
 		return fmt.Errorf("apiclient: marshal body: %w", err)
 	}

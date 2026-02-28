@@ -6,6 +6,7 @@ import "sync"
 type StatusEvent struct {
 	DeploymentID string `json:"deploymentId"`
 	Status       string `json:"status"`
+	Reason       string `json:"reason,omitempty"`
 	Error        string `json:"error,omitempty"`
 }
 

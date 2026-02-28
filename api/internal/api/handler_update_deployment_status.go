@@ -14,6 +14,7 @@ func (h *Handler) updateDeploymentStatus(w http.ResponseWriter, r *http.Request)
 
 	var body struct {
 		Status store.Status `json:"status"`
+		Reason string       `json:"reason"`
 		Error  string       `json:"error"`
 	}
 
@@ -42,6 +43,7 @@ func (h *Handler) updateDeploymentStatus(w http.ResponseWriter, r *http.Request)
 	}
 
 	d.Status = body.Status
+	d.Reason = store.StatusReason(body.Reason)
 	d.Error = body.Error
 	updated, err := h.store.Update(d)
 	if err != nil {
@@ -52,6 +54,7 @@ func (h *Handler) updateDeploymentStatus(w http.ResponseWriter, r *http.Request)
 	h.events.Publish(events.StatusEvent{
 		DeploymentID: id,
 		Status:       string(body.Status),
+		Reason:       body.Reason,
 		Error:        body.Error,
 	})
 

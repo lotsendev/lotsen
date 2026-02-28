@@ -21,13 +21,14 @@ type mockNotifier struct {
 type notifyCall struct {
 	id     string
 	status store.Status
+	reason store.StatusReason
 	error  string
 }
 
-func (m *mockNotifier) NotifyStatus(id string, status store.Status, errorMessage string) error {
+func (m *mockNotifier) NotifyStatus(id string, status store.Status, reason store.StatusReason, errorMessage string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.calls = append(m.calls, notifyCall{id: id, status: status, error: errorMessage})
+	m.calls = append(m.calls, notifyCall{id: id, status: status, reason: reason, error: errorMessage})
 	return m.notifyErr
 }
 
@@ -77,6 +78,7 @@ func (m *mockStore) Patch(id string, patch store.Deployment) (store.Deployment, 
 		}
 		if patch.Status != "" {
 			m.deployments[i].Status = patch.Status
+			m.deployments[i].Reason = patch.Reason
 			m.deployments[i].Error = patch.Error
 		} else if patch.Error != "" {
 			m.deployments[i].Error = patch.Error
@@ -92,6 +94,17 @@ func (m *mockStore) getStatus(id string) store.Status {
 	for _, d := range m.deployments {
 		if d.ID == id {
 			return d.Status
+		}
+	}
+	return ""
+}
+
+func (m *mockStore) getReason(id string) store.StatusReason {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, d := range m.deployments {
+		if d.ID == id {
+			return d.Reason
 		}
 	}
 	return ""
@@ -198,6 +211,9 @@ func TestReconcile_DeployingNoContainer_StartsAndBecomesHealthy(t *testing.T) {
 	if s.getStatus("d1") != store.StatusHealthy {
 		t.Errorf("want status healthy, got %s", s.getStatus("d1"))
 	}
+	if s.getReason("d1") != store.StatusReasonDeployStartSucceeded {
+		t.Errorf("want reason %q, got %q", store.StatusReasonDeployStartSucceeded, s.getReason("d1"))
+	}
 }
 
 func TestReconcile_DeployingNoContainer_StartFails_BecomesFailed(t *testing.T) {
@@ -215,6 +231,9 @@ func TestReconcile_DeployingNoContainer_StartFails_BecomesFailed(t *testing.T) {
 
 	if s.getStatus("d1") != store.StatusFailed {
 		t.Errorf("want status failed, got %s", s.getStatus("d1"))
+	}
+	if s.getReason("d1") != store.StatusReasonDeployStartFailed {
+		t.Errorf("want reason %q, got %q", store.StatusReasonDeployStartFailed, s.getReason("d1"))
 	}
 }
 
@@ -241,6 +260,9 @@ func TestReconcile_DeployingWithRunningContainer_RedeploysAndBecomesHealthy(t *t
 	}
 	if s.getStatus("d1") != store.StatusHealthy {
 		t.Errorf("want status healthy, got %s", s.getStatus("d1"))
+	}
+	if s.getReason("d1") != store.StatusReasonRedeployStartSucceeded {
+		t.Errorf("want reason %q, got %q", store.StatusReasonRedeployStartSucceeded, s.getReason("d1"))
 	}
 }
 
@@ -339,6 +361,9 @@ func TestReconcile_Redeploy_FailedNewContainer_KeepsOldAndBecomesFailed(t *testi
 	if s.getStatus("d1") != store.StatusFailed {
 		t.Errorf("want status failed, got %s", s.getStatus("d1"))
 	}
+	if s.getReason("d1") != store.StatusReasonRedeployStartFailed {
+		t.Errorf("want reason %q, got %q", store.StatusReasonRedeployStartFailed, s.getReason("d1"))
+	}
 }
 
 func TestReconcile_DeployingWithStoppedContainer_BecomesFailed(t *testing.T) {
@@ -361,6 +386,9 @@ func TestReconcile_DeployingWithStoppedContainer_BecomesFailed(t *testing.T) {
 	if s.getStatus("d1") != store.StatusFailed {
 		t.Errorf("want status failed, got %s", s.getStatus("d1"))
 	}
+	if s.getReason("d1") != store.StatusReasonContainerNotRunning {
+		t.Errorf("want reason %q, got %q", store.StatusReasonContainerNotRunning, s.getReason("d1"))
+	}
 }
 
 func TestReconcile_HealthyNoContainer_BecomesFailed(t *testing.T) {
@@ -378,6 +406,9 @@ func TestReconcile_HealthyNoContainer_BecomesFailed(t *testing.T) {
 
 	if s.getStatus("d1") != store.StatusFailed {
 		t.Errorf("want status failed, got %s", s.getStatus("d1"))
+	}
+	if s.getReason("d1") != store.StatusReasonContainerNotRunning {
+		t.Errorf("want reason %q, got %q", store.StatusReasonContainerNotRunning, s.getReason("d1"))
 	}
 }
 
@@ -438,6 +469,9 @@ func TestReconcile_FailedTransient_NoContainer_RetriesThenBacksOff(t *testing.T)
 	if d.startCalls != 1 {
 		t.Fatalf("want one retry attempt, got %d", d.startCalls)
 	}
+	if s.getReason("d1") != store.StatusReasonRetryStartFailedTransient {
+		t.Fatalf("want reason %q, got %q", store.StatusReasonRetryStartFailedTransient, s.getReason("d1"))
+	}
 
 	if err := r.Reconcile(context.Background()); err != nil {
 		t.Fatalf("reconcile second attempt: %v", err)
@@ -487,6 +521,9 @@ func TestReconcile_DockerReconnect_RetriesTransientFailureImmediately(t *testing
 	if s.getStatus("d1") != store.StatusHealthy {
 		t.Fatalf("want deployment healthy after reconnect retry, got %s", s.getStatus("d1"))
 	}
+	if s.getReason("d1") != store.StatusReasonRetryStartSucceeded {
+		t.Fatalf("want reason %q, got %q", store.StatusReasonRetryStartSucceeded, s.getReason("d1"))
+	}
 }
 
 func TestReconcile_DockerReconnect_RunningContainerHealsWithoutRestart(t *testing.T) {
@@ -513,6 +550,9 @@ func TestReconcile_DockerReconnect_RunningContainerHealsWithoutRestart(t *testin
 	if s.getStatus("d1") != store.StatusHealthy {
 		t.Fatalf("want deployment healed to healthy, got %s", s.getStatus("d1"))
 	}
+	if s.getReason("d1") != store.StatusReasonRetryRecoveredRunning {
+		t.Fatalf("want reason %q, got %q", store.StatusReasonRetryRecoveredRunning, s.getReason("d1"))
+	}
 }
 
 func TestReconcile_DeployingNoContainer_NotifiesHealthy(t *testing.T) {
@@ -533,6 +573,9 @@ func TestReconcile_DeployingNoContainer_NotifiesHealthy(t *testing.T) {
 	if len(calls) != 1 || calls[0].id != "d1" || calls[0].status != store.StatusHealthy {
 		t.Errorf("want notify(d1, healthy), got %v", calls)
 	}
+	if calls[0].reason != store.StatusReasonDeployStartSucceeded {
+		t.Errorf("want reason %q, got %q", store.StatusReasonDeployStartSucceeded, calls[0].reason)
+	}
 }
 
 func TestReconcile_DeployingStartFails_NotifiesFailed(t *testing.T) {
@@ -552,6 +595,9 @@ func TestReconcile_DeployingStartFails_NotifiesFailed(t *testing.T) {
 	calls := n.getCalls()
 	if len(calls) != 1 || calls[0].id != "d1" || calls[0].status != store.StatusFailed {
 		t.Errorf("want notify(d1, failed), got %v", calls)
+	}
+	if calls[0].reason != store.StatusReasonDeployStartFailed {
+		t.Errorf("want reason %q, got %q", store.StatusReasonDeployStartFailed, calls[0].reason)
 	}
 	if calls[0].error == "" {
 		t.Error("want notify call to include failure reason")
@@ -576,6 +622,9 @@ func TestReconcile_HealthyContainerGone_NotifiesFailed(t *testing.T) {
 	if len(calls) != 1 || calls[0].id != "d1" || calls[0].status != store.StatusFailed {
 		t.Errorf("want notify(d1, failed), got %v", calls)
 	}
+	if calls[0].reason != store.StatusReasonContainerNotRunning {
+		t.Errorf("want reason %q, got %q", store.StatusReasonContainerNotRunning, calls[0].reason)
+	}
 }
 
 func TestReconcile_DeployingWithStoppedContainer_OOMKilled_ShowsOOMMessage(t *testing.T) {
@@ -599,6 +648,9 @@ func TestReconcile_DeployingWithStoppedContainer_OOMKilled_ShowsOOMMessage(t *te
 	calls := n.getCalls()
 	if len(calls) != 1 || calls[0].status != store.StatusFailed {
 		t.Fatalf("want one failed notification, got %v", calls)
+	}
+	if calls[0].reason != store.StatusReasonContainerExited {
+		t.Fatalf("want reason %q, got %q", store.StatusReasonContainerExited, calls[0].reason)
 	}
 	want := "container killed: out of memory (exit code 137)"
 	if calls[0].error != want {
@@ -628,6 +680,9 @@ func TestReconcile_DeployingWithStoppedContainer_NonZeroExit_ShowsExitMessage(t 
 	if len(calls) != 1 || calls[0].status != store.StatusFailed {
 		t.Fatalf("want one failed notification, got %v", calls)
 	}
+	if calls[0].reason != store.StatusReasonContainerExited {
+		t.Fatalf("want reason %q, got %q", store.StatusReasonContainerExited, calls[0].reason)
+	}
 	want := "container exited unexpectedly (exit code 1)"
 	if calls[0].error != want {
 		t.Errorf("want error %q, got %q", want, calls[0].error)
@@ -652,6 +707,9 @@ func TestReconcile_HealthyContainerMissing_ShowsFallbackMessage(t *testing.T) {
 	if len(calls) != 1 || calls[0].status != store.StatusFailed {
 		t.Fatalf("want one failed notification, got %v", calls)
 	}
+	if calls[0].reason != store.StatusReasonContainerNotRunning {
+		t.Fatalf("want reason %q, got %q", store.StatusReasonContainerNotRunning, calls[0].reason)
+	}
 	want := "container is not running"
 	if calls[0].error != want {
 		t.Errorf("want error %q, got %q", want, calls[0].error)
@@ -674,6 +732,9 @@ func TestReconcile_DockerUnavailable_HealthyBecomesFailed(t *testing.T) {
 	if s.getStatus("d1") != store.StatusFailed {
 		t.Errorf("want status failed when docker is unavailable, got %s", s.getStatus("d1"))
 	}
+	if s.getReason("d1") != store.StatusReasonDockerUnavailable {
+		t.Errorf("want reason %q, got %q", store.StatusReasonDockerUnavailable, s.getReason("d1"))
+	}
 }
 
 func TestReconcile_DockerUnavailable_DeployingBecomesFailed(t *testing.T) {
@@ -691,6 +752,9 @@ func TestReconcile_DockerUnavailable_DeployingBecomesFailed(t *testing.T) {
 	}
 	if s.getStatus("d1") != store.StatusFailed {
 		t.Errorf("want deploying status failed when docker is unavailable, got %s", s.getStatus("d1"))
+	}
+	if s.getReason("d1") != store.StatusReasonDockerUnavailable {
+		t.Errorf("want reason %q, got %q", store.StatusReasonDockerUnavailable, s.getReason("d1"))
 	}
 }
 
@@ -714,6 +778,9 @@ func TestReconcile_DeployingWithDashboardDomainConflict_BecomesFailedWithoutStar
 	}
 	if s.getStatus("d1") != store.StatusFailed {
 		t.Fatalf("want status failed, got %s", s.getStatus("d1"))
+	}
+	if s.getReason("d1") != store.StatusReasonDomainReserved {
+		t.Fatalf("want reason %q, got %q", store.StatusReasonDomainReserved, s.getReason("d1"))
 	}
 }
 

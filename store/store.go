@@ -26,6 +26,24 @@ const (
 	StatusFailed    Status = "failed"
 )
 
+// StatusReason is a stable machine-readable code that explains why a
+// deployment transitioned status.
+type StatusReason string
+
+const (
+	StatusReasonDeployStartSucceeded      StatusReason = "deploy_start_succeeded"
+	StatusReasonRedeployStartSucceeded    StatusReason = "redeploy_start_succeeded"
+	StatusReasonRetryStartSucceeded       StatusReason = "retry_start_succeeded"
+	StatusReasonRetryRecoveredRunning     StatusReason = "retry_recovered_running"
+	StatusReasonDockerUnavailable         StatusReason = "docker_unavailable"
+	StatusReasonDomainReserved            StatusReason = "domain_reserved"
+	StatusReasonDeployStartFailed         StatusReason = "deploy_start_failed"
+	StatusReasonRedeployStartFailed       StatusReason = "redeploy_start_failed"
+	StatusReasonContainerExited           StatusReason = "container_exited"
+	StatusReasonContainerNotRunning       StatusReason = "container_not_running"
+	StatusReasonRetryStartFailedTransient StatusReason = "retry_start_failed_transient"
+)
+
 // Deployment holds the full configuration and runtime state of a container deployment.
 type Deployment struct {
 	ID        string            `json:"id"`
@@ -38,6 +56,7 @@ type Deployment struct {
 	BasicAuth *BasicAuthConfig  `json:"basic_auth,omitempty"`
 	Security  *SecurityConfig   `json:"security,omitempty"`
 	Status    Status            `json:"status"`
+	Reason    StatusReason      `json:"reason,omitempty"`
 	Error     string            `json:"error,omitempty"`
 }
 
@@ -300,6 +319,7 @@ func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 		}
 		if patch.Status != "" {
 			d.Status = patch.Status
+			d.Reason = patch.Reason
 			d.Error = patch.Error
 		} else if patch.Error != "" {
 			d.Error = patch.Error
@@ -346,6 +366,8 @@ func (s *JSONStore) UpdateStatus(id string, status Status) error {
 			return nil // deployment was deleted; ignore
 		}
 		d.Status = status
+		d.Reason = ""
+		d.Error = ""
 		data[id] = d
 		return s.persist(data)
 	})

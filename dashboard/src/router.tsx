@@ -123,7 +123,7 @@ function DashboardLayout() {
 
       <SidebarInset>
         <p className="mb-4 text-sm text-muted-foreground">{isSystemStatusPage || isTrafficPage ? 'Observability' : isSettingsPage ? 'Configuration' : 'Deployments'}</p>
-        {isDeploymentDetailPage ? (
+        {isDeploymentPage ? (
           <div className="mx-auto w-full max-w-5xl space-y-4">
             <div>
               <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">{pageTitle}</h1>

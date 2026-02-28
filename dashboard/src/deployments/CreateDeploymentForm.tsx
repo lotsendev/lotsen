@@ -1,10 +1,12 @@
-import { useCreateDeploymentForm, type BasicAuthUserRow, type EnvRow, type PairRow, type PortRow } from './useCreateDeploymentForm'
+import { Check, Globe2, Server } from 'lucide-react'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
-import { DynamicSection } from './DynamicSection'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { cn } from '../lib/utils'
+import { DynamicSection } from './DynamicSection'
+import { useCreateDeploymentForm, type BasicAuthUserRow, type EnvRow, type PairRow, type PortRow } from './useCreateDeploymentForm'
 
 const fieldErrorCls = 'text-xs text-destructive'
 
@@ -29,113 +31,212 @@ export default function CreateDeploymentForm({ onSuccess, className, hideHeader 
           <CardDescription>Create a new service from an image and runtime settings.</CardDescription>
         </CardHeader>
       )}
-      <CardContent>
-      <form onSubmit={handleSubmit} noValidate className="space-y-5">
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="dep-name">Name *</Label>
-            <Input id="dep-name" type="text" placeholder="my-app" value={name}
-              onChange={e => setName(e.target.value)}
-              aria-invalid={Boolean(errors.name)} />
-            {errors.name && <p className={fieldErrorCls}>{errors.name}</p>}
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="dep-image">Image *</Label>
-            <Input id="dep-image" type="text" placeholder="nginx:latest" value={image}
-              onChange={e => setImage(e.target.value)}
-              aria-invalid={Boolean(errors.image)} />
-            {errors.image && <p className={fieldErrorCls}>{errors.image}</p>}
-          </div>
-        </div>
+      <CardContent className={hideHeader ? 'pt-5' : undefined}>
+        <form onSubmit={handleSubmit} noValidate className="space-y-5">
+          <section className="grid gap-2 rounded-lg border border-border/60 bg-background/60 p-3 text-xs text-muted-foreground sm:grid-cols-3 sm:p-4">
+            <div className="flex items-center gap-2">
+              <Server className="h-3.5 w-3.5" />
+              <span>Image + runtime</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Globe2 className="h-3.5 w-3.5" />
+              <span>Route + exposure</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Check className="h-3.5 w-3.5" />
+              <span>Ready for deploy</span>
+            </div>
+          </section>
 
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="dep-domain">Domain (optional)</Label>
-          <Input id="dep-domain" type="text" placeholder="app.example.com" value={domain}
-            onChange={e => setDomain(e.target.value)} />
-        </div>
+          <section className="space-y-3 rounded-lg border border-border/60 bg-background/60 p-3 sm:p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-foreground">Core identity</p>
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">required</Badge>
+            </div>
 
-        <DynamicSection<EnvRow>
-          title="Environment variables" addLabel="Add env var" removeLabel="Remove env var"
-          rows={envRows.rows} onAdd={envRows.add} onRemove={envRows.remove}
-          errorFor={row => errors.envs[row.id]}
-          renderRow={row => (<>
-            <Input type="text" placeholder="KEY" value={row.key}
-              onChange={e => envRows.update(row.id, { key: e.target.value })}
-              aria-invalid={Boolean(errors.envs[row.id])}
-              className="font-mono" />
-            <Input type="text" placeholder="value" value={row.value}
-              onChange={e => envRows.update(row.id, { value: e.target.value })}
-            />
-          </>)}
-        />
-
-        <DynamicSection<PortRow>
-          title="Port mappings"
-          description="Specify the container port to expose. A host port is automatically assigned."
-          addLabel="Add port mapping" removeLabel="Remove port mapping"
-          rows={portRows.rows} onAdd={portRows.add} onRemove={portRows.remove}
-          errorFor={row => errors.ports[row.id]}
-          renderRow={row => (
-            <Input type="text" placeholder="Container port" value={row.port}
-              onChange={e => portRows.update(row.id, { port: e.target.value })}
-              aria-invalid={Boolean(errors.ports[row.id])} />
-          )}
-        />
-
-        <DynamicSection<PairRow>
-          title="Volume mounts" addLabel="Add volume mount" removeLabel="Remove volume mount"
-          rows={volumeRows.rows} onAdd={volumeRows.add} onRemove={volumeRows.remove}
-          errorFor={row => errors.volumes[row.id]}
-          renderRow={row => (<>
-            <Input type="text" placeholder="/host/path" value={row.left}
-              onChange={e => volumeRows.update(row.id, { left: e.target.value })}
-              aria-invalid={Boolean(errors.volumes[row.id])}
-              className="font-mono" />
-            <span className="shrink-0 text-sm text-muted-foreground">:</span>
-            <Input type="text" placeholder="/container/path" value={row.right}
-              onChange={e => volumeRows.update(row.id, { right: e.target.value })}
-              aria-invalid={Boolean(errors.volumes[row.id])}
-              className="font-mono" />
-          </>)}
-        />
-
-
-        <div className="space-y-3 rounded-md border p-4">
-          <div className="flex items-center gap-2">
-            <input id="basic-auth-enabled" type="checkbox" checked={basicAuthEnabled}
-              onChange={e => setBasicAuthEnabled(e.target.checked)} />
-            <Label htmlFor="basic-auth-enabled">Enable basic auth</Label>
-          </div>
-
-          {basicAuthEnabled && (
-            <DynamicSection<BasicAuthUserRow>
-              title="Basic auth users"
-              addLabel="Add user"
-              removeLabel="Remove user"
-              rows={basicAuthRows.rows}
-              onAdd={basicAuthRows.add}
-              onRemove={basicAuthRows.remove}
-              errorFor={row => errors.basicAuth[row.id]}
-              renderRow={row => (<>
-                <Input type="text" placeholder="Username" value={row.username}
-                  onChange={e => basicAuthRows.update(row.id, { username: e.target.value })}
-                  aria-invalid={Boolean(errors.basicAuth[row.id])}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="dep-name">Name *</Label>
+                <Input
+                  id="dep-name"
+                  type="text"
+                  placeholder="my-app"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  aria-invalid={Boolean(errors.name)}
                 />
-                <Input type="password" placeholder="Password" value={row.password}
-                  onChange={e => basicAuthRows.update(row.id, { password: e.target.value })}
-                  aria-invalid={Boolean(errors.basicAuth[row.id])}
+                {errors.name && <p className={fieldErrorCls}>{errors.name}</p>}
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="dep-image">Image *</Label>
+                <Input
+                  id="dep-image"
+                  type="text"
+                  placeholder="nginx:latest"
+                  value={image}
+                  onChange={e => setImage(e.target.value)}
+                  aria-invalid={Boolean(errors.image)}
                 />
-              </>)}
-            />
-          )}
-        </div>
+                {errors.image && <p className={fieldErrorCls}>{errors.image}</p>}
+              </div>
+            </div>
+          </section>
 
-        {errors.form && <p className={fieldErrorCls}>{errors.form}</p>}
-        <Button type="submit" disabled={isPending}>
-          {isPending ? 'Creating…' : 'Create'}
-        </Button>
-      </form>
+          <section className="space-y-3 rounded-lg border border-border/60 bg-background/60 p-3 sm:p-4">
+            <p className="text-sm font-semibold text-foreground">Ingress</p>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="dep-domain">Domain (optional)</Label>
+              <Input
+                id="dep-domain"
+                type="text"
+                placeholder="app.example.com"
+                value={domain}
+                onChange={e => setDomain(e.target.value)}
+              />
+            </div>
+          </section>
+
+          <DynamicSection<EnvRow>
+            title="Environment variables"
+            addLabel="Add env var"
+            removeLabel="Remove env var"
+            rows={envRows.rows}
+            onAdd={envRows.add}
+            onRemove={envRows.remove}
+            errorFor={row => errors.envs[row.id]}
+            renderRow={row => (
+              <>
+                <Input
+                  type="text"
+                  placeholder="KEY"
+                  value={row.key}
+                  onChange={e => envRows.update(row.id, { key: e.target.value })}
+                  aria-invalid={Boolean(errors.envs[row.id])}
+                  className="font-mono"
+                />
+                <Input
+                  type="text"
+                  placeholder="value"
+                  value={row.value}
+                  onChange={e => envRows.update(row.id, { value: e.target.value })}
+                />
+              </>
+            )}
+          />
+
+          <DynamicSection<PortRow>
+            title="Port mappings"
+            description="Specify the container port to expose. A host port is automatically assigned."
+            addLabel="Add port mapping"
+            removeLabel="Remove port mapping"
+            rows={portRows.rows}
+            onAdd={portRows.add}
+            onRemove={portRows.remove}
+            errorFor={row => errors.ports[row.id]}
+            renderRow={row => (
+              <Input
+                type="text"
+                placeholder="Container port"
+                value={row.port}
+                onChange={e => portRows.update(row.id, { port: e.target.value })}
+                aria-invalid={Boolean(errors.ports[row.id])}
+              />
+            )}
+          />
+
+          <DynamicSection<PairRow>
+            title="Volume mounts"
+            addLabel="Add volume mount"
+            removeLabel="Remove volume mount"
+            rows={volumeRows.rows}
+            onAdd={volumeRows.add}
+            onRemove={volumeRows.remove}
+            errorFor={row => errors.volumes[row.id]}
+            renderRow={row => (
+              <>
+                <Input
+                  type="text"
+                  placeholder="/host/path"
+                  value={row.left}
+                  onChange={e => volumeRows.update(row.id, { left: e.target.value })}
+                  aria-invalid={Boolean(errors.volumes[row.id])}
+                  className="font-mono"
+                />
+                <span className="shrink-0 text-sm text-muted-foreground">:</span>
+                <Input
+                  type="text"
+                  placeholder="/container/path"
+                  value={row.right}
+                  onChange={e => volumeRows.update(row.id, { right: e.target.value })}
+                  aria-invalid={Boolean(errors.volumes[row.id])}
+                  className="font-mono"
+                />
+              </>
+            )}
+          />
+
+          <section className="space-y-3 rounded-lg border border-border/60 bg-background/60 p-3 sm:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Access control</p>
+                <p className="text-xs text-muted-foreground">Optional HTTP basic auth at the proxy edge.</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={basicAuthEnabled}
+                onClick={() => setBasicAuthEnabled(!basicAuthEnabled)}
+                className={cn(
+                  'inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-medium transition-colors',
+                  basicAuthEnabled
+                    ? 'border-primary/30 bg-primary/10 text-foreground'
+                    : 'border-border bg-background text-muted-foreground'
+                )}
+              >
+                {basicAuthEnabled ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+
+            {basicAuthEnabled && (
+              <DynamicSection<BasicAuthUserRow>
+                title="Basic auth users"
+                addLabel="Add user"
+                removeLabel="Remove user"
+                rows={basicAuthRows.rows}
+                onAdd={basicAuthRows.add}
+                onRemove={basicAuthRows.remove}
+                errorFor={row => errors.basicAuth[row.id]}
+                renderRow={row => (
+                  <>
+                    <Input
+                      type="text"
+                      placeholder="Username"
+                      value={row.username}
+                      onChange={e => basicAuthRows.update(row.id, { username: e.target.value })}
+                      aria-invalid={Boolean(errors.basicAuth[row.id])}
+                    />
+                    <Input
+                      type="password"
+                      placeholder="Password"
+                      value={row.password}
+                      onChange={e => basicAuthRows.update(row.id, { password: e.target.value })}
+                      aria-invalid={Boolean(errors.basicAuth[row.id])}
+                    />
+                  </>
+                )}
+              />
+            )}
+          </section>
+
+          {errors.form && <p className={fieldErrorCls}>{errors.form}</p>}
+
+          <div className="flex items-center justify-end">
+            <Button type="submit" disabled={isPending}>
+              {isPending ? 'Creating…' : 'Create'}
+            </Button>
+          </div>
+        </form>
       </CardContent>
     </Card>
   )

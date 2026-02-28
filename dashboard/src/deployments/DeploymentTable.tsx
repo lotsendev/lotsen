@@ -1,23 +1,78 @@
 import { Box } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
-import { Table, TableBody, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import type { Deployment } from '../lib/api'
 import { DeploymentRow } from './DeploymentRow'
 
 type Props = {
   deployments: Deployment[] | undefined
+  hasAnyDeployments: boolean
+  hasActiveFilters: boolean
   isLoading: boolean
   isError: boolean
   isDeleting: boolean
   onDelete: (deployment: Deployment) => void
   onEdit: (deployment: Deployment) => void
   onCreate: () => void
+  onClearFilters: () => void
+  onRetry: () => void
 }
 
-export function DeploymentTable({ deployments, isLoading, isError, isDeleting, onDelete, onEdit, onCreate }: Props) {
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading deployments…</p>
-  if (isError) return <p className="text-sm text-destructive">Failed to load deployments.</p>
+export function DeploymentTable({
+  deployments,
+  hasAnyDeployments,
+  hasActiveFilters,
+  isLoading,
+  isError,
+  isDeleting,
+  onDelete,
+  onEdit,
+  onCreate,
+  onClearFilters,
+  onRetry,
+}: Props) {
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }, (_, idx) => (
+          <div key={idx} className="space-y-3 rounded-xl border border-border/60 bg-card px-4 py-4">
+            <div className="h-4 w-40 animate-pulse rounded bg-muted/70" />
+            <div className="h-3 w-3/4 animate-pulse rounded bg-muted/70" />
+            <div className="h-8 w-64 animate-pulse rounded bg-muted/70" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Unable to load fleet state</CardTitle>
+          <CardDescription>The deployment list is currently unreachable. Retry to fetch latest runtime data.</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <Button type="button" variant="outline" onClick={onRetry}>Retry now</Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!deployments?.length && hasAnyDeployments && hasActiveFilters) {
+    return (
+      <Card>
+        <CardHeader className="items-center text-center">
+          <CardTitle>No deployments match your filters</CardTitle>
+          <CardDescription>Adjust the search text or status lane to see matching services.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex justify-center gap-2 pt-0">
+          <Button type="button" variant="outline" onClick={onClearFilters}>Clear filters</Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
   if (!deployments?.length) {
     return (
       <Card>
@@ -38,30 +93,16 @@ export function DeploymentTable({ deployments, isLoading, isError, isDeleting, o
   }
 
   return (
-    <Card className="overflow-hidden py-0">
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader className="bg-muted/40">
-            <TableRow className="hover:bg-transparent">
-              <TableHead>Name</TableHead>
-              <TableHead>Image</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-[190px] text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {deployments.map(d => (
-              <DeploymentRow
-                key={d.id}
-                deployment={d}
-                onDelete={onDelete}
-                isDeleting={isDeleting}
-                onEdit={onEdit}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+    <div className="space-y-3">
+      {deployments.map(d => (
+        <DeploymentRow
+          key={d.id}
+          deployment={d}
+          onDelete={onDelete}
+          isDeleting={isDeleting}
+          onEdit={onEdit}
+        />
+      ))}
+    </div>
   )
 }

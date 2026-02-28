@@ -1,4 +1,5 @@
 import { Plus, Trash2 } from 'lucide-react'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import type { Row } from './useDynamicRows'
 
@@ -18,18 +19,23 @@ export function DynamicSection<T extends Row>({
   title, description, addLabel, removeLabel, rows, onAdd, onRemove, renderRow, errorFor,
 }: Props<T>) {
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <div>
-          <span className="text-sm font-medium text-foreground">{title}</span>
+    <section className="rounded-lg border border-border/60 bg-background/60 p-3 sm:p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">{title}</span>
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+              {rows.length}
+            </Badge>
+          </div>
           {description && <p className="text-xs text-muted-foreground">{description}</p>}
         </div>
         <Button
           type="button"
           onClick={onAdd}
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+          className="h-7 gap-1.5 px-2.5 text-xs"
           aria-label={addLabel}
         >
           <Plus size={13} /> {addLabel}
@@ -39,7 +45,7 @@ export function DynamicSection<T extends Row>({
         <div className="space-y-2">
           {rows.map(row => (
             <div key={row.id}>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-md border border-border/40 bg-card/80 p-2">
                 {renderRow(row)}
                 <Button
                   type="button"
@@ -59,6 +65,10 @@ export function DynamicSection<T extends Row>({
           ))}
         </div>
       )}
-    </div>
+
+      {rows.length === 0 && (
+        <p className="text-xs text-muted-foreground">No entries yet.</p>
+      )}
+    </section>
   )
 }

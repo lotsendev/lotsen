@@ -4,7 +4,7 @@ import { getDeployments, deleteDeployment } from '../lib/api'
 export function useDeploymentList() {
   const queryClient = useQueryClient()
 
-  const { data: deployments, isLoading, isError } = useQuery({
+  const { data: deployments, isLoading, isError, refetch } = useQuery({
     queryKey: ['deployments'],
     queryFn: getDeployments,
   })
@@ -14,5 +14,5 @@ export function useDeploymentList() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['deployments'] }),
   })
 
-  return { deployments, isLoading, isError, deleteMutation }
+  return { deployments, isLoading, isError, deleteMutation, refetch }
 }

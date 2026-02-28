@@ -21,7 +21,7 @@ export default function EditDeploymentForm({ deployment, onClose, className, hid
   const {
     name, setName, image, setImage, domain, setDomain,
     envRows, portRows, volumeRows, basicAuthEnabled, setBasicAuthEnabled, basicAuthRows,
-    errors, handleSubmit, isPending,
+    errors, handleSubmit, isDirty, isPending,
   } = useEditDeploymentForm(deployment, onClose)
 
   return (
@@ -136,7 +136,7 @@ export default function EditDeploymentForm({ deployment, onClose, className, hid
 
         {errors.form && <p className={fieldErrorCls}>{errors.form}</p>}
         <div className="flex items-center gap-3">
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" disabled={isPending || !isDirty}>
             {isPending ? 'Saving…' : 'Save'}
           </Button>
           <Button type="button" onClick={onClose} disabled={isPending} variant="outline">

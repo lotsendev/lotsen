@@ -1866,6 +1866,52 @@ func TestUpdateDeployment(t *testing.T) {
 	}
 }
 
+func TestUpdateDeployment_NoChanges_SkipsStoreUpdate(t *testing.T) {
+	base := newMemStore()
+	base.deployments["d1"] = store.Deployment{
+		ID:      "d1",
+		Name:    "web",
+		Image:   "nginx:1",
+		Envs:    map[string]string{"PORT": "80"},
+		Ports:   []string{"32768:80"},
+		Volumes: []string{"/data:/data"},
+		Domain:  "app.example.com",
+		Status:  store.StatusHealthy,
+	}
+
+	srv := newTestServer(&failUpdateStore{memStore: base})
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"name":    "web",
+		"image":   "nginx:1",
+		"envs":    map[string]string{"PORT": "80"},
+		"ports":   []string{"80"},
+		"volumes": []string{"/data:/data"},
+		"domain":  "app.example.com",
+	})
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/d1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if updated.Status != store.StatusHealthy {
+		t.Errorf("want status healthy, got %s", updated.Status)
+	}
+}
+
 func TestUpdateDeployment_NotFound(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
@@ -2111,6 +2157,89 @@ func TestUpdateDeployment_DashboardDomainConflict(t *testing.T) {
 
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("want 409, got %d", resp.StatusCode)
+	}
+}
+
+func TestRestartDeployment(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{
+		ID:     "d1",
+		Name:   "web",
+		Image:  "nginx:1",
+		Status: store.StatusHealthy,
+	}
+
+	broker := events.NewBroker()
+	srv := newTestServerWithBroker(s, broker)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	evtCh := readSSEEvents(ctx, t, srv.URL+"/api/deployments/events")
+	time.Sleep(50 * time.Millisecond)
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/deployments/d1/restart", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/deployments/d1/restart: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("want 202, got %d", resp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if updated.Status != store.StatusDeploying {
+		t.Errorf("want status deploying, got %s", updated.Status)
+	}
+
+	select {
+	case event := <-evtCh:
+		if event.DeploymentID != "d1" {
+			t.Errorf("want deployment id d1, got %s", event.DeploymentID)
+		}
+		if event.Status != string(store.StatusDeploying) {
+			t.Errorf("want status deploying, got %s", event.Status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout: no SSE event after restart")
+	}
+}
+
+func TestRestartDeployment_NotFound(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/deployments/nonexistent/restart", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/deployments/nonexistent/restart: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestRestartDeployment_StoreError(t *testing.T) {
+	srv := newTestServer(&errStore{})
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/deployments/any/restart", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/deployments/any/restart: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", resp.StatusCode)
 	}
 }
 

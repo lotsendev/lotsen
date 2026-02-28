@@ -201,6 +201,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/deployments/{id}/logs", h.deploymentLogs)
 	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)
 	mux.HandleFunc("PUT /api/deployments/{id}", h.updateDeployment)
+	mux.HandleFunc("POST /api/deployments/{id}/restart", h.restartDeployment)
 	mux.HandleFunc("DELETE /api/deployments/{id}", h.deleteDeployment)
 	mux.HandleFunc("PATCH /api/deployments/{id}/status", h.updateDeploymentStatus)
 	mux.HandleFunc("PATCH /api/deployments/{id}", h.patchDeployment)
@@ -492,4 +493,41 @@ func equalBasicAuthConfig(existing *store.BasicAuthConfig, request *basicAuthReq
 		}
 	}
 	return true
+}
+
+func equalStoredBasicAuthConfig(a, b *store.BasicAuthConfig) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if len(a.Users) != len(b.Users) {
+		return false
+	}
+	for i := range a.Users {
+		if a.Users[i].Username != b.Users[i].Username || a.Users[i].Password != b.Users[i].Password {
+			return false
+		}
+	}
+	return true
+}
+
+func equalSecurityConfig(existing, request *store.SecurityConfig) bool {
+	if existing == nil || request == nil {
+		return existing == request
+	}
+
+	return existing.WAFEnabled == request.WAFEnabled &&
+		slices.Equal(existing.IPDenylist, request.IPDenylist) &&
+		slices.Equal(existing.IPAllowlist, request.IPAllowlist) &&
+		slices.Equal(existing.CustomRules, request.CustomRules)
+}
+
+func updateRequestMatchesExisting(existing store.Deployment, body deploymentRequest, basicAuth *store.BasicAuthConfig) bool {
+	return existing.Name == body.Name &&
+		existing.Image == body.Image &&
+		equalStringMap(existing.Envs, body.Envs) &&
+		slices.Equal(existing.Ports, body.Ports) &&
+		slices.Equal(existing.Volumes, body.Volumes) &&
+		existing.Domain == body.Domain &&
+		equalStoredBasicAuthConfig(existing.BasicAuth, basicAuth) &&
+		equalSecurityConfig(existing.Security, body.Security)
 }

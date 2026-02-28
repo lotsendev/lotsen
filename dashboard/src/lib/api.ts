@@ -1,5 +1,14 @@
 export type DeploymentStatus = 'idle' | 'deploying' | 'healthy' | 'failed'
 
+export type BasicAuthUser = {
+  username: string
+  password: string
+}
+
+export type BasicAuthConfig = {
+  users: BasicAuthUser[]
+}
+
 export type Deployment = {
   id: string
   name: string
@@ -8,6 +17,7 @@ export type Deployment = {
   ports: string[]
   volumes: string[]
   domain: string
+  basic_auth?: BasicAuthConfig
   status: DeploymentStatus
   error?: string
 }
@@ -144,6 +154,7 @@ export type CreateDeploymentInput = {
   ports: string[]
   volumes: string[]
   domain: string
+  basic_auth?: BasicAuthConfig
 }
 
 export async function createDeployment(data: CreateDeploymentInput): Promise<Deployment> {
@@ -163,6 +174,7 @@ export type UpdateDeploymentInput = {
   ports: string[]
   volumes: string[]
   domain: string
+  basic_auth?: BasicAuthConfig
 }
 
 export async function updateDeployment(id: string, data: UpdateDeploymentInput): Promise<Deployment> {

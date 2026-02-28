@@ -28,18 +28,18 @@ func (m *memStore) List() ([]store.Deployment, error) {
 // spyTable records Set and Delete calls.
 type spyTable struct {
 	mu      sync.Mutex
-	routes  map[string]string
+	routes  map[string]routing.Route
 	deleted []string
 }
 
 func newSpyTable() *spyTable {
-	return &spyTable{routes: make(map[string]string)}
+	return &spyTable{routes: make(map[string]routing.Route)}
 }
 
-func (s *spyTable) Set(domain, upstream string) {
+func (s *spyTable) Set(domain, upstream string, basicAuth *store.BasicAuthConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.routes[domain] = upstream
+	s.routes[domain] = routing.Route{Upstream: upstream, BasicAuth: basicAuth}
 }
 
 func (s *spyTable) Delete(domain string) {
@@ -49,11 +49,11 @@ func (s *spyTable) Delete(domain string) {
 	s.deleted = append(s.deleted, domain)
 }
 
-func (s *spyTable) get(domain string) (string, bool) {
+func (s *spyTable) get(domain string) (routing.Route, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	u, ok := s.routes[domain]
-	return u, ok
+	route, ok := s.routes[domain]
+	return route, ok
 }
 
 func (s *spyTable) wasDeleted(domain string) bool {
@@ -82,12 +82,12 @@ func TestPoller_RegistersDeploymentWithDomainAndPort(t *testing.T) {
 	go p.Run(ctx)
 	time.Sleep(50 * time.Millisecond)
 
-	u, ok := tbl.get("example.com")
+	route, ok := tbl.get("example.com")
 	if !ok {
 		t.Fatal("want example.com registered, got not found")
 	}
-	if u != "localhost:8080" {
-		t.Errorf("want upstream localhost:8080, got %s", u)
+	if route.Upstream != "localhost:8080" {
+		t.Errorf("want upstream localhost:8080, got %s", route.Upstream)
 	}
 }
 
@@ -180,8 +180,8 @@ func TestPoller_UpdatesChangedUpstream(t *testing.T) {
 	go p.Run(ctx)
 	time.Sleep(50 * time.Millisecond)
 
-	if u, _ := tbl.get("example.com"); u != "localhost:8080" {
-		t.Fatalf("initial upstream: want localhost:8080, got %s", u)
+	if route, _ := tbl.get("example.com"); route.Upstream != "localhost:8080" {
+		t.Fatalf("initial upstream: want localhost:8080, got %s", route.Upstream)
 	}
 
 	// Simulate a port change (e.g. after zero-downtime redeploy).
@@ -191,8 +191,8 @@ func TestPoller_UpdatesChangedUpstream(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if u, _ := tbl.get("example.com"); u != "localhost:9090" {
-		t.Errorf("updated upstream: want localhost:9090, got %s", u)
+	if route, _ := tbl.get("example.com"); route.Upstream != "localhost:9090" {
+		t.Errorf("updated upstream: want localhost:9090, got %s", route.Upstream)
 	}
 }
 
@@ -208,7 +208,7 @@ func TestPoller_DoesNotDeleteStaticRoutes(t *testing.T) {
 	go p.Run(ctx)
 	time.Sleep(50 * time.Millisecond)
 
-	if u, ok := tbl.Get("dashboard.example.com"); !ok || u != "localhost:3000" {
-		t.Fatalf("want static dashboard route preserved, got %q (ok=%v)", u, ok)
+	if route, ok := tbl.Get("dashboard.example.com"); !ok || route.Upstream != "localhost:3000" {
+		t.Fatalf("want static dashboard route preserved, got %q (ok=%v)", route.Upstream, ok)
 	}
 }

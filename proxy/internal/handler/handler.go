@@ -16,13 +16,15 @@ import (
 	"time"
 
 	"github.com/ercadev/dirigent/proxy/internal/middleware"
+	"github.com/ercadev/dirigent/proxy/internal/routing"
+	"github.com/ercadev/dirigent/store"
 )
 
 // RoutingTable is the interface the handler reads from when proxying requests
 // and the control API writes to when swapping upstreams.
 type RoutingTable interface {
-	Get(domain string) (string, bool)
-	Set(domain, upstream string)
+	Get(domain string) (routing.Route, bool)
+	Set(domain, upstream string, basicAuth *store.BasicAuthConfig)
 }
 
 // Handler serves inbound HTTP requests by routing them to the upstream
@@ -191,6 +193,13 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	host = normalizeDomain(host)
 
+	route, ok := h.table.Get(host)
+	if !ok {
+		outcome = "unknown_domain"
+		http.Error(rw, "unknown domain", http.StatusNotFound)
+		return
+	}
+
 	if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
 		if !middleware.ValidBasicAuth(r, h.dashboardAuth.Username, h.dashboardAuth.Password) {
 			outcome = "unauthorized"
@@ -199,16 +208,15 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	upstream, ok := h.table.Get(host)
-	if !ok {
-		outcome = "unknown_domain"
-		http.Error(rw, "unknown domain", http.StatusNotFound)
+	if !middleware.ValidBasicAuthUsers(r, route.BasicAuth) {
+		outcome = "unauthorized"
+		middleware.WriteBasicAuthChallenge(rw, "Dirigent")
 		return
 	}
 
 	target := &url.URL{
 		Scheme: "http",
-		Host:   upstream,
+		Host:   route.Upstream,
 	}
 
 	rp := &httputil.ReverseProxy{
@@ -219,7 +227,7 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			outcome = "upstream_error"
-			log.Printf("proxy: upstream %s: %v", upstream, err)
+			log.Printf("proxy: upstream %s: %v", route.Upstream, err)
 			http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		},
 	}
@@ -357,7 +365,7 @@ func (h *Handler) setRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.table.Set(normalizeDomain(body.Domain), body.Upstream)
+	h.table.Set(normalizeDomain(body.Domain), body.Upstream, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 

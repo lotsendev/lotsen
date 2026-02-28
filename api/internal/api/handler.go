@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/ercadev/dirigent/internal/events"
 	"github.com/ercadev/dirigent/internal/upgrade"
 	"github.com/ercadev/dirigent/internal/version"
@@ -54,21 +56,32 @@ type UpgradeRunner interface {
 	IsRunning() bool
 }
 
+type basicAuthUserRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type basicAuthRequest struct {
+	Users []basicAuthUserRequest `json:"users"`
+}
+
 type deploymentRequest struct {
-	Name    string            `json:"name"`
-	Image   string            `json:"image"`
-	Envs    map[string]string `json:"envs"`
-	Ports   []string          `json:"ports"`
-	Volumes []string          `json:"volumes"`
-	Domain  string            `json:"domain"`
+	Name      string            `json:"name"`
+	Image     string            `json:"image"`
+	Envs      map[string]string `json:"envs"`
+	Ports     []string          `json:"ports"`
+	Volumes   []string          `json:"volumes"`
+	Domain    string            `json:"domain"`
+	BasicAuth *basicAuthRequest `json:"basic_auth"`
 }
 
 type patchDeploymentRequest struct {
-	Image   string            `json:"image"`
-	Envs    map[string]string `json:"envs"`
-	Ports   []string          `json:"ports"`
-	Volumes []string          `json:"volumes"`
-	Domain  string            `json:"domain"`
+	Image     string            `json:"image"`
+	Envs      map[string]string `json:"envs"`
+	Ports     []string          `json:"ports"`
+	Volumes   []string          `json:"volumes"`
+	Domain    string            `json:"domain"`
+	BasicAuth *basicAuthRequest `json:"basic_auth"`
 }
 
 // Handler holds the dependencies for the API layer.
@@ -369,7 +382,8 @@ func updateRequiresRedeploy(existing store.Deployment, body deploymentRequest) b
 	return existing.Image != body.Image ||
 		!equalStringMap(existing.Envs, body.Envs) ||
 		!slices.Equal(existing.Ports, body.Ports) ||
-		!slices.Equal(existing.Volumes, body.Volumes)
+		!slices.Equal(existing.Volumes, body.Volumes) ||
+		!equalBasicAuthConfig(existing.BasicAuth, body.BasicAuth)
 }
 
 func patchRequiresRedeploy(existing store.Deployment, body patchDeploymentRequest) bool {
@@ -385,7 +399,42 @@ func patchRequiresRedeploy(existing store.Deployment, body patchDeploymentReques
 	if body.Volumes != nil && !slices.Equal(existing.Volumes, body.Volumes) {
 		return true
 	}
+	if body.BasicAuth != nil && !equalBasicAuthConfig(existing.BasicAuth, body.BasicAuth) {
+		return true
+	}
 	return false
+}
+
+func sanitizeAndHashBasicAuth(input *basicAuthRequest) (*store.BasicAuthConfig, error) {
+	if input == nil {
+		return nil, nil
+	}
+	if len(input.Users) == 0 {
+		return nil, nil
+	}
+	users := make([]store.BasicAuthUser, 0, len(input.Users))
+	for _, user := range input.Users {
+		username := strings.TrimSpace(user.Username)
+		if username == "" {
+			return nil, fmt.Errorf("basic auth username is required")
+		}
+		password := strings.TrimSpace(user.Password)
+		if password == "" {
+			return nil, fmt.Errorf("basic auth password is required")
+		}
+
+		if _, err := bcrypt.Cost([]byte(password)); err != nil {
+			hashed, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+			if hashErr != nil {
+				return nil, fmt.Errorf("hash basic auth password: %w", hashErr)
+			}
+			password = string(hashed)
+		}
+
+		users = append(users, store.BasicAuthUser{Username: username, Password: password})
+	}
+
+	return &store.BasicAuthConfig{Users: users}, nil
 }
 
 func dashboardDomainFromEnv() string {
@@ -412,6 +461,27 @@ func equalStringMap(a, b map[string]string) bool {
 	}
 	for k, av := range a {
 		if bv, ok := b[k]; !ok || bv != av {
+			return false
+		}
+	}
+	return true
+}
+
+func equalBasicAuthConfig(existing *store.BasicAuthConfig, request *basicAuthRequest) bool {
+	if request == nil {
+		return existing == nil
+	}
+	if existing == nil {
+		return false
+	}
+	if len(existing.Users) != len(request.Users) {
+		return false
+	}
+	for i, user := range request.Users {
+		if existing.Users[i].Username != strings.TrimSpace(user.Username) {
+			return false
+		}
+		if existing.Users[i].Password != strings.TrimSpace(user.Password) {
 			return false
 		}
 	}

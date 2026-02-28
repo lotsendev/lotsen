@@ -27,6 +27,12 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	basicAuth, err := sanitizeAndHashBasicAuth(body.BasicAuth)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	id, err := newID()
 	if err != nil {
 		http.Error(w, "failed to generate id", http.StatusInternalServerError)
@@ -53,14 +59,15 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	d := store.Deployment{
-		ID:      id,
-		Name:    body.Name,
-		Image:   body.Image,
-		Envs:    body.Envs,
-		Ports:   assignedPorts,
-		Volumes: body.Volumes,
-		Domain:  body.Domain,
-		Status:  store.StatusDeploying,
+		ID:        id,
+		Name:      body.Name,
+		Image:     body.Image,
+		Envs:      body.Envs,
+		Ports:     assignedPorts,
+		Volumes:   body.Volumes,
+		Domain:    body.Domain,
+		BasicAuth: basicAuth,
+		Status:    store.StatusDeploying,
 	}
 
 	created, err := h.store.Create(d)

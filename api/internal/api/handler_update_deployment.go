@@ -28,6 +28,12 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	basicAuth, err := sanitizeAndHashBasicAuth(body.BasicAuth)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	if body.Envs == nil {
 		body.Envs = map[string]string{}
 	}
@@ -64,14 +70,15 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	d := store.Deployment{
-		ID:      id,
-		Name:    body.Name,
-		Image:   body.Image,
-		Envs:    body.Envs,
-		Ports:   body.Ports,
-		Volumes: body.Volumes,
-		Domain:  body.Domain,
-		Status:  nextStatus,
+		ID:        id,
+		Name:      body.Name,
+		Image:     body.Image,
+		Envs:      body.Envs,
+		Ports:     body.Ports,
+		Volumes:   body.Volumes,
+		Domain:    body.Domain,
+		BasicAuth: basicAuth,
+		Status:    nextStatus,
 	}
 
 	updated, err := h.store.Update(d)

@@ -28,15 +28,25 @@ const (
 
 // Deployment holds the full configuration and runtime state of a container deployment.
 type Deployment struct {
-	ID      string            `json:"id"`
-	Name    string            `json:"name"`
-	Image   string            `json:"image"`
-	Envs    map[string]string `json:"envs"`
-	Ports   []string          `json:"ports"`
-	Volumes []string          `json:"volumes"`
-	Domain  string            `json:"domain"`
-	Status  Status            `json:"status"`
-	Error   string            `json:"error,omitempty"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Image     string            `json:"image"`
+	Envs      map[string]string `json:"envs"`
+	Ports     []string          `json:"ports"`
+	Volumes   []string          `json:"volumes"`
+	Domain    string            `json:"domain"`
+	BasicAuth *BasicAuthConfig  `json:"basic_auth,omitempty"`
+	Status    Status            `json:"status"`
+	Error     string            `json:"error,omitempty"`
+}
+
+type BasicAuthConfig struct {
+	Users []BasicAuthUser `json:"users"`
+}
+
+type BasicAuthUser struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 // JSONStore persists deployments as a JSON array on disk.
@@ -246,7 +256,7 @@ func (s *JSONStore) Update(d Deployment) (Deployment, error) {
 }
 
 // Patch merges the non-zero fields of patch into the stored deployment and persists atomically.
-// Only image, envs, ports, volumes, domain, status, and error are merged; id and name are immutable.
+// Only image, envs, ports, volumes, domain, basic auth config, status, and error are merged; id and name are immutable.
 // Returns ErrNotFound if no deployment with that ID exists.
 func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 	var result Deployment
@@ -273,6 +283,9 @@ func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 		}
 		if patch.Domain != "" {
 			d.Domain = patch.Domain
+		}
+		if patch.BasicAuth != nil {
+			d.BasicAuth = patch.BasicAuth
 		}
 		if patch.Status != "" {
 			d.Status = patch.Status

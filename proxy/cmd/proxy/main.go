@@ -173,7 +173,9 @@ func redirectToHTTPS(httpsAddr string) http.HandlerFunc {
 	}
 }
 
-func hostPolicyFromTable(table interface{ Get(string) (string, bool) }) autocert.HostPolicy {
+func hostPolicyFromTable(table interface {
+	Get(string) (routing.Route, bool)
+}) autocert.HostPolicy {
 	return func(_ context.Context, host string) error {
 		host = normalizeDomain(host)
 		if host == "" {

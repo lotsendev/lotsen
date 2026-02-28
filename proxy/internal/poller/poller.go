@@ -2,6 +2,7 @@ package poller
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"strings"
 	"time"
@@ -11,8 +12,13 @@ import (
 
 // Table is the routing table the poller updates as deployments change.
 type Table interface {
-	Set(domain, upstream string)
+	Set(domain, upstream string, basicAuth *store.BasicAuthConfig)
 	Delete(domain string)
+}
+
+type routeState struct {
+	Upstream      string
+	BasicAuthJSON string
 }
 
 // Store is the persistence interface the poller reads from.
@@ -26,7 +32,7 @@ type Poller struct {
 	store    Store
 	table    Table
 	interval time.Duration
-	last     map[string]string // domain → upstream from the previous sync
+	last     map[string]routeState // domain → route state from the previous sync
 }
 
 // New creates a Poller that reads from s and updates t every interval.
@@ -35,7 +41,7 @@ func New(s Store, t Table, interval time.Duration) *Poller {
 		store:    s,
 		table:    t,
 		interval: interval,
-		last:     make(map[string]string),
+		last:     make(map[string]routeState),
 	}
 }
 
@@ -65,9 +71,9 @@ func (p *Poller) sync() {
 		return
 	}
 
-	// Build the current snapshot: domain → upstream for deployments that have
+	// Build the current snapshot: domain → route for deployments that have
 	// both a domain and at least one port binding.
-	current := make(map[string]string, len(deployments))
+	current := make(map[string]routeState, len(deployments))
 	for _, d := range deployments {
 		if d.Domain == "" {
 			continue
@@ -80,13 +86,20 @@ func (p *Poller) sync() {
 		if upstream == "" {
 			continue
 		}
-		current[domain] = upstream
+		current[domain] = routeState{Upstream: upstream, BasicAuthJSON: mustBasicAuthJSON(d.BasicAuth)}
 	}
 
 	// Register new routes and update changed upstreams.
-	for domain, upstream := range current {
-		if p.last[domain] != upstream {
-			p.table.Set(domain, upstream)
+	for domain, route := range current {
+		if p.last[domain] != route {
+			var basicAuth *store.BasicAuthConfig
+			if route.BasicAuthJSON != "" {
+				if err := json.Unmarshal([]byte(route.BasicAuthJSON), &basicAuth); err != nil {
+					log.Printf("proxy poller: decode basic auth for %s: %v", domain, err)
+					continue
+				}
+			}
+			p.table.Set(domain, route.Upstream, basicAuth)
 		}
 	}
 
@@ -98,6 +111,17 @@ func (p *Poller) sync() {
 	}
 
 	p.last = current
+}
+
+func mustBasicAuthJSON(auth *store.BasicAuthConfig) string {
+	if auth == nil {
+		return ""
+	}
+	b, err := json.Marshal(auth)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // upstreamFromPorts extracts "localhost:<hostPort>" from the first usable

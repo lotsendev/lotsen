@@ -2364,3 +2364,50 @@ func TestSecurityConfig_ProxiesProxySettings(t *testing.T) {
 		t.Fatalf("want profile standard, got %s", cfg.Profile)
 	}
 }
+
+func TestCreateDeployment_HashesBasicAuthPasswords(t *testing.T) {
+	s := newMemStore()
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body := []byte(`{"name":"web","image":"nginx:latest","envs":{},"ports":["80"],"volumes":[],"domain":"app.example.com","basic_auth":{"users":[{"username":"admin","password":"secret"}]}}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("want 201, got %d", resp.StatusCode)
+	}
+
+	var created store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if created.BasicAuth == nil || len(created.BasicAuth.Users) != 1 {
+		t.Fatalf("want 1 basic auth user, got %#v", created.BasicAuth)
+	}
+	if created.BasicAuth.Users[0].Password == "secret" {
+		t.Fatal("want password hash, got plaintext")
+	}
+	if !strings.HasPrefix(created.BasicAuth.Users[0].Password, "$2") {
+		t.Fatalf("want bcrypt hash prefix, got %q", created.BasicAuth.Users[0].Password)
+	}
+}
+
+func TestCreateDeployment_RejectsEmptyBasicAuthUsername(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body := []byte(`{"name":"web","image":"nginx:latest","envs":{},"ports":["80"],"volumes":[],"domain":"app.example.com","basic_auth":{"users":[{"username":"","password":"secret"}]}}`)
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}

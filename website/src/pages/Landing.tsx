@@ -339,7 +339,7 @@ const features = [
     Icon: Terminal,
     title: 'One-command install',
     description:
-      'A single curl command sets up four systemd services and starts everything. No manual steps.',
+      'A single curl command sets up three systemd services and starts everything. No manual steps.',
   },
   {
     Icon: LayoutDashboard,

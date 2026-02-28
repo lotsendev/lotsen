@@ -4,6 +4,7 @@ import { Footer } from '@/components/Footer'
 import gettingStartedMarkdown from '@/content/docs/getting-started.md?raw'
 import deploymentConfigurationMarkdown from '@/content/docs/deployment-configuration.md?raw'
 import strictModeSetupMarkdown from '@/content/docs/strict-mode-setup.md?raw'
+import productionReadinessMarkdown from '@/content/docs/production-readiness.md?raw'
 
 function toSlug(text: string): string {
   return text.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
@@ -24,6 +25,11 @@ const docLinks = [
     markdown: deploymentConfigurationMarkdown,
   },
   { to: '/docs/strict-mode-setup', label: 'Strict Mode Setup', markdown: strictModeSetupMarkdown },
+  {
+    to: '/docs/production-readiness',
+    label: 'Production Readiness',
+    markdown: productionReadinessMarkdown,
+  },
 ]
 
 export default function DocsLayout() {

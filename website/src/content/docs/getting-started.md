@@ -119,6 +119,7 @@ Back on the Deployments table, wait for status to become `healthy`.
 ## Next steps
 
 - Learn all available deployment fields in [Deployment Configuration](/docs/deployment-configuration).
+- Review production caveats and runbooks in [Production Readiness](/docs/production-readiness).
 
 ## Upgrading
 

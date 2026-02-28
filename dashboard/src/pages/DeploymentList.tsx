@@ -171,7 +171,7 @@ export default function DeploymentList() {
       </div>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto border-border/60 sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>New deployment</DialogTitle>
             <DialogDescription>Create a new service from an image and runtime settings.</DialogDescription>
@@ -185,7 +185,7 @@ export default function DeploymentList() {
       </Dialog>
 
       <Dialog open={editingDeployment !== null} onOpenChange={open => !open && closeEditDialog()}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto border-border/60 sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>Edit deployment</DialogTitle>
             <DialogDescription>
@@ -212,6 +212,9 @@ export default function DeploymentList() {
               Type <span className="font-medium text-foreground">{deploymentToDelete?.name}</span> to confirm deletion.
             </DialogDescription>
           </DialogHeader>
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+            This action removes the deployment from orchestration and cannot be undone.
+          </div>
           <div className="space-y-2">
             <Label htmlFor="delete-deployment-name">Deployment name</Label>
             <Input

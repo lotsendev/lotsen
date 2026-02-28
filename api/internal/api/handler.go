@@ -48,6 +48,7 @@ type DockerLogs interface {
 
 type VersionInfoProvider interface {
 	Snapshot(ctx context.Context) (version.Snapshot, error)
+	Releases(ctx context.Context, limit int) ([]version.Release, error)
 }
 
 type UpgradeRunner interface {
@@ -186,6 +187,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/load-balancer/access-logs", h.loadBalancerAccessLogs)
 	mux.HandleFunc("POST /api/system-status/orchestrator-heartbeat", h.recordOrchestratorHeartbeat)
 	mux.HandleFunc("GET /api/version", h.getVersion)
+	mux.HandleFunc("GET /api/version/releases", h.getVersionReleases)
 	mux.HandleFunc("GET /api/access-logs", h.accessLogs)
 	mux.HandleFunc("GET /api/security-config", h.securityConfig)
 	mux.HandleFunc("POST /api/upgrade", h.startUpgrade)

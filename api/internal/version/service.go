@@ -12,6 +12,7 @@ import (
 )
 
 var latestReleaseURL = "https://api.github.com/repos/ercadev/dirigent-releases/releases/latest"
+var releasesURL = "https://api.github.com/repos/ercadev/dirigent-releases/releases"
 
 type Snapshot struct {
 	CurrentVersion   string
@@ -20,6 +21,12 @@ type Snapshot struct {
 	PublishedAt      time.Time
 	UpgradeAvailable bool
 	CachedAt         time.Time
+}
+
+type Release struct {
+	TagName     string
+	Body        string
+	PublishedAt time.Time
 }
 
 type Service struct {
@@ -44,6 +51,14 @@ type latestReleaseResponse struct {
 	TagName     string `json:"tag_name"`
 	Body        string `json:"body"`
 	PublishedAt string `json:"published_at"`
+}
+
+type releaseResponse struct {
+	TagName     string `json:"tag_name"`
+	Body        string `json:"body"`
+	PublishedAt string `json:"published_at"`
+	Draft       bool   `json:"draft"`
+	Prerelease  bool   `json:"prerelease"`
 }
 
 type latestRelease struct {
@@ -171,6 +186,61 @@ func (s *Service) fetchLatestRelease(ctx context.Context) (latestRelease, error)
 	}
 
 	return release, nil
+}
+
+func (s *Service) Releases(ctx context.Context, limit int) ([]Release, error) {
+	if limit <= 0 {
+		limit = 25
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s?per_page=%d", releasesURL, limit), nil)
+	if err != nil {
+		return nil, fmt.Errorf("new request: %w", err)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("call github releases: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected github status: %d", resp.StatusCode)
+	}
+
+	var payload []releaseResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode github releases: %w", err)
+	}
+
+	releases := make([]Release, 0, len(payload))
+	for _, item := range payload {
+		if item.Draft || item.Prerelease {
+			continue
+		}
+
+		tag := strings.TrimSpace(item.TagName)
+		if tag == "" {
+			continue
+		}
+
+		release := Release{
+			TagName: tag,
+			Body:    strings.TrimSpace(item.Body),
+		}
+
+		if item.PublishedAt != "" {
+			at, err := time.Parse(time.RFC3339, item.PublishedAt)
+			if err != nil {
+				continue
+			}
+			release.PublishedAt = at.UTC()
+		}
+
+		releases = append(releases, release)
+	}
+
+	return releases, nil
 }
 
 func upgradeAvailable(currentVersion, latestVersion string) bool {

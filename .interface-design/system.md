@@ -56,3 +56,41 @@
   - per-row remove action,
   - explicit empty message (`No entries yet`).
 - Footer action stays right-aligned with a single primary submit action in create flow.
+
+### Observability Page Frame
+- System status, traffic, and settings pages use the same top-level framing pattern as deployments:
+  - page title + description in the layout header,
+  - then stacked `rounded-xl border border-border/60 bg-card` sections,
+  - with inset `bg-background/70` sub-surfaces for dense telemetry blocks.
+
+### Traffic Page Pattern
+- Traffic screen is split into two sections:
+  - **Traffic watch:** summary strip (total/suspicious/blocked/active blocked IPs) + blocked IP roster.
+  - **Access ledger:** command-first filter rail (method chips + field filters + apply/clear actions) and bordered log table.
+- Avoid native select controls for method filtering; use button chips with active/inactive states.
+- Status and outcome in log rows use badges for fast scan-level parsing.
+
+### System Status Pattern
+- Service health uses manifest-style cards (API, orchestrator, docker, load balancer) with:
+  - title + icon capsule,
+  - explicit state rail,
+  - checks block,
+  - timestamp/freshness footer.
+- Keep load balancer traffic telemetry nested inside its card as an inset sub-surface.
+- Host metrics (CPU, RAM) use paired cards with monospace headline values and compact pressure badges.
+
+### Settings Pattern
+- Settings starts with a release runway section:
+  - installed/latest/published/cache stat tiles,
+  - upgrade action at section header level,
+  - release notes inside an inset bordered container.
+- Upgrade feedback states remain inline and semantic:
+  - success strip with reload action,
+  - failure strip with log excerpt preserved in monospace.
+
+### Dialog Pattern
+- Dialogs use softened overlays and card-like content surfaces:
+  - overlay: `bg-foreground/35` + slight blur,
+  - content: `rounded-xl border-border/60 bg-card` with compact header spacing.
+- Titles use display typography; descriptions remain muted and concise.
+- Destructive dialogs include a dedicated warning inset before the confirmation field/action.

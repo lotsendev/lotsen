@@ -7,7 +7,7 @@ import { StatusBadge } from './StatusBadge'
 
 type Props = {
   deployment: Deployment
-  onDelete: (id: string) => void
+  onDelete: (deployment: Deployment) => void
   isDeleting: boolean
   onEdit: (deployment: Deployment) => void
 }
@@ -52,7 +52,7 @@ export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: P
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => onDelete(d.id)}
+            onClick={() => onDelete(d)}
             disabled={isDeleting}
             aria-label={`Delete ${d.name}`}
             className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"

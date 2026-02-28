@@ -1,16 +1,27 @@
 import { Plus } from 'lucide-react'
 import { Button } from '../components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
 import CreateDeploymentForm from '../deployments/CreateDeploymentForm'
 import EditDeploymentForm from '../deployments/EditDeploymentForm'
 import { DeploymentTable } from '../deployments/DeploymentTable'
+import { useDeleteDeploymentDialog } from '../deployments/useDeleteDeploymentDialog'
 import { useDeploymentDialogs } from '../deployments/useDeploymentDialogs'
 import { useDeploymentList } from '../deployments/useDeploymentList'
 import { useDeploymentSSE } from '../deployments/useDeploymentSSE'
 
 export default function DeploymentList() {
   useDeploymentSSE()
-  const listState = useDeploymentList()
+  const { deployments, isLoading, isError, deleteMutation } = useDeploymentList()
+  const {
+    deploymentToDelete,
+    typedName,
+    setTypedName,
+    nameMatches,
+    openDeleteDialog,
+    closeDeleteDialog,
+  } = useDeleteDeploymentDialog()
   const {
     createDialogOpen,
     openCreateDialog,
@@ -64,7 +75,52 @@ export default function DeploymentList() {
         </DialogContent>
       </Dialog>
 
-      <DeploymentTable {...listState} onEdit={openEditDialog} onCreate={openCreateDialog} />
+      <Dialog open={deploymentToDelete !== null} onOpenChange={open => !open && closeDeleteDialog()}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Delete deployment</DialogTitle>
+            <DialogDescription>
+              Type <span className="font-medium text-foreground">{deploymentToDelete?.name}</span> to confirm deletion.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="delete-deployment-name">Deployment name</Label>
+            <Input
+              id="delete-deployment-name"
+              value={typedName}
+              onChange={event => setTypedName(event.target.value)}
+              placeholder={deploymentToDelete?.name ?? ''}
+              autoComplete="off"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeDeleteDialog} disabled={deleteMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!nameMatches || deleteMutation.isPending}
+              onClick={() => {
+                if (!deploymentToDelete) return
+                deleteMutation.mutate(deploymentToDelete.id, { onSuccess: closeDeleteDialog })
+              }}
+            >
+              Delete deployment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <DeploymentTable
+        deployments={deployments}
+        isLoading={isLoading}
+        isError={isError}
+        isDeleting={deleteMutation.isPending}
+        onDelete={openDeleteDialog}
+        onEdit={openEditDialog}
+        onCreate={openCreateDialog}
+      />
     </>
   )
 }

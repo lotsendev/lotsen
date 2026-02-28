@@ -1,5 +1,4 @@
 import { Box } from 'lucide-react'
-import type { UseMutationResult } from '@tanstack/react-query'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '../components/ui/table'
@@ -10,12 +9,13 @@ type Props = {
   deployments: Deployment[] | undefined
   isLoading: boolean
   isError: boolean
-  deleteMutation: UseMutationResult<void, Error, string>
+  isDeleting: boolean
+  onDelete: (deployment: Deployment) => void
   onEdit: (deployment: Deployment) => void
   onCreate: () => void
 }
 
-export function DeploymentTable({ deployments, isLoading, isError, deleteMutation, onEdit, onCreate }: Props) {
+export function DeploymentTable({ deployments, isLoading, isError, isDeleting, onDelete, onEdit, onCreate }: Props) {
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading deployments…</p>
   if (isError) return <p className="text-sm text-destructive">Failed to load deployments.</p>
   if (!deployments?.length) {
@@ -54,8 +54,8 @@ export function DeploymentTable({ deployments, isLoading, isError, deleteMutatio
               <DeploymentRow
                 key={d.id}
                 deployment={d}
-                onDelete={id => deleteMutation.mutate(id)}
-                isDeleting={deleteMutation.isPending}
+                onDelete={onDelete}
+                isDeleting={isDeleting}
                 onEdit={onEdit}
               />
             ))}

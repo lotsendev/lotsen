@@ -23,9 +23,8 @@ The bootstrap installer will:
 
 Then `dirigent setup` will:
 - Install Docker Engine if not already present
-- Install Bun if not already present
 - Download all Dirigent components for your architecture (`amd64` / `arm64`)
-- Register and start four systemd services that survive reboots
+- Register and start three systemd services that survive reboots
 - Create the `/var/lib/dirigent/` data directory and the `dirigent` Docker network
 - Offer security profiles in guided mode (`strict` is recommended)
 - Configure proxy hardening profiles (`standard` by default, `strict` recommended for internet-facing hosts)
@@ -56,13 +55,11 @@ sudo DIRIGENT_PROXY_HARDENING_PROFILE=strict dirigent setup
 
 | Service               | Port   | Description                                    |
 |-----------------------|--------|------------------------------------------------|
-| `dirigent-api`        | `:8080`| REST API — reads/writes deployment state       |
+| `dirigent-api`        | `:8080`| REST API + dashboard UI                        |
 | `dirigent-orchestrator` | —    | Reconciler — syncs state with Docker (no port) |
 | `dirigent-proxy`      | `:80`  | Reverse proxy — routes traffic to containers   |
-| `dirigent-dashboard`  | `:3000`| Web dashboard                                  |
 
-**Why is the dashboard on `:3000` and not behind the proxy at `:80`?**
-The reverse proxy only routes traffic to your deployed containers. The dashboard must remain reachable before any containers are configured, so it runs as its own service on a dedicated port.
+The dashboard is served by `dirigent-api` on `:8080` by default. If you set `DIRIGENT_DASHBOARD_DOMAIN` during setup, the proxy exposes it on `:80/:443` with optional Basic Auth.
 
 ## Features
 
@@ -84,7 +81,7 @@ The reverse proxy only routes traffic to your deployed containers. The dashboard
 | `api/`           | Go REST API — reads/writes the JSON store (`:8080`) |
 | `orchestrator/`  | Go reconciler — syncs store state with Docker      |
 | `store/`         | Shared Go module — deployment types + JSON store   |
-| `dashboard/`     | React + Vite web dashboard (`:3000`)               |
+| `dashboard/`     | React + Vite web dashboard (dev server `:5173`)    |
 
 The three Go services share a single `go.work` workspace at the repo root.
 

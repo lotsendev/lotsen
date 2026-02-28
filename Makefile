@@ -19,6 +19,9 @@ dev:
 
 # Compile the Go binaries.
 build:
+	cd dashboard && bun run build
+	mkdir -p api/internal/dashboard/static
+	cp -R dashboard/dist/. api/internal/dashboard/static/
 	cd cli && go build -o ../dirigent-cli ./cmd/dirigent
 	cd api && go build -o ../dirigent ./cmd/dirigent
 	cd orchestrator && go build -o ../dirigent-orchestrator ./cmd/orchestrator

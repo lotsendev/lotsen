@@ -8,6 +8,7 @@ import (
 	dockerclient "github.com/docker/docker/client"
 
 	"github.com/ercadev/dirigent/internal/api"
+	"github.com/ercadev/dirigent/internal/dashboard"
 	"github.com/ercadev/dirigent/internal/docker"
 	"github.com/ercadev/dirigent/internal/events"
 	"github.com/ercadev/dirigent/store"
@@ -44,9 +45,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	api.NewWithVersion(s, broker, logStreamer, version).RegisterRoutes(mux)
+	handler := dashboard.New(mux)
 
 	log.Printf("dirigent API listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("dirigent: %v", err)
 	}
 }

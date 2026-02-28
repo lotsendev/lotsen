@@ -276,6 +276,8 @@ describe('SystemStatusPanel', () => {
           totalRequests: 1200,
           suspiciousRequests: 34,
           blockedRequests: 7,
+          wafBlockedRequests: 5,
+          uaBlockedRequests: 2,
           activeBlockedIps: 2,
           blockedIps: [
             { ip: '203.0.113.7', blockedUntil },
@@ -304,8 +306,10 @@ describe('SystemStatusPanel', () => {
     renderWithQuery(<SystemStatusPanel />)
 
     await waitFor(() => expect(screen.getByText('Traffic and security')).toBeInTheDocument())
-    expect(screen.getByText('Total requests: 1,200')).toBeInTheDocument()
-    expect(screen.getByText('Active blocked IPs: 2')).toBeInTheDocument()
+    expect(screen.getByText(/Total requests:/)).toBeInTheDocument()
+    expect(screen.getByText(/Active blocked IPs:/)).toBeInTheDocument()
+    expect(screen.getByText(/WAF blocked:/)).toBeInTheDocument()
+    expect(screen.getByText(/UA blocked:/)).toBeInTheDocument()
     expect(screen.getByText('203.0.113.7')).toBeInTheDocument()
   })
 

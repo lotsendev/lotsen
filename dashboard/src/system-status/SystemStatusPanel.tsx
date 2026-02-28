@@ -335,6 +335,8 @@ export function SystemStatusPanel() {
                       <p>Suspicious: {formatCount(status.loadBalancer.traffic.suspiciousRequests)}</p>
                       <p>Blocked requests: {formatCount(status.loadBalancer.traffic.blockedRequests)}</p>
                       <p>Active blocked IPs: {formatCount(status.loadBalancer.traffic.activeBlockedIps)}</p>
+                      <p>WAF blocked: {formatCount(status.loadBalancer.traffic.wafBlockedRequests)}</p>
+                      <p>UA blocked: {formatCount(status.loadBalancer.traffic.uaBlockedRequests)}</p>
                     </div>
                     {status.loadBalancer.traffic.blockedIps && status.loadBalancer.traffic.blockedIps.length > 0 ? (
                       <ul className="mt-2 max-h-32 space-y-1.5 overflow-auto text-xs">

@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import EditDeploymentForm from '../deployments/EditDeploymentForm'
 import { DeploymentLogsPanel } from '../deployments/DeploymentLogsPanel'
+import { DeploymentSecurityPanel } from '../deployments/DeploymentSecurityPanel'
 import { StatusBadge } from '../deployments/StatusBadge'
 import { getDeployments } from '../lib/api'
 
@@ -189,6 +190,9 @@ export function DeploymentDetailPage() {
           <p className="text-xs text-muted-foreground/50">None configured</p>
         )}
       </div>
+
+      {/* Live logs */}
+      <DeploymentSecurityPanel deployment={deployment} />
 
       {/* Live logs */}
       <DeploymentLogsPanel deploymentId={deployment.id} status={deployment.status} error={deployment.error} />

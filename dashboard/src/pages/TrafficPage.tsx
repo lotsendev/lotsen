@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
+import { getSecurityConfig } from '../lib/api'
 import { useLoadBalancerAccessLogs } from '../system-status/useLoadBalancerAccessLogs'
 import { useSystemStatus } from '../system-status/useSystemStatus'
 
@@ -16,6 +18,10 @@ function statusVariant(status?: number): 'secondary' | 'success' | 'warning' | '
 
 export function TrafficPage() {
   const { status, isLoading, isError } = useSystemStatus()
+  const securityConfig = useQuery({
+    queryKey: ['security-config'],
+    queryFn: getSecurityConfig,
+  })
   const [methodFilter, setMethodFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [hostFilter, setHostFilter] = useState('')
@@ -91,6 +97,18 @@ export function TrafficPage() {
     return `Blocked until ${date.toLocaleTimeString()}`
   }
 
+  const wafMode = securityConfig.data?.wafMode ?? 'off'
+
+  const wafModeVariant = () => {
+    if (wafMode === 'enforcement') {
+      return 'destructive' as const
+    }
+    if (wafMode === 'detection') {
+      return 'warning' as const
+    }
+    return 'secondary' as const
+  }
+
   return (
     <div className="space-y-5">
       <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
@@ -138,6 +156,20 @@ export function TrafficPage() {
                   </p>
                 </article>
               </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <article className="rounded-lg border border-border/60 bg-background/70 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">WAF blocked</p>
+                  <p className="mt-1 text-lg font-semibold text-foreground">
+                    {formatCount(status.loadBalancer.traffic.wafBlockedRequests)}
+                  </p>
+                </article>
+                <article className="rounded-lg border border-border/60 bg-background/70 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">UA blocked</p>
+                  <p className="mt-1 text-lg font-semibold text-foreground">
+                    {formatCount(status.loadBalancer.traffic.uaBlockedRequests)}
+                  </p>
+                </article>
+              </div>
               {status.loadBalancer.traffic.blockedIps && status.loadBalancer.traffic.blockedIps.length > 0 ? (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold uppercase tracking-[0.13em] text-muted-foreground">Currently blocked IPs</p>
@@ -159,6 +191,59 @@ export function TrafficPage() {
             </div>
           )}
         </div>
+      </section>
+
+      <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Global security</p>
+            <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">
+              Effective WAF and IP filtering mode
+            </h2>
+          </div>
+          {securityConfig.isLoading ? null : securityConfig.isError ? null : (
+            <Badge variant={wafModeVariant()} className="capitalize">
+              WAF mode: {wafMode}
+            </Badge>
+          )}
+        </div>
+
+        {securityConfig.isLoading ? (
+          <p className="mt-4 text-sm text-muted-foreground">Loading global security config...</p>
+        ) : securityConfig.isError || !securityConfig.data ? (
+          <p className="mt-4 text-sm text-destructive">Unable to load global security config.</p>
+        ) : (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <article className="rounded-lg border border-border/60 bg-background/70 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Global IP denylist</p>
+              {securityConfig.data.globalIpDenylist && securityConfig.data.globalIpDenylist.length > 0 ? (
+                <ul className="mt-2 space-y-1 text-xs">
+                  {securityConfig.data.globalIpDenylist.map(entry => (
+                    <li key={`global-deny-${entry}`} className="font-mono text-foreground">
+                      {entry}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-xs text-muted-foreground">No global denylist entries configured.</p>
+              )}
+            </article>
+            <article className="rounded-lg border border-border/60 bg-background/70 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Global IP allowlist</p>
+              {securityConfig.data.globalIpAllowlist && securityConfig.data.globalIpAllowlist.length > 0 ? (
+                <ul className="mt-2 space-y-1 text-xs">
+                  {securityConfig.data.globalIpAllowlist.map(entry => (
+                    <li key={`global-allow-${entry}`} className="font-mono text-foreground">
+                      {entry}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-xs text-muted-foreground">No global allowlist entries configured.</p>
+              )}
+            </article>
+          </div>
+        )}
       </section>
 
       <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">

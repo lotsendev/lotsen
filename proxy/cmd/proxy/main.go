@@ -65,8 +65,8 @@ func main() {
 	}
 	defer accessLogger.Close()
 	if dashboardAuth != nil {
-		table.SetStatic(dashboardAuth.Domain, "localhost:3000")
-		log.Printf("proxy: registered dashboard domain %s -> localhost:3000", dashboardAuth.Domain)
+		table.SetStatic(dashboardAuth.Domain, "localhost:8080")
+		log.Printf("proxy: registered dashboard domain %s -> localhost:8080", dashboardAuth.Domain)
 	}
 
 	log.Printf("proxy: hardening profile %s", hardeningProfile)

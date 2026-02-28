@@ -23,10 +23,9 @@ The bootstrap installer installs the `dirigent` CLI.
 
 Then `dirigent setup` will:
 1. Install Docker Engine if not already present
-2. Install Bun if not already present
-3. Download all Dirigent components for your architecture (`amd64` or `arm64`)
-4. Create and enable four systemd services
-5. Print a summary of running services and their ports
+2. Download all Dirigent components for your architecture (`amd64` or `arm64`)
+3. Create and enable three systemd services
+4. Print a summary of running services and their ports
 
 In interactive mode, setup recommends the `strict` security profile.
 
@@ -34,14 +33,13 @@ In interactive mode, setup recommends the `strict` security profile.
 
 | Service | Port | Description |
 |---|---|---|
-| `dirigent-api` | `:8080` | REST API |
+| `dirigent-api` | `:8080` | REST API + dashboard UI |
 | `dirigent-proxy` | `:80` | Reverse proxy for your deployments |
-| `dirigent-dashboard` | `:3000` | Web UI |
 | `dirigent-orchestrator` | — | Internal reconciler, no inbound port |
 
-Open the dashboard at `http://<your-vps-ip>:3000`.
+Open the dashboard at `http://<your-vps-ip>:8080`.
 
-> **Why port 3000?** The dashboard runs on its own port rather than through the Dirigent proxy. This gives you immediate access without any DNS setup. If you want HTTPS + Basic Auth on a dedicated domain through Dirigent's built-in proxy, run `sudo dirigent setup`.
+> **Why port 8080?** The API now serves the embedded dashboard bundle directly, so production no longer requires Bun or Node on the VPS. For HTTPS + Basic Auth on a dedicated domain, run `sudo dirigent setup` and set dashboard exposure.
 
 ### Configure dashboard access after install
 
@@ -82,7 +80,6 @@ For unattended runs (for example CI/automation), pass `--non-interactive --yes`.
 journalctl -u dirigent-api -f
 journalctl -u dirigent-orchestrator -f
 journalctl -u dirigent-proxy -f
-journalctl -u dirigent-dashboard -f
 
 # Restart a service
 sudo systemctl restart dirigent-api
@@ -145,7 +142,7 @@ All services share a single JSON file at `/tmp/dirigent.json` in dev mode. Delet
 
 ## Deploy your first container
 
-1. Open the dashboard (`http://localhost:5173` in dev, or `http://<vps-ip>:3000` in production)
+1. Open the dashboard (`http://localhost:5173` in dev, or `http://<vps-ip>:8080` in production)
 2. Click **New Deployment**
 3. Fill in a name, Docker image, and any ports or environment variables
 4. Click **Deploy**

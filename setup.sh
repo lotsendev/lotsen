@@ -331,52 +331,12 @@ else
     STEP_DOCKER="installed"
 fi
 
-# ─── Bun installation ─────────────────────────────────────────────────────────
-
-# install_bun downloads the Bun runtime binary directly from GitHub releases
-# and places it at /usr/local/bin/bun, making it available system-wide.
-install_bun() {
-    # Bun uses different arch names than Go.
-    local bun_arch
-    case "${ARCH}" in
-        amd64) bun_arch="x64" ;;
-        arm64) bun_arch="aarch64" ;;
-    esac
-
-    local bun_tmp
-    bun_tmp=$(mktemp -d)
-
-    step "Installing unzip (required to extract Bun)"
-    apt-get install -y -q unzip
-
-    step "Downloading Bun runtime (linux/${ARCH})"
-    curl -fsSL \
-        "https://github.com/oven-sh/bun/releases/latest/download/bun-linux-${bun_arch}.zip" \
-        -o "${bun_tmp}/bun.zip"
-
-    unzip -q "${bun_tmp}/bun.zip" -d "${bun_tmp}"
-    install -m 755 "${bun_tmp}/bun-linux-${bun_arch}/bun" /usr/local/bin/bun
-
-    rm -rf "${bun_tmp}"
-}
-
-step "Checking for existing Bun installation"
-
-if command -v bun > /dev/null 2>&1; then
-    step "Bun already installed ($(bun --version)); skipping"
-    STEP_BUN="already installed"
-else
-    install_bun
-    step "Bun installed ($(bun --version))"
-    STEP_BUN="installed"
-fi
-
 # ─── stop existing services (upgrade flow) ────────────────────────────────────
 
 # Stop all services before replacing any files so binaries are never swapped
 # out from under a running process. Also stop and disable the legacy monolithic
 # service from older installs so it does not hold port 8080.
-SERVICES="dirigent-api dirigent-orchestrator dirigent-proxy dirigent-dashboard"
+SERVICES="dirigent-api dirigent-orchestrator dirigent-proxy"
 
 step "Stopping any running Dirigent services"
 
@@ -385,6 +345,12 @@ if systemctl is-active --quiet dirigent 2>/dev/null; then
     systemctl stop dirigent
     systemctl disable dirigent 2>/dev/null || true
 fi
+
+if systemctl is-active --quiet dirigent-dashboard 2>/dev/null; then
+    step "Stopping legacy dirigent-dashboard"
+    systemctl stop dirigent-dashboard
+fi
+systemctl disable dirigent-dashboard 2>/dev/null || true
 
 for svc in ${SERVICES}; do
     if systemctl is-active --quiet "${svc}" 2>/dev/null; then
@@ -406,17 +372,6 @@ download_binary() {
 download_binary "dirigent-linux-${ARCH}"              /usr/local/bin/dirigent-api
 download_binary "dirigent-orchestrator-linux-${ARCH}" /usr/local/bin/dirigent-orchestrator
 download_binary "dirigent-proxy-linux-${ARCH}"        /usr/local/bin/dirigent-proxy
-
-# ─── download and install dashboard ──────────────────────────────────────────
-
-DASHBOARD_DIR="/opt/dirigent/dashboard"
-
-step "Installing dashboard to ${DASHBOARD_DIR}"
-mkdir -p "${DASHBOARD_DIR}"
-curl -fsSL "${RELEASE_BASE}/dashboard.tar.gz" | tar -xz -C "${DASHBOARD_DIR}"
-
-step "Installing dashboard production dependencies"
-(cd "${DASHBOARD_DIR}" && bun install --production)
 
 # ─── data directory ───────────────────────────────────────────────────────────
 
@@ -606,24 +561,6 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/dirigent-dashboard.service << EOF
-[Unit]
-Description=Dirigent dashboard
-Documentation=https://github.com/ercadev/dirigent
-After=network.target dirigent-api.service
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/bun ${DASHBOARD_DIR}/server.ts
-Environment=PORT=3000
-Environment=DIRIGENT_API_URL=http://localhost:8080
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 # ─── enable and start services ────────────────────────────────────────────────
 
 step "Reloading systemd daemon"
@@ -661,13 +598,12 @@ echo "  Services:"
 printf "    %-30s %s\n" "dirigent-api          :8080"  "$(systemctl is-active dirigent-api)"
 printf "    %-30s %s\n" "dirigent-orchestrator  —"     "$(systemctl is-active dirigent-orchestrator)"
 printf "    %-30s %s\n" "dirigent-proxy        :80"    "$(systemctl is-active dirigent-proxy)"
-printf "    %-30s %s\n" "dirigent-dashboard    :3000"  "$(systemctl is-active dirigent-dashboard)"
 echo ""
 if [ -n "${DASHBOARD_DOMAIN}" ]; then
     echo "  Dashboard:  https://${DASHBOARD_DOMAIN}"
     echo "              (Basic Auth user: ${DASHBOARD_USER})"
 else
-    echo "  Dashboard:  http://${SERVER_IP}:3000"
+    echo "  Dashboard:  http://${SERVER_IP}:8080"
 fi
 echo "  API:        http://${SERVER_IP}:8080"
 echo "  Proxy:      http://${SERVER_IP}:80"
@@ -676,14 +612,13 @@ if [ -n "${DASHBOARD_DOMAIN}" ]; then
     echo "  Note: Ensure DNS A record for ${DASHBOARD_DOMAIN} points to this server"
     echo "  and port 80 is open so certificates can be issued."
 else
-    echo "  Note: The dashboard runs directly on :3000 rather than through the :80"
-    echo "  reverse proxy. This keeps it accessible even when no deployments are"
-    echo "  configured — the proxy only routes traffic to your deployed containers."
+    echo "  Note: The dashboard is served directly by dirigent-api on :8080."
+    echo "  Configure DIRIGENT_DASHBOARD_DOMAIN in setup to expose it through"
+    echo "  the :80/:443 reverse proxy with TLS and optional Basic Auth."
 fi
 echo ""
 echo "  Setup summary:"
 echo "    Docker        ${STEP_DOCKER}"
-echo "    Bun           ${STEP_BUN}"
 echo "    Network       ${STEP_NETWORK}"
 echo "    Data dir      ${DATA_DIR}"
 echo "    Version       ${DIRIGENT_VERSION}"

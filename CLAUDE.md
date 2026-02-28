@@ -9,7 +9,7 @@ Docker orchestration for solo devs/VPS. Lightweight K8s alternative.
 ## Development Commands
 - **Full Stack:** `make dev` (API :8080, Dashboard :5173, Orchestrator).
 - **Setup:** `make setup` | **Build:** `make build` | **Test:** `make test`.
-- **Dashboard Prod:** `cd dashboard && bun run build && bun run start`.
+- **Dashboard Prod:** bundled into `dirigent-api` via embedded static assets.
 
 ## Guidelines
 ### Git & Commits

@@ -15,3 +15,6 @@ control-plane/tmp/
 
 **/*/node_modules
 **/*/.vite
+
+api/internal/dashboard/static/*
+!api/internal/dashboard/static/zz-placeholder.html

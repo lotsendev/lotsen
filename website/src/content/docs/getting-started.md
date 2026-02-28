@@ -1,6 +1,6 @@
 ## Getting Started
 
-Dirigent installs as four systemd services on your VPS. This guide walks you from a fresh Ubuntu or Debian server to running your first container in under five minutes.
+Dirigent installs as three systemd services on your VPS. This guide walks you from a fresh Ubuntu or Debian server to running your first container in under five minutes.
 
 ## Prerequisites
 
@@ -21,23 +21,21 @@ Run the following command on your VPS:
 The installer will:
 
 - Install Docker if it is not already present.
-- Install Bun (required to run the dashboard server).
-- Download and install the four Dirigent binaries.
+- Download and install the three Dirigent binaries.
 - Create a Docker bridge network named `dirigent`.
-- Write and enable four systemd units: `dirigent-api`, `dirigent-orchestrator`, `dirigent-proxy`, and `dirigent-dashboard`.
+- Write and enable three systemd units: `dirigent-api`, `dirigent-orchestrator`, and `dirigent-proxy`.
 - Prompt for optional dashboard domain + Basic Auth setup (works in normal SSH sessions, including piped install commands).
 
 > **Tip:** To pin a specific version, prefix the command with `DIRIGENT_VERSION=v0.0.2` before the curl.
 
 ## Verify the installation
 
-Once the installer completes, confirm all four services are running:
+Once the installer completes, confirm all services are running:
 
 ```bash
 systemctl status dirigent-api
 systemctl status dirigent-orchestrator
 systemctl status dirigent-proxy
-systemctl status dirigent-dashboard
 ```
 
 Each service should report `active (running)`. If one has failed, inspect its logs:
@@ -48,13 +46,13 @@ journalctl -u dirigent-api -n 50
 
 ## Access the dashboard
 
-By default, the dashboard is available directly on port `3000`:
+By default, the dashboard is available on port `8080` (served by `dirigent-api`):
 
 ```text
-http://<your-vps-ip>:3000
+http://<your-vps-ip>:8080
 ```
 
-The dashboard connects to the local API on port 8080. The orchestrator has no public inbound port.
+The orchestrator has no public inbound port.
 
 ### Expose dashboard publicly (HTTPS + Basic Auth)
 

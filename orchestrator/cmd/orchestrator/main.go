@@ -135,12 +135,9 @@ func main() {
 				log.Printf("orchestrator: notify heartbeat: %v", err)
 			}
 
-			// Reconcile with a deadline shorter than the interval so it cannot starve the next tick.
-			reconcileCtx, reconcileCancel := context.WithTimeout(ctx, interval*9/10)
-			if err := r.Reconcile(reconcileCtx); err != nil {
+			if err := r.Reconcile(ctx); err != nil {
 				log.Printf("orchestrator: reconcile: %v", err)
 			}
-			reconcileCancel()
 		case <-ctx.Done():
 			log.Println("orchestrator: shutting down")
 			return

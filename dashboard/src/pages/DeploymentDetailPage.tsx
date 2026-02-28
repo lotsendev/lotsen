@@ -1,17 +1,18 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
-import { AlertTriangle, ArrowLeft, ChevronDown, ExternalLink, Globe, Hash, Package, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ChevronDown, ExternalLink, Globe, Hash, Package, Pencil, RotateCcw } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import EditDeploymentForm from '../deployments/EditDeploymentForm'
 import { DeploymentLogsPanel } from '../deployments/DeploymentLogsPanel'
 import { DeploymentSecurityPanel } from '../deployments/DeploymentSecurityPanel'
 import { StatusBadge } from '../deployments/StatusBadge'
-import { getDeployments } from '../lib/api'
+import { getDeployments, restartDeployment, type Deployment } from '../lib/api'
 
 export function DeploymentDetailPage() {
   const { deploymentId } = useParams({ from: '/deployments/$deploymentId' })
+  const queryClient = useQueryClient()
   const { data: deployments, isLoading, isError } = useQuery({
     queryKey: ['deployments'],
     queryFn: getDeployments,
@@ -19,6 +20,15 @@ export function DeploymentDetailPage() {
   })
   const [debugOpen, setDebugOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+
+  const restartMutation = useMutation({
+    mutationFn: (id: string) => restartDeployment(id),
+    onSuccess: updated => {
+      queryClient.setQueryData<Deployment[]>(['deployments'], prev =>
+        prev?.map(item => (item.id === updated.id ? updated : item))
+      )
+    },
+  })
 
   const backLink = (
     <Link
@@ -61,6 +71,13 @@ export function DeploymentDetailPage() {
   const envEntries = Object.entries(deployment.envs)
   const stats = deployment.status === 'healthy' ? deployment.stats : undefined
 
+  const handleRestart = () => {
+    if (!window.confirm(`Restart ${deployment.name}? This will redeploy the current configuration.`)) {
+      return
+    }
+    restartMutation.mutate(deployment.id)
+  }
+
   return (
     <div className="space-y-4">
       {backLink}
@@ -81,16 +98,32 @@ export function DeploymentDetailPage() {
             </div>
           </div>
           <div className="flex flex-col gap-2 sm:items-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 px-2.5 text-xs"
-              onClick={() => setEditOpen(true)}
-            >
-              <Pencil className="h-3 w-3" />
-              Edit
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 px-2.5 text-xs"
+                onClick={handleRestart}
+                disabled={restartMutation.isPending || deployment.status === 'deploying'}
+              >
+                <RotateCcw className="h-3 w-3" />
+                {restartMutation.isPending ? 'Restarting…' : 'Restart'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 px-2.5 text-xs"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil className="h-3 w-3" />
+                Edit
+              </Button>
+            </div>
+            {restartMutation.isError ? (
+              <p className="text-xs text-destructive">Failed to restart deployment.</p>
+            ) : null}
             {deployment.domain && (
               <div className="flex items-center gap-1.5">
                 <Globe className="h-3 w-3 shrink-0 text-muted-foreground/50" />

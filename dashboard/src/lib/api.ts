@@ -248,6 +248,12 @@ export async function deleteDeployment(id: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete deployment')
 }
 
+export async function restartDeployment(id: string): Promise<Deployment> {
+  const res = await fetch(`/api/deployments/${id}/restart`, { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to restart deployment')
+  return res.json()
+}
+
 export async function getSystemStatus(): Promise<SystemStatusSnapshot> {
   const res = await fetch('/api/system-status')
   if (!res.ok) throw new Error('Failed to fetch system status')

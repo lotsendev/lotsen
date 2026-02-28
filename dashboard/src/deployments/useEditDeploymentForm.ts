@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { updateDeployment, type Deployment } from '../lib/api'
+import { updateDeployment, type BasicAuthConfig, type Deployment, type UpdateDeploymentInput } from '../lib/api'
 import { hashPasswordIfNeeded } from '../lib/password'
 import { useDynamicRows } from './useDynamicRows'
 import type { BasicAuthUserRow, EnvRow, FormErrors, PairRow, PortRow } from './useCreateDeploymentForm'
@@ -29,6 +29,20 @@ function toBasicAuthRows(deployment: Deployment): BasicAuthUserRow[] {
   return (deployment.basic_auth?.users ?? []).map((user, i) => ({ id: i, username: user.username, password: user.password }))
 }
 
+function equalBasicAuth(a?: BasicAuthConfig, b?: BasicAuthConfig): boolean {
+  if (!a || !b) {
+    return a === b
+  }
+  if (a.users.length !== b.users.length) {
+    return false
+  }
+
+  return a.users.every((user, index) => {
+    const other = b.users[index]
+    return Boolean(other) && user.username === other.username && user.password === other.password
+  })
+}
+
 export function useEditDeploymentForm(deployment: Deployment, onClose: () => void) {
   const queryClient = useQueryClient()
 
@@ -42,6 +56,83 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
   const portRows = useDynamicRows<PortRow>(id => ({ id, port: '' }), toPortRows(deployment.ports))
   const volumeRows = useDynamicRows<PairRow>(id => ({ id, left: '', right: '' }), toPairRows(deployment.volumes))
   const basicAuthRows = useDynamicRows<BasicAuthUserRow>(id => ({ id, username: '', password: '' }), toBasicAuthRows(deployment))
+
+  const normalizedInput = useMemo<UpdateDeploymentInput>(() => {
+    const envs: Record<string, string> = {}
+    for (const row of envRows.rows) {
+      envs[row.key.trim()] = row.value
+    }
+
+    return {
+      name: name.trim(),
+      image: image.trim(),
+      envs,
+      ports: portRows.rows.map(r => r.port.trim()),
+      volumes: volumeRows.rows.map(r => `${r.left.trim()}:${r.right.trim()}`),
+      domain: domain.trim(),
+      basic_auth: basicAuthEnabled
+        ? {
+            users: basicAuthRows.rows.map(row => ({
+              username: row.username.trim(),
+              password: row.password.trim(),
+            })),
+          }
+        : undefined,
+      security: deployment.security,
+    }
+  }, [name, image, domain, envRows.rows, portRows.rows, volumeRows.rows, basicAuthEnabled, basicAuthRows.rows, deployment.security])
+
+  const isDirty = useMemo(() => {
+    const initial: UpdateDeploymentInput = {
+      name: deployment.name,
+      image: deployment.image,
+      envs: deployment.envs,
+      ports: deployment.ports.map(port => {
+        const separator = port.indexOf(':')
+        return separator >= 0 ? port.slice(separator + 1) : port
+      }),
+      volumes: deployment.volumes,
+      domain: deployment.domain,
+      basic_auth: deployment.basic_auth,
+      security: deployment.security,
+    }
+
+    if (initial.name !== normalizedInput.name ||
+      initial.image !== normalizedInput.image ||
+      initial.domain !== normalizedInput.domain) {
+      return true
+    }
+
+    if (initial.ports.length !== normalizedInput.ports.length || initial.volumes.length !== normalizedInput.volumes.length) {
+      return true
+    }
+
+    for (let i = 0; i < initial.ports.length; i += 1) {
+      if (initial.ports[i] !== normalizedInput.ports[i]) {
+        return true
+      }
+    }
+
+    for (let i = 0; i < initial.volumes.length; i += 1) {
+      if (initial.volumes[i] !== normalizedInput.volumes[i]) {
+        return true
+      }
+    }
+
+    const initialEnvEntries = Object.entries(initial.envs)
+    const currentEnvEntries = Object.entries(normalizedInput.envs)
+    if (initialEnvEntries.length !== currentEnvEntries.length) {
+      return true
+    }
+
+    for (const [key, value] of initialEnvEntries) {
+      if (normalizedInput.envs[key] !== value) {
+        return true
+      }
+    }
+
+    return !equalBasicAuth(initial.basic_auth, normalizedInput.basic_auth)
+  }, [deployment, normalizedInput])
 
   const mutation = useMutation({
     mutationFn: (data: Parameters<typeof updateDeployment>[1]) => updateDeployment(deployment.id, data),
@@ -88,9 +179,6 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
-    const envs: Record<string, string> = {}
-    for (const row of envRows.rows) envs[row.key.trim()] = row.value
-
     const basicAuth = basicAuthEnabled
       ? {
           users: await Promise.all(
@@ -103,12 +191,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
       : undefined
 
     mutation.mutate({
-      name: name.trim(),
-      image: image.trim(),
-      envs,
-      ports: portRows.rows.map(r => r.port.trim()),
-      volumes: volumeRows.rows.map(r => `${r.left.trim()}:${r.right.trim()}`),
-      domain: domain.trim(),
+      ...normalizedInput,
       basic_auth: basicAuth,
     })
   }
@@ -124,6 +207,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
     basicAuthRows,
     errors,
     handleSubmit,
+    isDirty,
     isPending: mutation.isPending,
   }
 }

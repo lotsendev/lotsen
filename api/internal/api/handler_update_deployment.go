@@ -64,6 +64,11 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 	body.Ports = assignedPorts
 
+	if updateRequestMatchesExisting(existing, body, basicAuth) {
+		writeJSON(w, http.StatusOK, existing)
+		return
+	}
+
 	nextStatus := existing.Status
 	if updateRequiresRedeploy(existing, body) {
 		nextStatus = store.StatusDeploying

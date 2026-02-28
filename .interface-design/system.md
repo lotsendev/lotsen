@@ -5,6 +5,7 @@
 - **Human:** Solo operator managing services on a VPS, often triaging incidents quickly.
 - **Feel:** Calm command center, balanced density, operational clarity over decorative UI.
 - **Signature:** Manifest-style deployment rows (service identity, runtime payload, command rail).
+- **Typography direction:** Unified sans-serif heading voice so page titles and card titles stay operational and neutral.
 
 ## Depth Strategy
 - **Primary strategy:** Borders + subtle surface color shifts.
@@ -39,10 +40,10 @@
 ### Status Treatment
 - Deployment status badges are title-cased labels with consistent minimum width for fast vertical scanning.
 - Preserve semantic mapping:
-  - idle → secondary
-  - deploying → info
-  - healthy → success
-  - failed → destructive
+  - idle -> secondary
+  - deploying -> info
+  - healthy -> success
+  - failed -> destructive
 
 ### Create Deployment Dialog
 - Dialog body follows staged setup flow:
@@ -92,5 +93,5 @@
 - Dialogs use softened overlays and card-like content surfaces:
   - overlay: `bg-foreground/35` + slight blur,
   - content: `rounded-xl border-border/60 bg-card` with compact header spacing.
-- Titles use display typography; descriptions remain muted and concise.
+- Titles use `DM Sans` display mapping for consistency with page-level headings.
 - Destructive dialogs include a dedicated warning inset before the confirmation field/action.

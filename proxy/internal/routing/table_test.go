@@ -8,34 +8,34 @@ import (
 
 func TestTable_SetAndGet(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("example.com", "localhost:8080")
+	tbl.Set("example.com", "localhost:8080", nil)
 
-	upstream, ok := tbl.Get("example.com")
+	route, ok := tbl.Get("example.com")
 	if !ok {
 		t.Fatal("want route to exist, got not found")
 	}
-	if upstream != "localhost:8080" {
-		t.Errorf("want upstream localhost:8080, got %s", upstream)
+	if route.Upstream != "localhost:8080" {
+		t.Errorf("want upstream localhost:8080, got %s", route.Upstream)
 	}
 }
 
 func TestTable_Update(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("example.com", "localhost:8080")
-	tbl.Set("example.com", "localhost:9090")
+	tbl.Set("example.com", "localhost:8080", nil)
+	tbl.Set("example.com", "localhost:9090", nil)
 
-	upstream, ok := tbl.Get("example.com")
+	route, ok := tbl.Get("example.com")
 	if !ok {
 		t.Fatal("want route to exist, got not found")
 	}
-	if upstream != "localhost:9090" {
-		t.Errorf("want updated upstream localhost:9090, got %s", upstream)
+	if route.Upstream != "localhost:9090" {
+		t.Errorf("want updated upstream localhost:9090, got %s", route.Upstream)
 	}
 }
 
 func TestTable_Delete(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("example.com", "localhost:8080")
+	tbl.Set("example.com", "localhost:8080", nil)
 	tbl.Delete("example.com")
 
 	if _, ok := tbl.Get("example.com"); ok {
@@ -60,29 +60,29 @@ func TestTable_UnknownDomain(t *testing.T) {
 func TestTable_StaticRoutePersistsWhenDynamicDeleted(t *testing.T) {
 	tbl := routing.NewTable()
 	tbl.SetStatic("dashboard.example.com", "localhost:3000")
-	tbl.Set("dashboard.example.com", "localhost:8080")
+	tbl.Set("dashboard.example.com", "localhost:8080", nil)
 
 	tbl.Delete("dashboard.example.com")
 
-	upstream, ok := tbl.Get("dashboard.example.com")
+	route, ok := tbl.Get("dashboard.example.com")
 	if !ok {
 		t.Fatal("want static route to exist after dynamic delete")
 	}
-	if upstream != "localhost:3000" {
-		t.Errorf("want static upstream localhost:3000, got %s", upstream)
+	if route.Upstream != "localhost:3000" {
+		t.Errorf("want static upstream localhost:3000, got %s", route.Upstream)
 	}
 }
 
 func TestTable_MultipleDomains(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("foo.com", "localhost:3000")
-	tbl.Set("bar.com", "localhost:4000")
+	tbl.Set("foo.com", "localhost:3000", nil)
+	tbl.Set("bar.com", "localhost:4000", nil)
 
-	if u, ok := tbl.Get("foo.com"); !ok || u != "localhost:3000" {
-		t.Errorf("foo.com: want localhost:3000, got %s (ok=%v)", u, ok)
+	if route, ok := tbl.Get("foo.com"); !ok || route.Upstream != "localhost:3000" {
+		t.Errorf("foo.com: want localhost:3000, got %s (ok=%v)", route.Upstream, ok)
 	}
-	if u, ok := tbl.Get("bar.com"); !ok || u != "localhost:4000" {
-		t.Errorf("bar.com: want localhost:4000, got %s (ok=%v)", u, ok)
+	if route, ok := tbl.Get("bar.com"); !ok || route.Upstream != "localhost:4000" {
+		t.Errorf("bar.com: want localhost:4000, got %s (ok=%v)", route.Upstream, ok)
 	}
 
 	tbl.Delete("foo.com")
@@ -90,7 +90,7 @@ func TestTable_MultipleDomains(t *testing.T) {
 	if _, ok := tbl.Get("foo.com"); ok {
 		t.Error("want foo.com deleted")
 	}
-	if u, ok := tbl.Get("bar.com"); !ok || u != "localhost:4000" {
-		t.Errorf("bar.com must survive after foo.com deleted: got %s (ok=%v)", u, ok)
+	if route, ok := tbl.Get("bar.com"); !ok || route.Upstream != "localhost:4000" {
+		t.Errorf("bar.com must survive after foo.com deleted: got %s (ok=%v)", route.Upstream, ok)
 	}
 }

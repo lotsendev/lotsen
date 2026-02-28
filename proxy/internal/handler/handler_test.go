@@ -15,29 +15,32 @@ import (
 	"time"
 
 	"github.com/ercadev/dirigent/proxy/internal/handler"
+	"github.com/ercadev/dirigent/proxy/internal/routing"
+	"github.com/ercadev/dirigent/store"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // testTable is an in-memory routing table used only in tests.
 type testTable struct {
 	mu     sync.RWMutex
-	routes map[string]string
+	routes map[string]routing.Route
 }
 
 func newTestTable() *testTable {
-	return &testTable{routes: make(map[string]string)}
+	return &testTable{routes: make(map[string]routing.Route)}
 }
 
-func (t *testTable) Set(domain, upstream string) {
+func (t *testTable) Set(domain, upstream string, basicAuth *store.BasicAuthConfig) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.routes[domain] = upstream
+	t.routes[domain] = routing.Route{Upstream: upstream, BasicAuth: basicAuth}
 }
 
-func (t *testTable) Get(domain string) (string, bool) {
+func (t *testTable) Get(domain string) (routing.Route, bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	u, ok := t.routes[domain]
-	return u, ok
+	route, ok := t.routes[domain]
+	return route, ok
 }
 
 func newProxyServer(tbl *testTable) *httptest.Server {
@@ -67,7 +70,7 @@ func TestProxy_KnownDomainReachesBackend(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String())
+	tbl.Set("example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -116,7 +119,7 @@ func TestProxy_RemovedDeploymentIsUnreachable(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String())
+	tbl.Set("example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -172,12 +175,12 @@ func TestSetRoute_SetsUpstream(t *testing.T) {
 		t.Fatalf("want 204, got %d", resp.StatusCode)
 	}
 
-	upstream, ok := tbl.Get("example.com")
+	route, ok := tbl.Get("example.com")
 	if !ok {
 		t.Fatal("want route registered, got not found")
 	}
-	if upstream != "localhost:3000" {
-		t.Errorf("want upstream localhost:3000, got %s", upstream)
+	if route.Upstream != "localhost:3000" {
+		t.Errorf("want upstream localhost:3000, got %s", route.Upstream)
 	}
 }
 
@@ -236,7 +239,7 @@ func TestProxy_AtomicSwap_KeepsInflightRequestsAndRoutesNewTraffic(t *testing.T)
 	defer newBackend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", oldBackend.Listener.Addr().String())
+	tbl.Set("example.com", oldBackend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -333,7 +336,7 @@ func TestHealth_Returns200(t *testing.T) {
 func TestProxy_UpstreamUnavailableReturns502(t *testing.T) {
 	tbl := newTestTable()
 	// Point to a port nobody is listening on.
-	tbl.Set("example.com", "localhost:1")
+	tbl.Set("example.com", "localhost:1", nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -359,7 +362,7 @@ func TestProxy_HTTPSKnownDomainReachesBackend(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String())
+	tbl.Set("example.com", backend.Listener.Addr().String(), nil)
 
 	mux := http.NewServeMux()
 	handler.New(tbl, nil).RegisterRoutes(mux)
@@ -387,7 +390,7 @@ func TestProxy_DashboardDomainRequiresBasicAuth(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("dashboard.example.com", backend.Listener.Addr().String())
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServerWithDashboardAuth(tbl, &handler.DashboardAuth{
 		Domain:   "dashboard.example.com",
@@ -420,7 +423,7 @@ func TestProxy_DashboardDomainWithValidBasicAuth(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("dashboard.example.com", backend.Listener.Addr().String())
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServerWithDashboardAuth(tbl, &handler.DashboardAuth{
 		Domain:   "dashboard.example.com",
@@ -451,7 +454,7 @@ func TestProxy_NonDashboardDomainDoesNotRequireBasicAuth(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("app.example.com", backend.Listener.Addr().String())
+	tbl.Set("app.example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServerWithDashboardAuth(tbl, &handler.DashboardAuth{
 		Domain:   "dashboard.example.com",
@@ -481,7 +484,7 @@ func TestProxy_StandardHardeningBlocksSensitivePaths(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String())
+	tbl.Set("example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -510,7 +513,7 @@ func TestProxy_OffHardeningAllowsSensitivePaths(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String())
+	tbl.Set("example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServerWithOptions(tbl, handler.WithHardeningProfile(handler.HardeningOff))
 	defer proxy.Close()
@@ -536,7 +539,7 @@ func TestProxy_StrictHardeningBlocksScannerPaths(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String())
+	tbl.Set("example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServerWithOptions(tbl, handler.WithHardeningProfile(handler.HardeningStrict))
 	defer proxy.Close()
@@ -562,7 +565,7 @@ func TestProxy_StandardHardeningRateLimitsRepeatedScans(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String())
+	tbl.Set("example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -599,7 +602,7 @@ func TestInternalTraffic_ReportsBlockedIPsAndCounters(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String())
+	tbl.Set("example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -688,7 +691,7 @@ func TestProxy_WritesAccessLogWithWhitelistedHeaders(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String())
+	tbl.Set("example.com", backend.Listener.Addr().String(), nil)
 
 	proxy := newProxyServerWithOptions(tbl, handler.WithAccessLogger(logger))
 	defer proxy.Close()
@@ -758,5 +761,77 @@ func TestProxy_WritesAccessLogWithWhitelistedHeaders(t *testing.T) {
 	}
 	if entry.Headers["user-agent"] != "dirigent-test" {
 		t.Fatalf("want user-agent header, got %q", entry.Headers["user-agent"])
+	}
+}
+
+func TestProxy_DeploymentBasicAuthRequiresCredentials(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("bcrypt hash: %v", err)
+	}
+
+	tbl := newTestTable()
+	tbl.Set("private.example.com", backend.Listener.Addr().String(), &store.BasicAuthConfig{Users: []store.BasicAuthUser{{
+		Username: "admin",
+		Password: string(hash),
+	}}})
+
+	proxy := newProxyServer(tbl)
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	req.Host = "private.example.com"
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("WWW-Authenticate"); got != `Basic realm="Dirigent"` {
+		t.Fatalf("want Basic realm challenge, got %q", got)
+	}
+}
+
+func TestProxy_DeploymentBasicAuthWithValidCredentials(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("bcrypt hash: %v", err)
+	}
+
+	tbl := newTestTable()
+	tbl.Set("private.example.com", backend.Listener.Addr().String(), &store.BasicAuthConfig{Users: []store.BasicAuthUser{{
+		Username: "admin",
+		Password: string(hash),
+	}}})
+
+	proxy := newProxyServer(tbl)
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	req.Host = "private.example.com"
+	req.SetBasicAuth("admin", "secret")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
 	}
 }

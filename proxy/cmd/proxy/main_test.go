@@ -11,28 +11,30 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/ercadev/dirigent/proxy/internal/handler"
+	"github.com/ercadev/dirigent/proxy/internal/routing"
+	"github.com/ercadev/dirigent/store"
 )
 
 type tableStub struct {
 	mu     sync.RWMutex
-	routes map[string]string
+	routes map[string]routing.Route
 }
 
 func newTableStub() *tableStub {
-	return &tableStub{routes: make(map[string]string)}
+	return &tableStub{routes: make(map[string]routing.Route)}
 }
 
-func (t *tableStub) Get(domain string) (string, bool) {
+func (t *tableStub) Get(domain string) (routing.Route, bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	u, ok := t.routes[domain]
-	return u, ok
+	route, ok := t.routes[domain]
+	return route, ok
 }
 
-func (t *tableStub) Set(domain, upstream string) {
+func (t *tableStub) Set(domain, upstream string, basicAuth *store.BasicAuthConfig) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.routes[domain] = upstream
+	t.routes[domain] = routing.Route{Upstream: upstream, BasicAuth: basicAuth}
 }
 
 func TestRedirectToHTTPS_DefaultPort(t *testing.T) {
@@ -106,7 +108,7 @@ func TestHTTPMux_InternalRoutesCanBeUpdated(t *testing.T) {
 
 func TestHostPolicyFromTable(t *testing.T) {
 	tbl := newTableStub()
-	tbl.Set("example.com", "localhost:3000")
+	tbl.Set("example.com", "localhost:3000", nil)
 	policy := hostPolicyFromTable(tbl)
 
 	if err := policy(context.Background(), "example.com"); err != nil {

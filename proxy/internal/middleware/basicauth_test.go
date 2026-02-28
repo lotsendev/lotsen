@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/ercadev/dirigent/proxy/internal/middleware"
+	"github.com/ercadev/dirigent/store"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestValidBasicAuth(t *testing.T) {
@@ -36,5 +38,31 @@ func TestWriteBasicAuthChallenge(t *testing.T) {
 	}
 	if got := w.Header().Get("WWW-Authenticate"); got != `Basic realm="Dirigent"` {
 		t.Fatalf("want Basic realm challenge, got %q", got)
+	}
+}
+
+func TestValidBasicAuthUsers(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.SetBasicAuth("admin", "secret")
+	hash, err := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("bcrypt hash: %v", err)
+	}
+	auth := &store.BasicAuthConfig{Users: []store.BasicAuthUser{{Username: "admin", Password: string(hash)}}}
+	if !middleware.ValidBasicAuthUsers(req, auth) {
+		t.Fatal("want credentials to be accepted")
+	}
+}
+
+func TestValidBasicAuthUsers_Invalid(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.SetBasicAuth("admin", "wrong")
+	hash, err := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("bcrypt hash: %v", err)
+	}
+	auth := &store.BasicAuthConfig{Users: []store.BasicAuthUser{{Username: "admin", Password: string(hash)}}}
+	if middleware.ValidBasicAuthUsers(req, auth) {
+		t.Fatal("want credentials to be rejected")
 	}
 }

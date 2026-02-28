@@ -6,7 +6,7 @@ import { DynamicSection } from './DynamicSection'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { cn } from '../lib/utils'
-import type { EnvRow, PairRow, PortRow } from './useCreateDeploymentForm'
+import type { BasicAuthUserRow, EnvRow, PairRow, PortRow } from './useCreateDeploymentForm'
 
 const fieldErrorCls = 'text-xs text-destructive'
 
@@ -20,7 +20,7 @@ type Props = {
 export default function EditDeploymentForm({ deployment, onClose, className, hideHeader = false }: Props) {
   const {
     name, setName, image, setImage, domain, setDomain,
-    envRows, portRows, volumeRows,
+    envRows, portRows, volumeRows, basicAuthEnabled, setBasicAuthEnabled, basicAuthRows,
     errors, handleSubmit, isPending,
   } = useEditDeploymentForm(deployment, onClose)
 
@@ -102,6 +102,37 @@ export default function EditDeploymentForm({ deployment, onClose, className, hid
               className="font-mono" />
           </>)}
         />
+
+
+        <div className="space-y-3 rounded-md border p-4">
+          <div className="flex items-center gap-2">
+            <input id="basic-auth-enabled" type="checkbox" checked={basicAuthEnabled}
+              onChange={e => setBasicAuthEnabled(e.target.checked)} />
+            <Label htmlFor="basic-auth-enabled">Enable basic auth</Label>
+          </div>
+
+          {basicAuthEnabled && (
+            <DynamicSection<BasicAuthUserRow>
+              title="Basic auth users"
+              addLabel="Add user"
+              removeLabel="Remove user"
+              rows={basicAuthRows.rows}
+              onAdd={basicAuthRows.add}
+              onRemove={basicAuthRows.remove}
+              errorFor={row => errors.basicAuth[row.id]}
+              renderRow={row => (<>
+                <Input type="text" placeholder="Username" value={row.username}
+                  onChange={e => basicAuthRows.update(row.id, { username: e.target.value })}
+                  aria-invalid={Boolean(errors.basicAuth[row.id])}
+                />
+                <Input type="password" placeholder="Password" value={row.password}
+                  onChange={e => basicAuthRows.update(row.id, { password: e.target.value })}
+                  aria-invalid={Boolean(errors.basicAuth[row.id])}
+                />
+              </>)}
+            />
+          )}
+        </div>
 
         {errors.form && <p className={fieldErrorCls}>{errors.form}</p>}
         <div className="flex items-center gap-3">

@@ -23,6 +23,12 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	basicAuth, err := sanitizeAndHashBasicAuth(body.BasicAuth)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	existing, err := h.store.Get(id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -48,11 +54,12 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	patch := store.Deployment{
-		Image:   body.Image,
-		Envs:    body.Envs,
-		Ports:   body.Ports,
-		Volumes: body.Volumes,
-		Domain:  body.Domain,
+		Image:     body.Image,
+		Envs:      body.Envs,
+		Ports:     body.Ports,
+		Volumes:   body.Volumes,
+		Domain:    body.Domain,
+		BasicAuth: basicAuth,
 	}
 	if patchRequiresRedeploy(existing, body) {
 		patch.Status = store.StatusDeploying

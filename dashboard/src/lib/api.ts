@@ -9,6 +9,13 @@ export type BasicAuthConfig = {
   users: BasicAuthUser[]
 }
 
+export type SecurityConfig = {
+  waf_enabled: boolean
+  ip_denylist: string[]
+  ip_allowlist: string[]
+  custom_rules: string[]
+}
+
 export type Deployment = {
   id: string
   name: string
@@ -18,6 +25,7 @@ export type Deployment = {
   volumes: string[]
   domain: string
   basic_auth?: BasicAuthConfig
+  security?: SecurityConfig
   status: DeploymentStatus
   error?: string
 }
@@ -84,12 +92,25 @@ export type LoadBalancerSystemStatus = {
     totalRequests: number
     suspiciousRequests: number
     blockedRequests: number
+    wafBlockedRequests?: number
+    uaBlockedRequests?: number
     activeBlockedIps: number
     blockedIps?: Array<{
       ip: string
       blockedUntil?: string
     }>
   }
+}
+
+export type ProxySecurityConfig = {
+  profile: string
+  suspiciousWindowSeconds: number
+  suspiciousThreshold: number
+  suspiciousBlockForSeconds: number
+  wafEnabled: boolean
+  wafMode?: string
+  globalIpDenylist?: string[]
+  globalIpAllowlist?: string[]
 }
 
 export type DockerSystemStatus = {
@@ -181,6 +202,7 @@ export type UpdateDeploymentInput = {
   volumes: string[]
   domain: string
   basic_auth?: BasicAuthConfig
+  security?: SecurityConfig
 }
 
 export async function updateDeployment(id: string, data: UpdateDeploymentInput): Promise<Deployment> {
@@ -190,6 +212,26 @@ export async function updateDeployment(id: string, data: UpdateDeploymentInput):
     body: JSON.stringify(data),
   })
   if (!res.ok) throw new Error('Failed to update deployment')
+  return res.json()
+}
+
+export type PatchDeploymentInput = {
+  image?: string
+  envs?: Record<string, string>
+  ports?: string[]
+  volumes?: string[]
+  domain?: string
+  basic_auth?: BasicAuthConfig
+  security?: SecurityConfig
+}
+
+export async function patchDeployment(id: string, data: PatchDeploymentInput): Promise<Deployment> {
+  const res = await fetch(`/api/deployments/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Failed to patch deployment')
   return res.json()
 }
 
@@ -235,6 +277,12 @@ export async function getVersionInfo(options?: { forceRefresh?: boolean }): Prom
   const suffix = options?.forceRefresh ? "?refresh=1" : ""
   const res = await fetch(`/api/version${suffix}`)
   if (!res.ok) throw new Error('Failed to fetch version info')
+  return res.json()
+}
+
+export async function getSecurityConfig(): Promise<ProxySecurityConfig> {
+  const res = await fetch('/api/security-config')
+  if (!res.ok) throw new Error('Failed to fetch security config')
   return res.json()
 }
 

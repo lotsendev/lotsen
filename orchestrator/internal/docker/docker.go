@@ -442,31 +442,29 @@ func (d *Docker) shouldStopBeforeStart(ctx context.Context, oldContainerID strin
 		return false, nil
 	}
 
-	current := make(map[string]string, len(inspect.NetworkSettings.Ports))
-	for p, bindings := range inspect.NetworkSettings.Ports {
+	current := make(map[string]struct{}, len(inspect.NetworkSettings.Ports))
+	for _, bindings := range inspect.NetworkSettings.Ports {
 		for _, b := range bindings {
 			if b.HostPort == "" {
 				continue
 			}
-			current[p.Port()] = b.HostPort
+			current[b.HostPort] = struct{}{}
 			break
 		}
 	}
 
-	if len(current) != len(desired) {
-		return false, nil
-	}
-	for containerPort, hostPort := range desired {
-		if current[containerPort] != hostPort {
-			return false, nil
+	for _, hostPort := range desired {
+		if _, overlap := current[hostPort]; overlap {
+			return true, nil
 		}
 	}
-	return true, nil
+
+	return false, nil
 }
 
-func desiredExplicitHostPorts(ports []string) (map[string]string, error) {
+func desiredExplicitHostPorts(ports []string) ([]string, error) {
 	if len(ports) == 0 {
-		return map[string]string{}, nil
+		return []string{}, nil
 	}
 
 	_, bindings, err := parsePorts(ports)
@@ -474,8 +472,8 @@ func desiredExplicitHostPorts(ports []string) (map[string]string, error) {
 		return nil, err
 	}
 
-	result := make(map[string]string, len(bindings))
-	for p, b := range bindings {
+	result := make([]string, 0, len(bindings))
+	for _, b := range bindings {
 		if len(b) == 0 {
 			continue
 		}
@@ -483,7 +481,7 @@ func desiredExplicitHostPorts(ports []string) (map[string]string, error) {
 		if hostPort == "" || hostPort == "0" {
 			continue
 		}
-		result[p.Port()] = hostPort
+		result = append(result, hostPort)
 	}
 	return result, nil
 }

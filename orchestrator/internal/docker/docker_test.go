@@ -363,6 +363,34 @@ func TestDocker_StartAndReplace_SameExplicitPorts_FallsBackToStopThenStart(t *te
 	}
 }
 
+func TestDocker_StartAndReplace_OverlappingExplicitHostPort_FallsBackToStopThenStart(t *testing.T) {
+	mock := &mockClient{
+		containerCreate:  container.CreateResponse{ID: "new-c1"},
+		inspectContainer: inspectWithPort("8080/tcp", "32770"),
+		listContainers:   []dockertypes.Container{},
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	dep.Ports = []string{"32770:8080"}
+
+	ports, err := d.StartAndReplace(context.Background(), dep, "old-c1")
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+
+	if len(ports) != 1 || ports[0] != "32770:8080" {
+		t.Fatalf("want runtime ports [32770:8080], got %v", ports)
+	}
+
+	if len(mock.stopped) != 1 || mock.stopped[0] != "old-c1" {
+		t.Fatalf("want old-c1 stopped first, got %v", mock.stopped)
+	}
+	if len(mock.removed) != 1 || mock.removed[0] != "old-c1" {
+		t.Fatalf("want old-c1 removed first, got %v", mock.removed)
+	}
+}
+
 func TestDocker_StartAndReplace_DomainConfigured_SwapsProxyBeforeStoppingOld(t *testing.T) {
 	var stopCalled atomic.Bool
 	var swapCalled atomic.Bool

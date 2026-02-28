@@ -244,6 +244,35 @@ func TestReconcile_DeployingWithRunningContainer_RedeploysAndBecomesHealthy(t *t
 	}
 }
 
+func TestReconcile_DeployingWithMultipleContainers_PrefersCanonicalAndCleansUpStale(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Image: "nginx:2", Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{
+		containers: []docker.ManagedContainer{
+			{ID: "c-next", Name: "/web-next", DeploymentID: "d1", Running: true},
+			{ID: "c-old", Name: "/web", DeploymentID: "d1", Running: true},
+		},
+	}
+	r := reconciler.New(s, d, nil)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	if len(d.replaced) != 1 || d.replaced[0] != "c-old" {
+		t.Fatalf("want StartAndReplace called with canonical container c-old, got %v", d.replaced)
+	}
+	if len(d.removed) != 1 || d.removed[0] != "c-next" {
+		t.Fatalf("want stale c-next removed, got %v", d.removed)
+	}
+	if s.getStatus("d1") != store.StatusHealthy {
+		t.Fatalf("want status healthy, got %s", s.getStatus("d1"))
+	}
+}
+
 func TestReconcile_DeployingNoContainer_StoresRuntimePorts(t *testing.T) {
 	s := &mockStore{
 		deployments: []store.Deployment{

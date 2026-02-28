@@ -62,6 +62,12 @@ func newProxyServerWithDashboardAuth(tbl *testTable, auth *handler.DashboardAuth
 	return httptest.NewServer(mux)
 }
 
+func newProxyServerWithDashboardAuthAndOptions(tbl *testTable, auth *handler.DashboardAuth, options ...handler.Option) *httptest.Server {
+	mux := http.NewServeMux()
+	handler.New(tbl, auth, options...).RegisterRoutes(mux)
+	return httptest.NewServer(mux)
+}
+
 // TestProxy_KnownDomainReachesBackend verifies that a request whose Host header
 // matches a registered domain is forwarded to the correct backend container.
 func TestProxy_KnownDomainReachesBackend(t *testing.T) {
@@ -445,6 +451,63 @@ func TestProxy_DashboardDomainWithValidBasicAuth(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestProxy_DashboardDomainBypassesWAF(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	wafRule := `SecRule REQUEST_URI "@contains dashboard-waf-trigger" "id:10098,phase:1,deny,status:403,log,msg:'dashboard waf trigger'"`
+
+	tbl := newTestTable()
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), nil, &store.SecurityConfig{
+		WAFEnabled:  true,
+		CustomRules: []string{wafRule},
+	})
+
+	waf, err := middleware.NewWAF(true, middleware.WAFModeEnforcement)
+	if err != nil {
+		t.Fatalf("NewWAF enforcement: %v", err)
+	}
+	proxy := newProxyServerWithDashboardAuthAndOptions(tbl, &handler.DashboardAuth{
+		Domain:   "dashboard.example.com",
+		Username: "admin",
+		Password: "secret",
+	}, handler.WithWAF(waf))
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodPut, proxy.URL+"/api/deployments/dashboard-waf-trigger", strings.NewReader(`{"name":"ok"}`))
+	req.Host = "dashboard.example.com"
+	req.SetBasicAuth("admin", "secret")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/dashboard-waf-trigger: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	trafficResp, err := http.Get(proxy.URL + "/internal/traffic")
+	if err != nil {
+		t.Fatalf("GET /internal/traffic: %v", err)
+	}
+	defer trafficResp.Body.Close()
+
+	var body struct {
+		WAFBlockedRequests int64 `json:"wafBlockedRequests"`
+	}
+	if err := json.NewDecoder(trafficResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode traffic response: %v", err)
+	}
+	if body.WAFBlockedRequests != 0 {
+		t.Fatalf("want waf blocked requests 0, got %d", body.WAFBlockedRequests)
 	}
 }
 

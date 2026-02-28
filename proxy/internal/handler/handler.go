@@ -247,7 +247,9 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	applyWAF := true
-	if route.Security != nil {
+	if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
+		applyWAF = false
+	} else if route.Security != nil {
 		applyWAF = route.Security.WAFEnabled
 	}
 	if h.waf != nil && applyWAF {

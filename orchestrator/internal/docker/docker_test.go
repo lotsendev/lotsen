@@ -25,6 +25,9 @@ import (
 type mockClient struct {
 	pingErr          error
 	imagePullErr     error
+	imagePulled      bool
+	imageList        []image.Summary
+	imageListErr     error
 	containerCreate  container.CreateResponse
 	createErr        error
 	startErr         error
@@ -50,7 +53,12 @@ func (m *mockClient) ImagePull(_ context.Context, _ string, _ image.PullOptions)
 	if m.imagePullErr != nil {
 		return nil, m.imagePullErr
 	}
+	m.imagePulled = true
 	return io.NopCloser(strings.NewReader("")), nil
+}
+
+func (m *mockClient) ImageList(_ context.Context, _ image.ListOptions) ([]image.Summary, error) {
+	return m.imageList, m.imageListErr
 }
 
 func (m *mockClient) ContainerCreate(_ context.Context, _ *container.Config, hostCfg *container.HostConfig, _ *network.NetworkingConfig, _ *ocispec.Platform, _ string) (container.CreateResponse, error) {
@@ -445,9 +453,63 @@ func TestDocker_StartAndReplace_ProxySwapFails_CleansUpNewAndKeepsOld(t *testing
 	}
 }
 
+func TestDocker_Start_PinnedImageExistsLocally_SkipsPull(t *testing.T) {
+	mock := &mockClient{
+		imageList:        []image.Summary{{ID: "sha256:abc"}},
+		containerCreate:  container.CreateResponse{ID: "c1"},
+		inspectContainer: inspectWithPort("80/tcp", "80"),
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	dep.Image = "nginx:1.25.3" // pinned tag — should not be re-pulled
+	if _, err := d.Start(context.Background(), dep); err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+	if mock.imagePulled {
+		t.Error("want pull skipped for pinned image that exists locally, but ImagePull was called")
+	}
+}
+
+func TestDocker_Start_LatestTagAlwaysPulls(t *testing.T) {
+	mock := &mockClient{
+		imageList:        []image.Summary{{ID: "sha256:abc"}}, // image exists locally
+		containerCreate:  container.CreateResponse{ID: "c1"},
+		inspectContainer: inspectWithPort("80/tcp", "80"),
+	}
+	d := docker.New(mock)
+
+	dep := deployment() // image is "nginx:latest"
+	if _, err := d.Start(context.Background(), dep); err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+	if !mock.imagePulled {
+		t.Error("want pull for :latest tag even when image exists locally, but ImagePull was not called")
+	}
+}
+
+func TestDocker_Start_PinnedImageNotLocal_Pulls(t *testing.T) {
+	mock := &mockClient{
+		imageList:        []image.Summary{}, // image not present locally
+		containerCreate:  container.CreateResponse{ID: "c1"},
+		inspectContainer: inspectWithPort("80/tcp", "80"),
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	dep.Image = "nginx:1.25.3"
+	if _, err := d.Start(context.Background(), dep); err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+	if !mock.imagePulled {
+		t.Error("want pull when pinned image is not cached locally, but ImagePull was not called")
+	}
+}
+
 // Ensure the mock satisfies the docker.Client interface at compile time.
 var _ interface {
 	ContainerList(context.Context, container.ListOptions) ([]dockertypes.Container, error)
+	ImageList(context.Context, image.ListOptions) ([]image.Summary, error)
 	Ping(context.Context) (dockertypes.Ping, error)
 } = (*mockClient)(nil)
 

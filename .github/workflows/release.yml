@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (vX.Y.Z)"
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 jobs:
   ci-go:
@@ -133,8 +142,8 @@ jobs:
       - name: Build API binaries
         working-directory: api
         run: |
-          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=${{ github.ref_name }}" -o ../dirigent-linux-amd64 ./cmd/dirigent
-          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=${{ github.ref_name }}" -o ../dirigent-linux-arm64 ./cmd/dirigent
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=${{ env.RELEASE_TAG }}" -o ../dirigent-linux-amd64 ./cmd/dirigent
+          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=${{ env.RELEASE_TAG }}" -o ../dirigent-linux-arm64 ./cmd/dirigent
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -158,8 +167,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -199,8 +206,6 @@ jobs:
     name: Docker / Landing
     needs: [build]
     runs-on: ubuntu-latest
-    env:
-      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 

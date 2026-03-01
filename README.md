@@ -8,20 +8,20 @@ Run the following command on a fresh Ubuntu 22.04+ or Debian 11+ VPS as root (or
 
 ```bash
 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
-sudo dirigent setup
+sudo lotsen setup
 ```
 
 To pin a specific version:
 
 ```bash
 DIRIGENT_VERSION=v0.0.2 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/download/v0.0.2/install.sh | sudo bash
-sudo DIRIGENT_VERSION=v0.0.2 dirigent setup
+sudo DIRIGENT_VERSION=v0.0.2 lotsen setup
 ```
 
 The bootstrap installer will:
-- Install the `dirigent` CLI binary
+- Install the `lotsen` CLI binary
 
-Then `dirigent setup` will:
+Then `lotsen setup` will:
 - Install Docker Engine if not already present
 - Download all Dirigent components for your architecture (`amd64` / `arm64`)
 - Register and start three systemd services that survive reboots
@@ -43,7 +43,7 @@ Dirigent proxy supports three hardening levels:
 Configure during setup:
 
 ```bash
-sudo dirigent setup --proxy-hardening-profile strict
+sudo lotsen setup --proxy-hardening-profile strict
 ```
 
 Or via environment variable:
@@ -56,11 +56,11 @@ sudo DIRIGENT_PROXY_HARDENING_PROFILE=strict dirigent setup
 
 | Service               | Port   | Description                                    |
 |-----------------------|--------|------------------------------------------------|
-| `dirigent-api`        | `:8080`| REST API + dashboard UI                        |
-| `dirigent-orchestrator` | —    | Reconciler — syncs state with Docker (no port) |
-| `dirigent-proxy`      | `:80`  | Reverse proxy — routes traffic to containers   |
+| `lotsen-api`          | `:8080`| REST API + dashboard UI                        |
+| `lotsen-orchestrator` | —      | Reconciler — syncs state with Docker (no port) |
+| `lotsen-proxy`        | `:80`  | Reverse proxy — routes traffic to containers   |
 
-The dashboard is served by `dirigent-api` on `:8080` by default. If you set `DIRIGENT_DASHBOARD_DOMAIN` during setup, the proxy exposes it on `:80/:443` with optional Basic Auth.
+The dashboard is served by `lotsen-api` on `:8080` by default. If you set `DIRIGENT_DASHBOARD_DOMAIN` during setup, the proxy exposes it on `:80/:443` with optional Basic Auth.
 
 `DIRIGENT_AUTH_USER`/`DIRIGENT_AUTH_PASSWORD` (`LOTSEN_` aliases also supported) are bootstrap-only: they seed the first dashboard user when `users.db` is empty and are ignored after users already exist.
 

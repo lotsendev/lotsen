@@ -111,20 +111,20 @@ jobs:
       - name: Build CLI binaries
         working-directory: cli
         run: |
-          GOOS=linux GOARCH=amd64 go build -o ../dirigent-cli-linux-amd64 ./cmd/dirigent
-          GOOS=linux GOARCH=arm64 go build -o ../dirigent-cli-linux-arm64 ./cmd/dirigent
+          GOOS=linux GOARCH=amd64 go build -o ../lotsen-cli-linux-amd64 ./cmd/lotsen
+          GOOS=linux GOARCH=arm64 go build -o ../lotsen-cli-linux-arm64 ./cmd/lotsen
 
       - name: Build orchestrator binaries
         working-directory: orchestrator
         run: |
-          GOOS=linux GOARCH=amd64 go build -o ../dirigent-orchestrator-linux-amd64 ./cmd/orchestrator
-          GOOS=linux GOARCH=arm64 go build -o ../dirigent-orchestrator-linux-arm64 ./cmd/orchestrator
+          GOOS=linux GOARCH=amd64 go build -o ../lotsen-orchestrator-linux-amd64 ./cmd/orchestrator
+          GOOS=linux GOARCH=arm64 go build -o ../lotsen-orchestrator-linux-arm64 ./cmd/orchestrator
 
       - name: Build proxy binaries
         working-directory: proxy
         run: |
-          GOOS=linux GOARCH=amd64 go build -o ../dirigent-proxy-linux-amd64 ./cmd/proxy
-          GOOS=linux GOARCH=arm64 go build -o ../dirigent-proxy-linux-arm64 ./cmd/proxy
+          GOOS=linux GOARCH=amd64 go build -o ../lotsen-proxy-linux-amd64 ./cmd/proxy
+          GOOS=linux GOARCH=arm64 go build -o ../lotsen-proxy-linux-arm64 ./cmd/proxy
 
       - name: Install dashboard dependencies
         working-directory: dashboard
@@ -142,22 +142,22 @@ jobs:
       - name: Build API binaries
         working-directory: api
         run: |
-          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=${{ env.RELEASE_TAG }}" -o ../dirigent-linux-amd64 ./cmd/dirigent
-          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=${{ env.RELEASE_TAG }}" -o ../dirigent-linux-arm64 ./cmd/dirigent
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=${{ env.RELEASE_TAG }}" -o ../lotsen-api-linux-amd64 ./cmd/lotsen
+          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=${{ env.RELEASE_TAG }}" -o ../lotsen-api-linux-arm64 ./cmd/lotsen
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
           path: |
-            dirigent-linux-amd64
-            dirigent-linux-arm64
-            dirigent-cli-linux-amd64
-            dirigent-cli-linux-arm64
-            dirigent-orchestrator-linux-amd64
-            dirigent-orchestrator-linux-arm64
-            dirigent-proxy-linux-amd64
-            dirigent-proxy-linux-arm64
+            lotsen-api-linux-amd64
+            lotsen-api-linux-arm64
+            lotsen-cli-linux-amd64
+            lotsen-cli-linux-arm64
+            lotsen-orchestrator-linux-amd64
+            lotsen-orchestrator-linux-arm64
+            lotsen-proxy-linux-amd64
+            lotsen-proxy-linux-arm64
             install.sh
             setup.sh
 
@@ -191,14 +191,14 @@ jobs:
             --title "${{ env.RELEASE_TAG }}" \
             --notes-file release-notes.md \
             --latest \
-            dirigent-linux-amd64 \
-            dirigent-linux-arm64 \
-            dirigent-cli-linux-amd64 \
-            dirigent-cli-linux-arm64 \
-            dirigent-orchestrator-linux-amd64 \
-            dirigent-orchestrator-linux-arm64 \
-            dirigent-proxy-linux-amd64 \
-            dirigent-proxy-linux-arm64 \
+            lotsen-api-linux-amd64 \
+            lotsen-api-linux-arm64 \
+            lotsen-cli-linux-amd64 \
+            lotsen-cli-linux-arm64 \
+            lotsen-orchestrator-linux-amd64 \
+            lotsen-orchestrator-linux-arm64 \
+            lotsen-proxy-linux-amd64 \
+            lotsen-proxy-linux-arm64 \
             install.sh \
             setup.sh
 

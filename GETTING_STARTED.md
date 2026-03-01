@@ -16,12 +16,12 @@ This guide covers two paths: running Dirigent on a VPS (production) and running 
 
 ```bash
 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
-sudo dirigent setup
+sudo lotsen setup
 ```
 
-The bootstrap installer installs the `dirigent` CLI.
+The bootstrap installer installs the `lotsen` CLI.
 
-Then `dirigent setup` will:
+Then `lotsen setup` will:
 1. Install Docker Engine if not already present
 2. Download all Dirigent components for your architecture (`amd64` or `arm64`)
 3. Create and enable three systemd services
@@ -33,29 +33,29 @@ In interactive mode, setup recommends the `strict` security profile.
 
 | Service | Port | Description |
 |---|---|---|
-| `dirigent-api` | `:8080` | REST API + dashboard UI |
-| `dirigent-proxy` | `:80` | Reverse proxy for your deployments |
-| `dirigent-orchestrator` | — | Internal reconciler, no inbound port |
+| `lotsen-api` | `:8080` | REST API + dashboard UI |
+| `lotsen-proxy` | `:80` | Reverse proxy for your deployments |
+| `lotsen-orchestrator` | — | Internal reconciler, no inbound port |
 
 Open the dashboard at `http://<your-vps-ip>:8080`.
 
-> **Why port 8080?** The API now serves the embedded dashboard bundle directly, so production no longer requires Bun or Node on the VPS. For HTTPS + Basic Auth on a dedicated domain, run `sudo dirigent setup` and set dashboard exposure.
+> **Why port 8080?** The API now serves the embedded dashboard bundle directly, so production no longer requires Bun or Node on the VPS. For HTTPS + Basic Auth on a dedicated domain, run `sudo lotsen setup` and set dashboard exposure.
 
 ### Configure dashboard access after install
 
 You can re-run dashboard exposure/auth setup at any time:
 
 ```bash
-sudo dirigent setup
+sudo lotsen setup
 ```
 
-This command updates `/etc/dirigent/dirigent.env` and restarts `dirigent-proxy`.
+This command updates `/etc/dirigent/dirigent.env` and restarts `lotsen-proxy`.
 
 ### Pin a specific version
 
 ```bash
 DIRIGENT_VERSION=v0.1.0 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/download/v0.1.0/install.sh | sudo bash
-sudo DIRIGENT_VERSION=v0.1.0 dirigent setup
+sudo DIRIGENT_VERSION=v0.1.0 lotsen setup
 ```
 
 ### Upgrade
@@ -67,25 +67,25 @@ If dashboard access is unavailable, you can still run the manual installer comma
 replaces the binaries, and restarts cleanly.
 
 ```bash
-sudo dirigent upgrade
+sudo lotsen upgrade
 ```
 
-By default, `dirigent upgrade` now shows the current and target version, then asks for confirmation before continuing.
+By default, `lotsen upgrade` now shows the current and target version, then asks for confirmation before continuing.
 For unattended runs (for example CI/automation), pass `--non-interactive --yes`.
 
 ### Manage services
 
 ```bash
 # View logs for a specific service
-journalctl -u dirigent-api -f
-journalctl -u dirigent-orchestrator -f
-journalctl -u dirigent-proxy -f
+journalctl -u lotsen-api -f
+journalctl -u lotsen-orchestrator -f
+journalctl -u lotsen-proxy -f
 
 # Restart a service
-sudo systemctl restart dirigent-api
+sudo systemctl restart lotsen-api
 
 # Check status of all services
-sudo systemctl status 'dirigent-*'
+sudo systemctl status 'lotsen-*'
 ```
 
 ---

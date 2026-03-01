@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Dirigent setup script
+# Lotsen setup script
 #
 # Usage:
-#   sudo dirigent setup
+#   sudo lotsen setup
 #
-# This script is downloaded and executed by the Dirigent CLI. It can also
+# This script is downloaded and executed by the Lotsen CLI. It can also
 # be run directly for local testing:
 #   sudo bash setup.sh
 #
@@ -368,7 +368,8 @@ fi
 # Stop all services before replacing any files so binaries are never swapped
 # out from under a running process. Also stop and disable the legacy monolithic
 # service from older installs so it does not hold port 8080.
-SERVICES="dirigent-api dirigent-orchestrator dirigent-proxy"
+SERVICES="lotsen-api lotsen-orchestrator lotsen-proxy"
+LEGACY_SERVICES="dirigent-api dirigent-orchestrator dirigent-proxy"
 
 step "Stopping any running Dirigent services"
 
@@ -384,10 +385,17 @@ if systemctl is-active --quiet dirigent-dashboard 2>/dev/null; then
 fi
 systemctl disable dirigent-dashboard 2>/dev/null || true
 
-for svc in ${SERVICES}; do
+for svc in ${SERVICES} ${LEGACY_SERVICES}; do
     if systemctl is-active --quiet "${svc}" 2>/dev/null; then
         step "Stopping ${svc}"
         systemctl stop "${svc}"
+    fi
+done
+
+for svc in ${LEGACY_SERVICES}; do
+    if systemctl is-enabled --quiet "${svc}" 2>/dev/null; then
+        step "Disabling legacy ${svc}"
+        systemctl disable "${svc}" 2>/dev/null || true
     fi
 done
 
@@ -401,9 +409,9 @@ download_binary() {
     chmod 755 "${dest}"
 }
 
-download_binary "dirigent-linux-${ARCH}"              /usr/local/bin/dirigent-api
-download_binary "dirigent-orchestrator-linux-${ARCH}" /usr/local/bin/dirigent-orchestrator
-download_binary "dirigent-proxy-linux-${ARCH}"        /usr/local/bin/dirigent-proxy
+download_binary "lotsen-api-linux-${ARCH}"              /usr/local/bin/lotsen-api
+download_binary "lotsen-orchestrator-linux-${ARCH}"     /usr/local/bin/lotsen-orchestrator
+download_binary "lotsen-proxy-linux-${ARCH}"            /usr/local/bin/lotsen-proxy
 
 # ─── data directory ───────────────────────────────────────────────────────────
 
@@ -620,16 +628,16 @@ fi
 
 step "Writing systemd unit files"
 
-cat > /etc/systemd/system/dirigent-api.service << EOF
+cat > /etc/systemd/system/lotsen-api.service << EOF
 [Unit]
-Description=Dirigent API
+Description=Lotsen API
 Documentation=https://github.com/ercadev/dirigent
 After=network.target docker.service
 Requires=docker.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/dirigent-api
+ExecStart=/usr/local/bin/lotsen-api
 EnvironmentFile=-${ENV_FILE}
 Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
 Restart=on-failure
@@ -639,16 +647,16 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/dirigent-orchestrator.service << EOF
+cat > /etc/systemd/system/lotsen-orchestrator.service << EOF
 [Unit]
-Description=Dirigent orchestrator
+Description=Lotsen orchestrator
 Documentation=https://github.com/ercadev/dirigent
-After=network.target docker.service dirigent-api.service
+After=network.target docker.service lotsen-api.service
 Requires=docker.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/dirigent-orchestrator
+ExecStart=/usr/local/bin/lotsen-orchestrator
 EnvironmentFile=-${ENV_FILE}
 Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
 Environment=DIRIGENT_API_URL=http://localhost:8080
@@ -659,16 +667,16 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/dirigent-proxy.service << EOF
+cat > /etc/systemd/system/lotsen-proxy.service << EOF
 [Unit]
-Description=Dirigent reverse proxy
+Description=Lotsen reverse proxy
 Documentation=https://github.com/ercadev/dirigent
-After=network.target docker.service dirigent-api.service
+After=network.target docker.service lotsen-api.service
 Requires=docker.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/dirigent-proxy
+ExecStart=/usr/local/bin/lotsen-proxy
 EnvironmentFile=-${ENV_FILE}
 Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
 Restart=on-failure
@@ -677,6 +685,10 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
+
+rm -f /etc/systemd/system/dirigent-api.service
+rm -f /etc/systemd/system/dirigent-orchestrator.service
+rm -f /etc/systemd/system/dirigent-proxy.service
 
 # ─── enable and start services ────────────────────────────────────────────────
 
@@ -712,9 +724,9 @@ echo "  │  Dirigent is ready                                                  
 echo "  └─────────────────────────────────────────────────────────────────────────┘"
 echo ""
 echo "  Services:"
-printf "    %-30s %s\n" "dirigent-api          :8080"  "$(systemctl is-active dirigent-api)"
-printf "    %-30s %s\n" "dirigent-orchestrator  —"     "$(systemctl is-active dirigent-orchestrator)"
-printf "    %-30s %s\n" "dirigent-proxy        :80"    "$(systemctl is-active dirigent-proxy)"
+printf "    %-30s %s\n" "lotsen-api            :8080"  "$(systemctl is-active lotsen-api)"
+printf "    %-30s %s\n" "lotsen-orchestrator    —"     "$(systemctl is-active lotsen-orchestrator)"
+printf "    %-30s %s\n" "lotsen-proxy          :80"    "$(systemctl is-active lotsen-proxy)"
 echo ""
 if [ -n "${DASHBOARD_DOMAIN}" ]; then
     echo "  Dashboard:  https://${DASHBOARD_DOMAIN}"
@@ -736,7 +748,7 @@ if [ -n "${DASHBOARD_DOMAIN}" ]; then
     echo "  Note: Ensure DNS A record for ${DASHBOARD_DOMAIN} points to this server"
     echo "  and port 80 is open so certificates can be issued."
 else
-    echo "  Note: The dashboard is served directly by dirigent-api on :8080."
+    echo "  Note: The dashboard is served directly by lotsen-api on :8080."
     echo "  Configure DIRIGENT_DASHBOARD_DOMAIN in setup to expose it through"
     echo "  the :80/:443 reverse proxy with TLS and optional Basic Auth."
 fi

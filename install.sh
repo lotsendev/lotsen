@@ -5,7 +5,7 @@
 # Usage:
 #   curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
 #
-# This script only installs the Dirigent CLI binary. Run `dirigent setup`
+# This script only installs the Dirigent CLI binary. Run `lotsen setup`
 # afterwards to perform the full host setup.
 
 set -euo pipefail
@@ -67,15 +67,15 @@ else
     RELEASE_BASE="https://github.com/ercadev/dirigent-releases/releases/download/${DIRIGENT_VERSION}"
 fi
 
-step "Installing Dirigent CLI (${DIRIGENT_VERSION}, linux/${ARCH})"
-curl -fsSL "${RELEASE_BASE}/dirigent-cli-linux-${ARCH}" -o /usr/local/bin/dirigent
-chmod 0755 /usr/local/bin/dirigent
+step "Installing Lotsen CLI (${DIRIGENT_VERSION}, linux/${ARCH})"
+curl -fsSL "${RELEASE_BASE}/lotsen-cli-linux-${ARCH}" -o /usr/local/bin/lotsen
+chmod 0755 /usr/local/bin/lotsen
 
 echo ""
-echo "  Dirigent CLI installed successfully."
+echo "  Lotsen CLI installed successfully."
 echo ""
 echo "  Next step:"
-echo "    sudo dirigent setup"
+echo "    sudo lotsen setup"
 echo ""
-echo "  Tip: Run 'sudo dirigent setup' any time to update dashboard domain/auth."
+echo "  Tip: Run 'sudo lotsen setup' any time to update dashboard domain/auth."
 echo ""

@@ -88,17 +88,18 @@ function DashboardLayout() {
         : 'Create, edit, and monitor your active deployments.'
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="chart-grid-overlay">
       <Sidebar collapsible="none">
         <SidebarHeader className="px-4 pt-6">
           <div className="mb-2 flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground">
+              <div className="grid h-9 w-9 place-items-center rounded-xl border border-primary/30 bg-primary/12 text-primary">
                 <Rocket className="h-4 w-4" />
               </div>
-              <p className="font-[family-name:var(--font-display)] text-lg font-bold tracking-tight text-foreground">
-                lotsen
-              </p>
+              <div>
+                <p className="font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight text-foreground">lotsen</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">control deck</p>
+              </div>
             </div>
             <div className="flex items-center gap-1">
               <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={toggleTheme} aria-label="Toggle theme">
@@ -170,7 +171,7 @@ function DashboardLayout() {
                       <Link to="/settings">
                         <Settings className="h-4 w-4 shrink-0" />
                         <span>Settings</span>
-                        {upgradeAvailable && <span aria-label="Upgrade available" className="ml-auto h-2 w-2 rounded-full bg-orange-500" />}
+                        {upgradeAvailable && <span aria-label="Upgrade available" className="ml-auto h-2 w-2 rounded-full bg-primary" />}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -182,19 +183,23 @@ function DashboardLayout() {
       </Sidebar>
 
       <SidebarInset>
-        <p className="mb-4 text-sm text-muted-foreground">{isSystemStatusPage || isTrafficPage || isLogsPage ? 'Observability' : isSettingsPage || isUsersPage ? 'Configuration' : 'Deployments'}</p>
-        <div className="mx-auto w-full max-w-5xl space-y-4">
-          <div>
-            <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">{pageTitle}</h1>
-            <p className="text-sm text-muted-foreground">{pageDescription}</p>
-          </div>
-          {isDeploymentPage ? (
-            <Outlet />
-          ) : (
-            <div className="space-y-4">
-              <Outlet />
+        <div className="mx-auto w-full max-w-6xl">
+          <section className="rounded-2xl border border-border/70 bg-card/92 p-4 shadow-sm backdrop-blur sm:p-5 lg:p-6">
+            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              {isSystemStatusPage || isTrafficPage || isLogsPage ? 'Observability' : isSettingsPage || isUsersPage ? 'Configuration' : 'Deployments'}
+            </p>
+            <div className="mb-4">
+              <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight text-foreground">{pageTitle}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">{pageDescription}</p>
             </div>
-          )}
+            {isDeploymentPage ? (
+              <Outlet />
+            ) : (
+              <div className="space-y-4">
+                <Outlet />
+              </div>
+            )}
+          </section>
         </div>
       </SidebarInset>
     </SidebarProvider>

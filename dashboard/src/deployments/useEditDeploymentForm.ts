@@ -140,9 +140,9 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
 
   const mutation = useMutation({
     mutationFn: (data: Parameters<typeof updateDeployment>[1]) => updateDeployment(deployment.id, data),
-    onSuccess: () => {
+    onSuccess: (updated) => {
       queryClient.setQueryData<Deployment[]>(['deployments'], prev =>
-        prev?.map(d => d.id === deployment.id ? { ...d, status: 'deploying' } : d)
+        prev?.map(d => (d.id === deployment.id ? updated : d))
       )
       onClose()
     },

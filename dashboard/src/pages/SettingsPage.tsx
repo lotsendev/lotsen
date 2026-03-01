@@ -202,7 +202,7 @@ export function SettingsPage() {
       {isError && <p className="text-sm text-destructive">Unable to fetch version information right now.</p>}
 
       {reconnectReady && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-400/40 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-700/40 dark:bg-emerald-950/25 dark:text-emerald-300">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#2a7a64]/30 bg-[#2a7a64]/10 px-4 py-3 text-sm text-[#1f5f4f] dark:border-[#2a7a64]/40 dark:bg-[#2a7a64]/20 dark:text-[#93d0bc]">
           <p>Upgrade complete - reload to connect to the updated runtime.</p>
           <Button type="button" size="sm" onClick={() => window.location.reload()}>
             <RefreshCw className="h-4 w-4" />

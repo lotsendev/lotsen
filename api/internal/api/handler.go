@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/ercadev/dirigent/auth"
 	"github.com/ercadev/dirigent/internal/events"
 	"github.com/ercadev/dirigent/internal/upgrade"
 	"github.com/ercadev/dirigent/internal/version"
@@ -61,6 +62,10 @@ type UpgradeRunner interface {
 // AuthUserStore authenticates and manages Lotsen users.
 type AuthUserStore interface {
 	Authenticate(username, password string) error
+	ListUsers() ([]auth.User, error)
+	CreateUser(username, password string) error
+	UpdatePassword(username, password string) error
+	DeleteUser(username string) error
 }
 
 type basicAuthUserRequest struct {
@@ -223,6 +228,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/load-balancer/access-logs", protect(http.HandlerFunc(h.loadBalancerAccessLogs)))
 	mux.Handle("GET /api/version", protect(http.HandlerFunc(h.getVersion)))
 	mux.Handle("GET /api/version/releases", protect(http.HandlerFunc(h.getVersionReleases)))
+	mux.Handle("GET /api/users", protect(http.HandlerFunc(h.listUsers)))
+	mux.Handle("POST /api/users", protect(http.HandlerFunc(h.createUser)))
+	mux.Handle("PUT /api/users/{username}/password", protect(http.HandlerFunc(h.updateUserPassword)))
+	mux.Handle("DELETE /api/users/{username}", protect(http.HandlerFunc(h.deleteUser)))
 	mux.Handle("GET /api/access-logs", protect(http.HandlerFunc(h.accessLogs)))
 	mux.Handle("GET /api/security-config", protect(http.HandlerFunc(h.securityConfig)))
 	mux.Handle("POST /api/upgrade", protect(http.HandlerFunc(h.startUpgrade)))

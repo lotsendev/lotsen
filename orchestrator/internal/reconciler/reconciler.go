@@ -32,7 +32,7 @@ type Store interface {
 // Notifier notifies the API of deployment status transitions so the event
 // broker can push real-time updates to SSE subscribers.
 type Notifier interface {
-	NotifyStatus(id string, status store.Status, errorMessage string) error
+	NotifyStatus(id string, status store.Status, reason store.StatusReason, errorMessage string) error
 }
 
 // Reconciler syncs the desired state in the store with actual Docker containers.
@@ -91,7 +91,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		r.recordDockerReachability(false)
 		for _, d := range deployments {
 			if d.Status == store.StatusHealthy || d.Status == store.StatusDeploying {
-				r.updateStatus(d.ID, store.StatusFailed, dockerUnavailableError)
+				r.updateStatus(d.ID, store.StatusFailed, store.StatusReasonDockerUnavailable, dockerUnavailableError)
 			}
 		}
 		return fmt.Errorf("reconcile: docker unavailable: %w", err)
@@ -138,7 +138,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 		if r.dashboardDomain != "" && normalizeDomain(d.Domain) == r.dashboardDomain {
 			if d.Status == store.StatusDeploying {
-				r.updateStatus(d.ID, store.StatusFailed, fmt.Sprintf("domain %q is reserved for dashboard", r.dashboardDomain))
+				r.updateStatus(d.ID, store.StatusFailed, store.StatusReasonDomainReserved, fmt.Sprintf("domain %q is reserved for dashboard", r.dashboardDomain))
 				continue
 			}
 		}
@@ -150,26 +150,26 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				runtimePorts, err := r.docker.Start(ctx, d)
 				if err != nil {
 					log.Printf("reconciler: start %s (%s): %v", d.ID, d.Name, err)
-					r.updateStatus(d.ID, store.StatusFailed, err.Error())
+					r.updateStatus(d.ID, store.StatusFailed, store.StatusReasonDeployStartFailed, err.Error())
 				} else {
-					r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy)
+					r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy, store.StatusReasonDeployStartSucceeded)
 				}
 			} else if c.Running {
 				// Container already running — this is a redeploy; apply start-then-stop.
 				runtimePorts, err := r.docker.StartAndReplace(ctx, d, c.ID)
 				if err != nil {
 					log.Printf("reconciler: redeploy %s (%s): %v", d.ID, d.Name, err)
-					r.updateStatus(d.ID, store.StatusFailed, err.Error())
+					r.updateStatus(d.ID, store.StatusFailed, store.StatusReasonRedeployStartFailed, err.Error())
 				} else {
-					r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy)
+					r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy, store.StatusReasonRedeployStartSucceeded)
 				}
 			} else {
-				r.updateStatus(d.ID, store.StatusFailed, exitMessage(c.ExitDetails))
+				r.updateStatus(d.ID, store.StatusFailed, exitReason(c.ExitDetails), exitMessage(c.ExitDetails))
 			}
 
 		case store.StatusHealthy:
 			if !hasContainer || !c.Running {
-				r.updateStatus(d.ID, store.StatusFailed, exitMessage(c.ExitDetails))
+				r.updateStatus(d.ID, store.StatusFailed, exitReason(c.ExitDetails), exitMessage(c.ExitDetails))
 			}
 
 		case store.StatusFailed, store.StatusIdle:
@@ -183,7 +183,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 			if hasContainer && c.Running {
 				r.clearRetryState(d.ID)
-				r.updateStatus(d.ID, store.StatusHealthy, "")
+				r.updateStatus(d.ID, store.StatusHealthy, store.StatusReasonRetryRecoveredRunning, "")
 				continue
 			}
 
@@ -200,12 +200,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 			if err != nil {
 				log.Printf("reconciler: heal failed deployment %s (%s): %v", d.ID, d.Name, err)
 				r.recordRetryFailure(d.ID, now)
-				r.updateStatus(d.ID, store.StatusFailed, err.Error())
+				r.updateStatus(d.ID, store.StatusFailed, store.StatusReasonRetryStartFailedTransient, err.Error())
 				continue
 			}
 
 			r.clearRetryState(d.ID)
-			r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy)
+			r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy, store.StatusReasonRetryStartSucceeded)
 		}
 	}
 
@@ -308,27 +308,34 @@ func exitMessage(d *docker.ExitDetails) string {
 	return fmt.Sprintf("container exited unexpectedly (exit code %d)", d.ExitCode)
 }
 
-func (r *Reconciler) updateStatus(id string, status store.Status, errorMessage string) {
-	if _, err := r.store.Patch(id, store.Deployment{Status: status, Error: errorMessage}); err != nil {
-		log.Printf("reconciler: update status %s → %s: %v", id, status, err)
+func exitReason(d *docker.ExitDetails) store.StatusReason {
+	if d == nil {
+		return store.StatusReasonContainerNotRunning
 	}
-	r.notifyStatus(id, status, errorMessage)
+	return store.StatusReasonContainerExited
 }
 
-func (r *Reconciler) updatePortsAndStatus(id string, ports []string, status store.Status) {
-	patch := store.Deployment{Status: status, Error: ""}
+func (r *Reconciler) updateStatus(id string, status store.Status, reason store.StatusReason, errorMessage string) {
+	if _, err := r.store.Patch(id, store.Deployment{Status: status, Reason: reason, Error: errorMessage}); err != nil {
+		log.Printf("reconciler: update status %s → %s: %v", id, status, err)
+	}
+	r.notifyStatus(id, status, reason, errorMessage)
+}
+
+func (r *Reconciler) updatePortsAndStatus(id string, ports []string, status store.Status, reason store.StatusReason) {
+	patch := store.Deployment{Status: status, Reason: reason, Error: ""}
 	if ports != nil {
 		patch.Ports = ports
 	}
 	if _, err := r.store.Patch(id, patch); err != nil {
 		log.Printf("reconciler: patch deployment %s: %v", id, err)
 	}
-	r.notifyStatus(id, status, "")
+	r.notifyStatus(id, status, reason, "")
 }
 
-func (r *Reconciler) notifyStatus(id string, status store.Status, errorMessage string) {
+func (r *Reconciler) notifyStatus(id string, status store.Status, reason store.StatusReason, errorMessage string) {
 	if r.notifier != nil {
-		if err := r.notifier.NotifyStatus(id, status, errorMessage); err != nil {
+		if err := r.notifier.NotifyStatus(id, status, reason, errorMessage); err != nil {
 			log.Printf("reconciler: notify api status %s → %s: %v", id, status, err)
 		}
 	}

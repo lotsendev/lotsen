@@ -1386,6 +1386,7 @@ func TestDeploymentEvents_FailedStatusCarriesError(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{
 		"status": string(store.StatusFailed),
+		"reason": string(store.StatusReasonContainerExited),
 		"error":  "container exited with code 1",
 	})
 	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1/status", bytes.NewReader(body))
@@ -1400,6 +1401,9 @@ func TestDeploymentEvents_FailedStatusCarriesError(t *testing.T) {
 		}
 		if event.Error != "container exited with code 1" {
 			t.Errorf("want error message, got %q", event.Error)
+		}
+		if event.Reason != string(store.StatusReasonContainerExited) {
+			t.Errorf("want reason %q, got %q", store.StatusReasonContainerExited, event.Reason)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout: no SSE event received")
@@ -1436,7 +1440,7 @@ func TestUpdateDeploymentStatus(t *testing.T) {
 	srv := newTestServer(s)
 	defer srv.Close()
 
-	body, _ := json.Marshal(map[string]string{"status": "healthy"})
+	body, _ := json.Marshal(map[string]string{"status": "healthy", "reason": string(store.StatusReasonDeployStartSucceeded)})
 	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1/status", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -1457,6 +1461,9 @@ func TestUpdateDeploymentStatus(t *testing.T) {
 	if updated.Status != store.StatusHealthy {
 		t.Errorf("want status healthy, got %s", updated.Status)
 	}
+	if updated.Reason != store.StatusReasonDeployStartSucceeded {
+		t.Errorf("want reason %q, got %q", store.StatusReasonDeployStartSucceeded, updated.Reason)
+	}
 	if updated.Error != "" {
 		t.Errorf("want empty error, got %q", updated.Error)
 	}
@@ -1471,6 +1478,7 @@ func TestUpdateDeploymentStatus_FailedStoresError(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{
 		"status": "failed",
+		"reason": string(store.StatusReasonDeployStartFailed),
 		"error":  "image not found",
 	})
 	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1/status", bytes.NewReader(body))
@@ -1492,6 +1500,9 @@ func TestUpdateDeploymentStatus_FailedStoresError(t *testing.T) {
 	}
 	if updated.Status != store.StatusFailed {
 		t.Errorf("want status failed, got %s", updated.Status)
+	}
+	if updated.Reason != store.StatusReasonDeployStartFailed {
+		t.Errorf("want reason %q, got %q", store.StatusReasonDeployStartFailed, updated.Reason)
 	}
 	if updated.Error != "image not found" {
 		t.Errorf("want error image not found, got %q", updated.Error)

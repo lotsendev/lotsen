@@ -1903,6 +1903,7 @@ func TestUpdateDeployment_NoChanges_SkipsStoreUpdate(t *testing.T) {
 		Ports:   []string{"32768:80"},
 		Volumes: []string{"/data:/data"},
 		Domain:  "app.example.com",
+		Public:  false,
 		Status:  store.StatusHealthy,
 	}
 
@@ -1933,6 +1934,58 @@ func TestUpdateDeployment_NoChanges_SkipsStoreUpdate(t *testing.T) {
 	var updated store.Deployment
 	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
 		t.Fatalf("decode response: %v", err)
+	}
+	if updated.Status != store.StatusHealthy {
+		t.Errorf("want status healthy, got %s", updated.Status)
+	}
+}
+
+func TestUpdateDeployment_PublicOnly_UpdatesVisibility(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{
+		ID:      "d1",
+		Name:    "web",
+		Image:   "nginx:1",
+		Envs:    map[string]string{"PORT": "80"},
+		Ports:   []string{"32768:80"},
+		Volumes: []string{"/data:/data"},
+		Domain:  "app.example.com",
+		Public:  false,
+		Status:  store.StatusHealthy,
+	}
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"name":    "web",
+		"image":   "nginx:1",
+		"envs":    map[string]string{"PORT": "80"},
+		"ports":   []string{"80"},
+		"volumes": []string{"/data:/data"},
+		"domain":  "app.example.com",
+		"public":  true,
+	})
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/d1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if !updated.Public {
+		t.Fatalf("want public=true, got false")
 	}
 	if updated.Status != store.StatusHealthy {
 		t.Errorf("want status healthy, got %s", updated.Status)

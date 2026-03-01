@@ -594,6 +594,7 @@ func updateRequestMatchesExisting(existing store.Deployment, body deploymentRequ
 		slices.Equal(existing.Ports, body.Ports) &&
 		slices.Equal(existing.Volumes, body.Volumes) &&
 		existing.Domain == body.Domain &&
+		existing.Public == body.Public &&
 		equalStoredBasicAuthConfig(existing.BasicAuth, basicAuth) &&
 		equalSecurityConfig(existing.Security, body.Security)
 }

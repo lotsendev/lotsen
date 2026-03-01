@@ -20,7 +20,7 @@ export function Navbar() {
         top: 0,
         zIndex: 50,
         borderBottom: scrolled ? '1px solid var(--clr-line)' : '1px solid transparent',
-        backgroundColor: scrolled ? 'rgba(248,250,255,0.92)' : 'transparent',
+        backgroundColor: scrolled ? 'rgba(238,243,247,0.95)' : 'transparent',
         backdropFilter: scrolled ? 'blur(16px)' : 'none',
         WebkitBackdropFilter: scrolled ? 'blur(16px)' : 'none',
         transition: 'background-color 0.2s ease, border-color 0.2s ease',

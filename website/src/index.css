@@ -3,24 +3,27 @@
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=DM+Sans:ital,opsz,wght@0,9..40,300..900;1,9..40,300..900&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  /* ── Mascot-derived palette ─────────────── */
-  --clr-bg: #f8faff;              /* near-white, slight cool tint */
-  --clr-surface: #ffffff;
-  --clr-surface-2: #eef2fc;      /* section alternates, code blocks */
-  --clr-line: rgba(30, 45, 110, 0.09);
-  --clr-text: #1a2152;           /* deep navy (mascot outlines) */
-  --clr-muted: #5a6b8a;
-  --clr-subtle: #8899bb;
-  --clr-accent: #f5923e;         /* corgi orange */
-  --clr-accent-dim: rgba(245, 146, 62, 0.09);
-  --clr-accent-border: rgba(245, 146, 62, 0.3);
-  --clr-navy: #1e2d6e;           /* mascot keyboard navy */
-  --clr-sky: #d4e6f8;            /* mascot background circle */
-  --clr-sky-dim: rgba(212, 230, 248, 0.45);
+  /* ── Foggy Nordic Harbour ─────────────────── */
+  --clr-bg: #eef3f7;              /* foggy morning — cool near-white */
+  --clr-surface: #ffffff;         /* sail white */
+  --clr-surface-2: #e2eaf0;      /* sea glass — light section alternates */
+  --clr-line: rgba(26, 58, 82, 0.1);
+  --clr-text: #1a3449;           /* deep harbour navy */
+  --clr-muted: #4a6882;          /* overcast sky */
+  --clr-subtle: #7e9aaa;         /* sea mist */
+  --clr-silver: #b8c4cc;         /* light silver-gray — moodboard swatch 2 */
+  --clr-accent: #c85018;         /* rust hull oxide — moodboard swatch 4 */
+  --clr-accent-dim: rgba(200, 80, 24, 0.08);
+  --clr-accent-border: rgba(200, 80, 24, 0.22);
+  --clr-navy: #1a3449;           /* harbour water — headings */
+  --clr-sky: #687d90;            /* steel gray-blue — moodboard swatch 1 */
+  --clr-sky-dim: rgba(104, 125, 144, 0.12);
+  --clr-teal: #2a7a64;           /* Nordic sea — moodboard swatch 3 */
+  --clr-blue: #1a96e0;           /* bright Nordic sea blue — clear day */
 
-  /* for dark CTA section */
-  --clr-dark: #111827;
-  --clr-dark-surface: #1a2338;
+  /* harbour at night — dark contrast sections */
+  --clr-dark: #111d2a;
+  --clr-dark-surface: #192638;
 }
 
 @theme inline {
@@ -31,9 +34,12 @@
   --color-brand-text: var(--clr-text);
   --color-brand-muted: var(--clr-muted);
   --color-brand-subtle: var(--clr-subtle);
+  --color-brand-silver: var(--clr-silver);
   --color-brand-accent: var(--clr-accent);
   --color-brand-navy: var(--clr-navy);
   --color-brand-sky: var(--clr-sky);
+  --color-brand-teal: var(--clr-teal);
+  --color-brand-blue: var(--clr-blue);
   --font-display: 'Fraunces', serif;
   --font-sans: 'DM Sans', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
@@ -99,13 +105,13 @@ body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 0;
-  border: 1px solid var(--clr-line);
+  border: 1px solid rgba(255,255,255,0.07);
   border-radius: 16px;
   overflow: hidden;
 }
 
 .compare-grid > * + * {
-  border-left: 1px solid var(--clr-line);
+  border-left: 1px solid rgba(255,255,255,0.07);
 }
 
 @media (max-width: 640px) {
@@ -114,7 +120,7 @@ body {
   }
   .compare-grid > * + * {
     border-left: none;
-    border-top: 1px solid var(--clr-line);
+    border-top: 1px solid rgba(255,255,255,0.07);
   }
 }
 
@@ -153,6 +159,26 @@ body {
 
 .mascot-float {
   animation: float 4s ease-in-out infinite;
+}
+
+/* ── Wave scroll (heavy sea) ────────────────────────── */
+@keyframes waveScroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ── Ticker scroll ──────────────────────────────────── */
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.ticker-track {
+  animation: ticker 28s linear infinite;
+}
+
+.ticker-track:hover {
+  animation-play-state: paused;
 }
 
 /* ── Docs prose ─────────────────────────────────────── */
@@ -238,7 +264,7 @@ body {
   font-size: 11px;
   font-family: 'JetBrains Mono', monospace;
   font-weight: 500;
-  color: var(--clr-subtle);
+  color: var(--clr-silver);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   border-bottom: 1px solid var(--clr-line);
@@ -263,7 +289,6 @@ body {
 .prose tr:last-child td {
   border-bottom: none;
 }
-
 
 .prose a {
   color: var(--clr-accent);

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
-import { AlertTriangle, ArrowLeft, ChevronDown, ExternalLink, Globe, Hash, Package, Pencil, RotateCcw } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ChevronDown, ExternalLink, Globe, Hash, Lock, Package, Pencil, RotateCcw, Unlock } from 'lucide-react'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import EditDeploymentForm from '../deployments/EditDeploymentForm'
@@ -124,6 +125,21 @@ export function DeploymentDetailPage() {
             {restartMutation.isError ? (
               <p className="text-xs text-destructive">Failed to restart deployment.</p>
             ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              {deployment.public ? (
+                <Unlock className="h-3 w-3 shrink-0 text-emerald-600" />
+              ) : (
+                <Lock className="h-3 w-3 shrink-0 text-amber-700" />
+              )}
+              <Badge variant={deployment.public ? 'success' : 'warning'}>
+                {deployment.public ? 'Public' : 'Private'}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {deployment.public
+                  ? 'Traffic goes directly to your app.'
+                  : 'Protected by Lotsen login before app access.'}
+              </span>
+            </div>
             {deployment.domain && (
               <div className="flex items-center gap-1.5">
                 <Globe className="h-3 w-3 shrink-0 text-muted-foreground/50" />

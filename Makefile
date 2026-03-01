@@ -11,9 +11,9 @@ setup:
 # concurrently in a single terminal. Ctrl+C shuts down both processes cleanly.
 dev:
 	@trap 'kill 0' SIGINT; \
-	(cd api && LOTSEN_DATA=/tmp/lotsen.json LOTSEN_PROXY_ACCESS_LOG_DIR=/tmp/lotsen-proxy-logs $(AIR)) & \
+	(cd api && LOTSEN_DATA=/tmp/lotsen.json LOTSEN_PROXY_ACCESS_LOG_DIR=/tmp/lotsen-proxy-logs LOTSEN_JWT_SECRET= LOTSEN_AUTH_USER= LOTSEN_AUTH_PASSWORD= $(AIR)) & \
 	(cd orchestrator && LOTSEN_DATA=/tmp/lotsen.json LOTSEN_PROXY_HEALTH_URL=http://localhost:8090/internal/health LOTSEN_PROXY_TRAFFIC_URL=http://localhost:8090/internal/traffic $(AIR)) & \
-	(cd proxy && LOTSEN_DATA=/tmp/lotsen.json LOTSEN_PROXY_ADDR=:8090 LOTSEN_PROXY_HTTPS_ADDR=:8443 LOTSEN_CERT_CACHE_DIR=/tmp/lotsen-certs LOTSEN_PROXY_ACCESS_LOG_DIR=/tmp/lotsen-proxy-logs $(AIR)) & \
+	(cd proxy && LOTSEN_DATA=/tmp/lotsen.json LOTSEN_PROXY_ADDR=:8090 LOTSEN_PROXY_HTTPS_ADDR=:8443 LOTSEN_CERT_CACHE_DIR=/tmp/lotsen-certs LOTSEN_PROXY_ACCESS_LOG_DIR=/tmp/lotsen-proxy-logs LOTSEN_JWT_SECRET= LOTSEN_AUTH_USER= LOTSEN_AUTH_PASSWORD= $(AIR)) & \
 	(cd dashboard && bun run dev) & \
 	wait
 

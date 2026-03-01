@@ -62,6 +62,40 @@ describe('CreateDeploymentForm', () => {
         ports: [],
         volumes: [],
         domain: '',
+        public: false,
+      })
+    )
+  })
+
+  it('submits public=true when public access is enabled', async () => {
+    const mockCreate = vi.mocked(api.createDeployment).mockResolvedValue({
+      id: 'public-1',
+      name: 'public-app',
+      image: 'nginx:latest',
+      status: 'idle',
+      envs: {},
+      ports: [],
+      volumes: [],
+      domain: '',
+      public: true,
+    })
+    const user = userEvent.setup()
+    renderWithQuery(<CreateDeploymentForm />)
+
+    await user.type(screen.getByLabelText(/name \*/i), 'public-app')
+    await user.type(screen.getByLabelText(/image \*/i), 'nginx:latest')
+    await user.click(screen.getByRole('switch', { name: /public deployment/i }))
+    await user.click(screen.getByRole('button', { name: /^create$/i }))
+
+    await waitFor(() =>
+      expect(mockCreate.mock.calls[0][0]).toEqual({
+        name: 'public-app',
+        image: 'nginx:latest',
+        envs: {},
+        ports: [],
+        volumes: [],
+        domain: '',
+        public: true,
       })
     )
   })
@@ -153,6 +187,7 @@ describe('CreateDeploymentForm', () => {
         ports: ['80'],
         volumes: ['/data:/app/data'],
         domain: 'example.com',
+        public: false,
       })
     )
   })

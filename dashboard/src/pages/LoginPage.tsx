@@ -1,14 +1,23 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Rocket } from 'lucide-react'
+import { useEffect } from 'react'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { useAuth } from '../auth/useAuth'
 import { useLoginForm } from '../auth/useLoginForm'
 import { UnauthorizedError } from '../lib/api'
 
 export function LoginPage() {
   const { redirect } = useSearch({ strict: false }) as { redirect?: string }
   const navigate = useNavigate()
+  const { isLoading, isAuthenticated, isAuthDisabled } = useAuth()
+
+  useEffect(() => {
+    if (!isLoading && (isAuthenticated || isAuthDisabled)) {
+      navigate({ to: (redirect as never) ?? '/deployments' })
+    }
+  }, [isLoading, isAuthenticated, isAuthDisabled, redirect, navigate])
 
   const { username, setUsername, password, setPassword, mutation } = useLoginForm(() => {
     navigate({ to: (redirect as never) ?? '/deployments' })

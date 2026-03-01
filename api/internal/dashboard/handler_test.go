@@ -102,6 +102,9 @@ func TestIsAPIPath(t *testing.T) {
 		{path: "/api", want: true},
 		{path: "/api/", want: true},
 		{path: "/api/deployments", want: true},
+		{path: "/auth", want: true},
+		{path: "/auth/", want: true},
+		{path: "/auth/login", want: true},
 		{path: "/apix", want: false},
 		{path: "/", want: false},
 	}

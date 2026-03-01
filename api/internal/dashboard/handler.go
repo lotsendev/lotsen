@@ -54,7 +54,7 @@ func New(apiHandler http.Handler) http.Handler {
 }
 
 func isAPIPath(path string) bool {
-	return path == "/api" || strings.HasPrefix(path, "/api/")
+	return path == "/api" || strings.HasPrefix(path, "/api/") || path == "/auth" || strings.HasPrefix(path, "/auth/")
 }
 
 func fileExists(fsys fs.FS, name string) bool {

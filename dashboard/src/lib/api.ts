@@ -175,6 +175,18 @@ export type LoadBalancerAccessLogFilters = {
   ip?: string
 }
 
+export type CoreService = 'api' | 'orchestrator' | 'proxy'
+
+export type CoreServiceLogsResponse = {
+  service: CoreService
+  lines: string[]
+}
+
+export type DeploymentRecentLogsResponse = {
+  deploymentId: string
+  lines: string[]
+}
+
 export async function getDeployments(): Promise<Deployment[]> {
   const res = await fetch('/api/deployments')
   if (!res.ok) throw new Error('Failed to fetch deployments')
@@ -283,6 +295,20 @@ export async function getLoadBalancerAccessLogs(
 
   const res = await fetch(`/api/load-balancer/access-logs?${params.toString()}`)
   if (!res.ok) throw new Error('Failed to fetch load balancer access logs')
+  return res.json()
+}
+
+export async function getCoreServiceLogs(service: CoreService, tail = 200): Promise<CoreServiceLogsResponse> {
+  const params = new URLSearchParams({ service, tail: String(tail) })
+  const res = await fetch(`/api/core-services/logs?${params.toString()}`)
+  if (!res.ok) throw new Error('Failed to fetch core service logs')
+  return res.json()
+}
+
+export async function getDeploymentRecentLogs(deploymentId: string, tail = 300): Promise<DeploymentRecentLogsResponse> {
+  const params = new URLSearchParams({ tail: String(tail) })
+  const res = await fetch(`/api/deployments/${deploymentId}/logs/recent?${params.toString()}`)
+  if (!res.ok) throw new Error('Failed to fetch deployment recent logs')
   return res.json()
 }
 

@@ -84,3 +84,31 @@ func TestStreamLogs_NoContainers(t *testing.T) {
 		t.Fatal("did not expect ContainerLogs call")
 	}
 }
+
+func TestRecentLogs_UsesNewestContainerWithoutFollow(t *testing.T) {
+	m := &mockClient{
+		containers: []dockertypes.Container{
+			{ID: "old", Created: 100},
+			{ID: "new", Created: 200},
+		},
+	}
+
+	streamer := New(m)
+	lines, err := streamer.RecentLogs(context.Background(), "dep-1", 150)
+	if err != nil {
+		t.Fatalf("RecentLogs: %v", err)
+	}
+	if len(lines) != 0 {
+		t.Fatalf("want no lines from empty mock output, got %d", len(lines))
+	}
+
+	if m.logsContainer != "new" {
+		t.Fatalf("want logs from newest container 'new', got %q", m.logsContainer)
+	}
+	if m.logsOptions.Follow {
+		t.Fatal("want Follow=false")
+	}
+	if m.logsOptions.Tail != "150" {
+		t.Fatalf("want Tail=150, got %q", m.logsOptions.Tail)
+	}
+}

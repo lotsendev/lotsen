@@ -7,7 +7,7 @@ import {
   redirect,
   useRouterState,
 } from '@tanstack/react-router'
-import { Activity, Boxes, Moon, Rocket, Server, Settings, Sun } from 'lucide-react'
+import { Activity, Boxes, FileText, Moon, Rocket, Server, Settings, Sun } from 'lucide-react'
 import { Button } from './components/ui/button'
 import {
   Sidebar,
@@ -23,6 +23,7 @@ import {
 } from './components/ui/sidebar'
 import DeploymentList from './pages/DeploymentList'
 import { DeploymentDetailPage } from './pages/DeploymentDetailPage'
+import { LogsPage } from './pages/LogsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SystemStatusPage } from './pages/SystemStatusPage'
 import { TrafficPage } from './pages/TrafficPage'
@@ -36,12 +37,15 @@ function DashboardLayout() {
   const isSystemStatusPage = pathname === '/system-status'
   const isSettingsPage = pathname === '/settings'
   const isTrafficPage = pathname === '/traffic'
+  const isLogsPage = pathname === '/logs'
   const isDeploymentPage = pathname.startsWith('/deployments')
   const isDeploymentDetailPage = isDeploymentPage && pathname !== '/deployments'
   const pageTitle = isSystemStatusPage
     ? 'System status'
     : isTrafficPage
       ? 'Traffic & security'
+      : isLogsPage
+      ? 'Logs'
       : isSettingsPage
       ? 'Settings'
       : isDeploymentDetailPage
@@ -51,6 +55,8 @@ function DashboardLayout() {
     ? 'Observe API health and freshness.'
     : isTrafficPage
       ? 'Inspect recent proxy traffic and effective protection settings.'
+      : isLogsPage
+      ? 'Inspect core service output and deployment log streams without SSH.'
       : isSettingsPage
       ? 'Manage product version and in-dashboard upgrades.'
       : isDeploymentDetailPage
@@ -105,6 +111,14 @@ function DashboardLayout() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname === '/logs'} size="lg" className="rounded-lg">
+                      <Link to="/logs">
+                        <FileText className="h-4 w-4 shrink-0" />
+                        <span>Logs</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname === '/settings'} size="lg" className="rounded-lg">
                       <Link to="/settings">
                         <Settings className="h-4 w-4 shrink-0" />
@@ -121,7 +135,7 @@ function DashboardLayout() {
       </Sidebar>
 
       <SidebarInset>
-        <p className="mb-4 text-sm text-muted-foreground">{isSystemStatusPage || isTrafficPage ? 'Observability' : isSettingsPage ? 'Configuration' : 'Deployments'}</p>
+        <p className="mb-4 text-sm text-muted-foreground">{isSystemStatusPage || isTrafficPage || isLogsPage ? 'Observability' : isSettingsPage ? 'Configuration' : 'Deployments'}</p>
         <div className="mx-auto w-full max-w-5xl space-y-4">
           <div>
             <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">{pageTitle}</h1>
@@ -176,13 +190,27 @@ const trafficRoute = createRoute({
   component: TrafficPage,
 })
 
+const logsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/logs',
+  component: LogsPage,
+})
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
   component: SettingsPage,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, deploymentsRoute, deploymentDetailRoute, systemStatusRoute, trafficRoute, settingsRoute])
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  deploymentsRoute,
+  deploymentDetailRoute,
+  systemStatusRoute,
+  trafficRoute,
+  logsRoute,
+  settingsRoute,
+])
 
 export const router = createRouter({ routeTree })
 

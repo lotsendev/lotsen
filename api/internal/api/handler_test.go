@@ -147,14 +147,30 @@ func (noopDockerLogs) StreamLogs(_ context.Context, _ string, _ int) (io.ReadClo
 	return nil, nil
 }
 
+func (noopDockerLogs) RecentLogs(_ context.Context, _ string, _ int) ([]string, error) {
+	return []string{}, nil
+}
+
 // stubDockerLogs satisfies api.DockerLogs and returns the configured reader or error.
 type stubDockerLogs struct {
-	rc  io.ReadCloser
-	err error
+	rc         io.ReadCloser
+	err        error
+	recentLogs []string
+	recentErr  error
 }
 
 func (s *stubDockerLogs) StreamLogs(_ context.Context, _ string, _ int) (io.ReadCloser, error) {
 	return s.rc, s.err
+}
+
+func (s *stubDockerLogs) RecentLogs(_ context.Context, _ string, _ int) ([]string, error) {
+	if s.recentErr != nil {
+		return nil, s.recentErr
+	}
+	if s.recentLogs == nil {
+		return []string{}, nil
+	}
+	return s.recentLogs, nil
 }
 
 func newTestServer(s api.Store) *httptest.Server {
@@ -2254,6 +2270,101 @@ func TestRestartDeployment_StoreError(t *testing.T) {
 	}
 }
 
+func TestCoreServiceLogs_OK(t *testing.T) {
+	setFakeJournalctl(t, "printf 'line one\nline two\n'")
+
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/core-services/logs?service=api&tail=2")
+	if err != nil {
+		t.Fatalf("GET /api/core-services/logs: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Service string   `json:"service"`
+		Lines   []string `json:"lines"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if body.Service != "api" {
+		t.Fatalf("want service api, got %q", body.Service)
+	}
+	if len(body.Lines) != 2 {
+		t.Fatalf("want 2 log lines, got %d", len(body.Lines))
+	}
+	if body.Lines[0] != "line one" || body.Lines[1] != "line two" {
+		t.Fatalf("unexpected log lines: %#v", body.Lines)
+	}
+}
+
+func TestCoreServiceLogs_InvalidService(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/core-services/logs?service=unknown")
+	if err != nil {
+		t.Fatalf("GET /api/core-services/logs: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestCoreServiceLogs_JournalctlError(t *testing.T) {
+	setFakeJournalctl(t, "echo 'boom' >&2; exit 1")
+
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/core-services/logs?service=proxy")
+	if err != nil {
+		t.Fatalf("GET /api/core-services/logs: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestCoreServiceLogs_InvalidTail(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/core-services/logs?service=api&tail=abc")
+	if err != nil {
+		t.Fatalf("GET /api/core-services/logs: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func setFakeJournalctl(t *testing.T, body string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "journalctl")
+	script := "#!/usr/bin/env bash\nset -euo pipefail\n" + body + "\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake journalctl: %v", err)
+	}
+
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 // readLogLines connects to a log SSE endpoint and sends parsed log line strings
 // to the returned channel until ctx is cancelled or the connection drops.
 func readLogLines(ctx context.Context, t *testing.T, url string) <-chan string {
@@ -2422,6 +2533,89 @@ func TestDeploymentLogs_DockerError(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout: channel did not close on docker error")
+	}
+}
+
+func TestDeploymentRecentLogs_NotFound(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/deployments/nonexistent/logs/recent")
+	if err != nil {
+		t.Fatalf("GET /api/deployments/nonexistent/logs/recent: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeploymentRecentLogs_OK(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
+
+	srv := newTestServerWithDockerLogs(s, &stubDockerLogs{recentLogs: []string{"booting", "ready"}})
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/deployments/d1/logs/recent?tail=2")
+	if err != nil {
+		t.Fatalf("GET /api/deployments/d1/logs/recent: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var body struct {
+		DeploymentID string   `json:"deploymentId"`
+		Lines        []string `json:"lines"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.DeploymentID != "d1" {
+		t.Fatalf("want deploymentId d1, got %q", body.DeploymentID)
+	}
+	if len(body.Lines) != 2 || body.Lines[0] != "booting" || body.Lines[1] != "ready" {
+		t.Fatalf("unexpected lines: %#v", body.Lines)
+	}
+}
+
+func TestDeploymentRecentLogs_InvalidTail(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
+
+	srv := newTestServerWithDockerLogs(s, &stubDockerLogs{})
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/deployments/d1/logs/recent?tail=abc")
+	if err != nil {
+		t.Fatalf("GET /api/deployments/d1/logs/recent: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeploymentRecentLogs_DockerError(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{ID: "d1", Name: "web", Status: store.StatusHealthy}
+
+	srv := newTestServerWithDockerLogs(s, &stubDockerLogs{recentErr: errors.New("docker unavailable")})
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/deployments/d1/logs/recent")
+	if err != nil {
+		t.Fatalf("GET /api/deployments/d1/logs/recent: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", resp.StatusCode)
 	}
 }
 

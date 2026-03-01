@@ -44,6 +44,7 @@ type EventBus interface {
 // container is currently running for the deployment.
 type DockerLogs interface {
 	StreamLogs(ctx context.Context, deploymentID string, tail int) (io.ReadCloser, error)
+	RecentLogs(ctx context.Context, deploymentID string, tail int) ([]string, error)
 }
 
 type VersionInfoProvider interface {
@@ -188,6 +189,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/deployments", h.listDeployments)
 	mux.HandleFunc("GET /api/system-status", h.systemStatus)
 	mux.HandleFunc("GET /api/system-status/events", h.systemStatusEvents)
+	mux.HandleFunc("GET /api/core-services/logs", h.coreServiceLogs)
 	mux.HandleFunc("GET /api/load-balancer/access-logs", h.loadBalancerAccessLogs)
 	mux.HandleFunc("POST /api/system-status/orchestrator-heartbeat", h.recordOrchestratorHeartbeat)
 	mux.HandleFunc("GET /api/version", h.getVersion)
@@ -199,6 +201,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/deployments", h.createDeployment)
 	mux.HandleFunc("GET /api/deployments/events", h.deploymentEvents)
 	mux.HandleFunc("GET /api/deployments/{id}/logs", h.deploymentLogs)
+	mux.HandleFunc("GET /api/deployments/{id}/logs/recent", h.deploymentRecentLogs)
 	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)
 	mux.HandleFunc("PUT /api/deployments/{id}", h.updateDeployment)
 	mux.HandleFunc("POST /api/deployments/{id}/restart", h.restartDeployment)

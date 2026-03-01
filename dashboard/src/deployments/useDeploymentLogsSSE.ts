@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react'
 import type { DeploymentLogEvent } from '../lib/api'
 
-export function useDeploymentLogsSSE(deploymentId: string) {
+export function useDeploymentLogsSSE(deploymentId: string, reconnectToken = 0) {
   const [lines, setLines] = useState<string[]>([])
   const [connected, setConnected] = useState(false)
 
   useEffect(() => {
+    if (!deploymentId) {
+      setLines([])
+      setConnected(false)
+      return
+    }
+
     setLines([])
     setConnected(false)
 
@@ -24,7 +30,7 @@ export function useDeploymentLogsSSE(deploymentId: string) {
     }
 
     return () => es.close()
-  }, [deploymentId])
+  }, [deploymentId, reconnectToken])
 
   return { lines, connected }
 }

@@ -22,6 +22,7 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "domain is reserved for dashboard", http.StatusConflict)
 		return
 	}
+	body.Security = normalizeSecurityConfig(body.Security)
 
 	basicAuth, err := sanitizeAndHashBasicAuth(body.BasicAuth)
 	if err != nil {
@@ -79,5 +80,5 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusAccepted, updated)
+	writeJSON(w, http.StatusAccepted, normalizeDeploymentSecurity(updated))
 }

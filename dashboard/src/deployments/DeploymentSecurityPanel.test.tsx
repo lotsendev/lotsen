@@ -6,7 +6,6 @@ import { DeploymentSecurityPanel } from './DeploymentSecurityPanel'
 import * as api from '../lib/api'
 
 vi.mock('../lib/api', () => ({
-  getSecurityConfig: vi.fn(),
   patchDeployment: vi.fn(),
 }))
 
@@ -32,16 +31,6 @@ const deployment: api.Deployment = {
 describe('DeploymentSecurityPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(api.getSecurityConfig).mockResolvedValue({
-      profile: 'standard',
-      suspiciousWindowSeconds: 30,
-      suspiciousThreshold: 10,
-      suspiciousBlockForSeconds: 120,
-      wafEnabled: true,
-      wafMode: 'detection',
-      globalIpDenylist: [],
-      globalIpAllowlist: [],
-    })
   })
 
   it('rejects invalid CIDR entries client-side', async () => {
@@ -60,6 +49,7 @@ describe('DeploymentSecurityPanel', () => {
       ...deployment,
       security: {
         waf_enabled: false,
+        waf_mode: 'detection',
         ip_denylist: ['10.0.0.0/8'],
         ip_allowlist: ['203.0.113.0/24'],
         custom_rules: ['SecRule REQUEST_URI "@contains blocked" "id:10001,phase:1,deny,status:403"'],
@@ -81,6 +71,7 @@ describe('DeploymentSecurityPanel', () => {
       expect(vi.mocked(api.patchDeployment)).toHaveBeenCalledWith('dep-1', {
         security: {
           waf_enabled: false,
+          waf_mode: 'detection',
           ip_denylist: ['10.0.0.0/8'],
           ip_allowlist: ['203.0.113.0/24'],
           custom_rules: ['SecRule REQUEST_URI "@contains blocked" "id:10001,phase:1,deny,status:403"'],

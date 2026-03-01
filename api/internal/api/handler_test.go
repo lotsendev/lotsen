@@ -2729,6 +2729,9 @@ func TestCreateDeployment_PersistsSecurityConfig(t *testing.T) {
 	if created.Security == nil || !created.Security.WAFEnabled {
 		t.Fatalf("want security config persisted, got %#v", created.Security)
 	}
+	if created.Security.WAFMode != "detection" {
+		t.Fatalf("want default waf mode detection, got %q", created.Security.WAFMode)
+	}
 	if len(created.Security.IPAllowlist) != 1 || created.Security.IPAllowlist[0] != "203.0.113.0/24" {
 		t.Fatalf("want ip allowlist persisted, got %#v", created.Security)
 	}
@@ -2773,5 +2776,8 @@ func TestPatchDeployment_UpdatesSecurityConfig(t *testing.T) {
 	}
 	if updated.Security == nil || !updated.Security.WAFEnabled {
 		t.Fatalf("want security config updated, got %#v", updated.Security)
+	}
+	if updated.Security.WAFMode != "detection" {
+		t.Fatalf("want default waf mode detection on patch, got %q", updated.Security.WAFMode)
 	}
 }

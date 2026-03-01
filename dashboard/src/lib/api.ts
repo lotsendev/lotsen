@@ -11,6 +11,7 @@ export type BasicAuthConfig = {
 
 export type SecurityConfig = {
   waf_enabled: boolean
+  waf_mode: 'detection' | 'enforcement'
   ip_denylist: string[]
   ip_allowlist: string[]
   custom_rules: string[]
@@ -115,8 +116,6 @@ export type ProxySecurityConfig = {
   suspiciousWindowSeconds: number
   suspiciousThreshold: number
   suspiciousBlockForSeconds: number
-  wafEnabled: boolean
-  wafMode?: string
   globalIpDenylist?: string[]
   globalIpAllowlist?: string[]
 }

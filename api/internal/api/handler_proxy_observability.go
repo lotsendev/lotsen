@@ -25,8 +25,6 @@ type SecurityConfig struct {
 	SuspiciousWindowSeconds   int64    `json:"suspiciousWindowSeconds"`
 	SuspiciousThreshold       int      `json:"suspiciousThreshold"`
 	SuspiciousBlockForSeconds int64    `json:"suspiciousBlockForSeconds"`
-	WAFEnabled                bool     `json:"wafEnabled"`
-	WAFMode                   string   `json:"wafMode,omitempty"`
 	GlobalIPDenylist          []string `json:"globalIpDenylist,omitempty"`
 	GlobalIPAllowlist         []string `json:"globalIpAllowlist,omitempty"`
 }

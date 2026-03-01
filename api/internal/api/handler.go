@@ -258,6 +258,8 @@ func proxyInternalBaseURLFromEnv() string {
 const (
 	hostPortRangeMin = 32768
 	hostPortRangeMax = 60999
+	wafModeDetection = "detection"
+	wafModeEnforce   = "enforcement"
 )
 
 // containerPortOnly strips any user-supplied host port prefix and protocol suffix
@@ -516,9 +518,33 @@ func equalSecurityConfig(existing, request *store.SecurityConfig) bool {
 	}
 
 	return existing.WAFEnabled == request.WAFEnabled &&
+		normalizeWAFMode(existing.WAFMode) == normalizeWAFMode(request.WAFMode) &&
 		slices.Equal(existing.IPDenylist, request.IPDenylist) &&
 		slices.Equal(existing.IPAllowlist, request.IPAllowlist) &&
 		slices.Equal(existing.CustomRules, request.CustomRules)
+}
+
+func normalizeSecurityConfig(cfg *store.SecurityConfig) *store.SecurityConfig {
+	if cfg == nil {
+		return nil
+	}
+	copied := *cfg
+	copied.WAFMode = normalizeWAFMode(copied.WAFMode)
+	return &copied
+}
+
+func normalizeDeploymentSecurity(d store.Deployment) store.Deployment {
+	d.Security = normalizeSecurityConfig(d.Security)
+	return d
+}
+
+func normalizeWAFMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case wafModeEnforce:
+		return wafModeEnforce
+	default:
+		return wafModeDetection
+	}
 }
 
 func updateRequestMatchesExisting(existing store.Deployment, body deploymentRequest, basicAuth *store.BasicAuthConfig) bool {

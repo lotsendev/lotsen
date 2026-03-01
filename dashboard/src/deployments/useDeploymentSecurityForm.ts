@@ -7,9 +7,9 @@ type ListKey = 'ip_denylist' | 'ip_allowlist'
 
 const invalidEntryError = 'IP filters must be valid CIDR ranges or IP addresses.'
 
-export function useDeploymentSecurityForm(deployment: Deployment, globalWAFEnabled: boolean) {
+export function useDeploymentSecurityForm(deployment: Deployment) {
   const queryClient = useQueryClient()
-  const [config, setConfig] = useState<SecurityConfig>(() => toSecurityConfig(deployment.security, globalWAFEnabled))
+  const [config, setConfig] = useState<SecurityConfig>(() => toSecurityConfig(deployment.security))
   const [customRulesText, setCustomRulesText] = useState(() => joinRules(deployment.security?.custom_rules ?? []))
   const [denyInput, setDenyInput] = useState('')
   const [allowInput, setAllowInput] = useState('')
@@ -18,14 +18,14 @@ export function useDeploymentSecurityForm(deployment: Deployment, globalWAFEnabl
   const [isDirty, setIsDirty] = useState(false)
 
   useEffect(() => {
-    setConfig(toSecurityConfig(deployment.security, globalWAFEnabled))
+    setConfig(toSecurityConfig(deployment.security))
     setCustomRulesText(joinRules(deployment.security?.custom_rules ?? []))
     setDenyInput('')
     setAllowInput('')
     setInputError(undefined)
     setFormError(undefined)
     setIsDirty(false)
-  }, [deployment.id, deployment.security, globalWAFEnabled])
+  }, [deployment.id, deployment.security])
 
   const mutation = useMutation({
     mutationFn: (security: SecurityConfig) => patchDeployment(deployment.id, { security }),
@@ -42,8 +42,8 @@ export function useDeploymentSecurityForm(deployment: Deployment, globalWAFEnabl
   })
 
   const hasChanges = useMemo(
-    () => hasSecurityChanges(config, deployment.security, globalWAFEnabled),
-    [config, deployment.security, globalWAFEnabled]
+    () => hasSecurityChanges(config, deployment.security),
+    [config, deployment.security]
   )
 
   function setWAFEnabled(enabled: boolean) {
@@ -53,6 +53,11 @@ export function useDeploymentSecurityForm(deployment: Deployment, globalWAFEnabl
 
   function setCustomRules(value: string) {
     setCustomRulesText(value)
+    setIsDirty(true)
+  }
+
+  function setWAFMode(mode: SecurityConfig['waf_mode']) {
+    setConfig(prev => ({ ...prev, waf_mode: mode }))
     setIsDirty(true)
   }
 
@@ -118,6 +123,7 @@ export function useDeploymentSecurityForm(deployment: Deployment, globalWAFEnabl
     setDenyInput,
     setAllowInput,
     setWAFEnabled,
+    setWAFMode,
     setCustomRules,
     addDenyEntry: (value: string) => addEntry('ip_denylist', value),
     addAllowEntry: (value: string) => addEntry('ip_allowlist', value),

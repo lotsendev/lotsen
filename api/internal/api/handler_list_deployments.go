@@ -23,7 +23,7 @@ func (h *Handler) listDeployments(w http.ResponseWriter, _ *http.Request) {
 
 	responses := make([]deploymentResponse, 0, len(deployments))
 	for _, deployment := range deployments {
-		response := deploymentResponse{Deployment: deployment}
+		response := deploymentResponse{Deployment: normalizeDeploymentSecurity(deployment)}
 		if h.containerStats != nil {
 			if stats, ok := h.containerStats.Get(deployment.ID); ok {
 				statsCopy := stats

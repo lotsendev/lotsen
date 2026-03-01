@@ -6,7 +6,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import CreateDeploymentForm from '../deployments/CreateDeploymentForm'
-import EditDeploymentForm from '../deployments/EditDeploymentForm'
 import { DeploymentTable } from '../deployments/DeploymentTable'
 import { useDeleteDeploymentDialog } from '../deployments/useDeleteDeploymentDialog'
 import { useDeploymentDialogs } from '../deployments/useDeploymentDialogs'
@@ -31,9 +30,6 @@ export default function DeploymentList() {
     openCreateDialog,
     closeCreateDialog,
     setCreateDialogOpen,
-    editingDeployment,
-    openEditDialog,
-    closeEditDialog,
   } = useDeploymentDialogs()
 
   const statusCounts = useMemo(() => {
@@ -184,26 +180,6 @@ export default function DeploymentList() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={editingDeployment !== null} onOpenChange={open => !open && closeEditDialog()}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto border-border/60 sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Edit deployment</DialogTitle>
-            <DialogDescription>
-              Update runtime settings for <span className="font-medium text-foreground">{editingDeployment?.name}</span>.
-            </DialogDescription>
-          </DialogHeader>
-          {editingDeployment && (
-            <EditDeploymentForm
-              key={editingDeployment.id}
-              deployment={editingDeployment}
-              onClose={closeEditDialog}
-              className="mb-0 border-0 shadow-none"
-              hideHeader
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={deploymentToDelete !== null} onOpenChange={open => !open && closeDeleteDialog()}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -252,7 +228,6 @@ export default function DeploymentList() {
         isError={isError}
         isDeleting={deleteMutation.isPending}
         onDelete={openDeleteDialog}
-        onEdit={openEditDialog}
         onCreate={openCreateDialog}
         onClearFilters={() => {
           setSearch('')

@@ -243,6 +243,7 @@ export type CreateDeploymentInput = {
   ports: string[]
   volumes: string[]
   domain: string
+  public: boolean
   basic_auth?: BasicAuthConfig
 }
 
@@ -263,6 +264,7 @@ export type UpdateDeploymentInput = {
   ports: string[]
   volumes: string[]
   domain: string
+  public: boolean
   basic_auth?: BasicAuthConfig
   security?: SecurityConfig
 }
@@ -283,6 +285,7 @@ export type PatchDeploymentInput = {
   ports?: string[]
   volumes?: string[]
   domain?: string
+  public?: boolean
   basic_auth?: BasicAuthConfig
   security?: SecurityConfig
 }

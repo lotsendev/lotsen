@@ -49,6 +49,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
   const [name, setName] = useState(deployment.name)
   const [image, setImage] = useState(deployment.image)
   const [domain, setDomain] = useState(deployment.domain)
+  const [isPublic, setIsPublic] = useState(deployment.public)
   const [basicAuthEnabled, setBasicAuthEnabled] = useState(Boolean(deployment.basic_auth && deployment.basic_auth.users.length > 0))
   const [errors, setErrors] = useState<FormErrors>(EMPTY_ERRORS)
 
@@ -70,6 +71,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
       ports: portRows.rows.map(r => r.port.trim()),
       volumes: volumeRows.rows.map(r => `${r.left.trim()}:${r.right.trim()}`),
       domain: domain.trim(),
+      public: isPublic,
       basic_auth: basicAuthEnabled
         ? {
             users: basicAuthRows.rows.map(row => ({
@@ -80,7 +82,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
         : undefined,
       security: deployment.security,
     }
-  }, [name, image, domain, envRows.rows, portRows.rows, volumeRows.rows, basicAuthEnabled, basicAuthRows.rows, deployment.security])
+  }, [name, image, domain, isPublic, envRows.rows, portRows.rows, volumeRows.rows, basicAuthEnabled, basicAuthRows.rows, deployment.security])
 
   const isDirty = useMemo(() => {
     const initial: UpdateDeploymentInput = {
@@ -93,13 +95,15 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
       }),
       volumes: deployment.volumes,
       domain: deployment.domain,
+      public: deployment.public,
       basic_auth: deployment.basic_auth,
       security: deployment.security,
     }
 
     if (initial.name !== normalizedInput.name ||
       initial.image !== normalizedInput.image ||
-      initial.domain !== normalizedInput.domain) {
+      initial.domain !== normalizedInput.domain ||
+      initial.public !== normalizedInput.public) {
       return true
     }
 
@@ -200,6 +204,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
     name, setName,
     image, setImage,
     domain, setDomain,
+    isPublic, setIsPublic,
     basicAuthEnabled, setBasicAuthEnabled,
     envRows,
     portRows,

@@ -1,4 +1,4 @@
-import { ArrowUpRight, ExternalLink, Globe, Pencil, Trash2 } from 'lucide-react'
+import { ArrowUpRight, ExternalLink, Globe, Lock, Trash2, Unlock } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -9,10 +9,9 @@ type Props = {
   deployment: Deployment
   onDelete: (deployment: Deployment) => void
   isDeleting: boolean
-  onEdit: (deployment: Deployment) => void
 }
 
-export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: Props) {
+export function DeploymentRow({ deployment: d, onDelete, isDeleting }: Props) {
   const detailsLabel = d.status === 'failed' ? 'Investigate' : 'Details'
   const hasDomain = Boolean(d.domain)
   const hasPorts = d.ports.length > 0
@@ -66,6 +65,10 @@ export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: P
             <Badge variant="secondary" className="px-2 py-0.5 text-[11px]">
               {Object.keys(d.envs).length} env var{Object.keys(d.envs).length === 1 ? '' : 's'}
             </Badge>
+            <Badge variant={d.public ? 'success' : 'warning'} className="px-2 py-0.5 text-[11px]">
+              {d.public ? <Unlock size={12} /> : <Lock size={12} />}
+              {d.public ? 'Public' : 'Private'}
+            </Badge>
             {stats && (
               <>
                 <Badge variant="outline" className="px-2 py-0.5 font-mono text-[11px]">
@@ -85,16 +88,6 @@ export function DeploymentRow({ deployment: d, onDelete, isDeleting, onEdit }: P
               {detailsLabel}
               <ExternalLink size={13} />
             </Link>
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => onEdit(d)}
-            aria-label={`Edit ${d.name}`}
-            className="h-8 w-8 text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <Pencil size={15} />
           </Button>
           <Button
             type="button"

@@ -20,6 +20,7 @@ type Props = {
 export default function EditDeploymentForm({ deployment, onClose, className, hideHeader = false }: Props) {
   const {
     name, setName, image, setImage, domain, setDomain,
+    isPublic, setIsPublic,
     envRows, portRows, volumeRows, basicAuthEnabled, setBasicAuthEnabled, basicAuthRows,
     errors, handleSubmit, isDirty, isPending,
   } = useEditDeploymentForm(deployment, onClose)
@@ -56,6 +57,39 @@ export default function EditDeploymentForm({ deployment, onClose, className, hid
           <Label htmlFor="edit-dep-domain">Domain (optional)</Label>
           <Input id="edit-dep-domain" type="text" placeholder="app.example.com" value={domain}
             onChange={e => setDomain(e.target.value)} />
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/60 bg-background/70 p-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">Publicly accessible</p>
+            <p className="text-xs text-muted-foreground">When enabled, requests go directly to your app without Lotsen login.</p>
+          </div>
+          <label className="inline-flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="Public deployment"
+              checked={isPublic}
+              onChange={e => setIsPublic(e.target.checked)}
+              className="peer sr-only"
+            />
+            <span
+              className={cn(
+                'relative h-6 w-11 rounded-full border transition-colors',
+                isPublic
+                  ? 'border-primary/40 bg-primary/20'
+                  : 'border-border bg-background'
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-foreground transition-transform',
+                  isPublic ? 'translate-x-5' : 'translate-x-0'
+                )}
+              />
+            </span>
+            <span className="text-xs font-medium text-foreground">{isPublic ? 'Public' : 'Private'}</span>
+          </label>
         </div>
 
         <DynamicSection<EnvRow>

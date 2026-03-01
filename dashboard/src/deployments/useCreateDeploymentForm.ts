@@ -31,6 +31,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
   const [name, setName] = useState('')
   const [image, setImage] = useState('')
   const [domain, setDomain] = useState('')
+  const [isPublic, setIsPublic] = useState(false)
   const [basicAuthEnabled, setBasicAuthEnabled] = useState(false)
   const [errors, setErrors] = useState<FormErrors>(EMPTY_ERRORS)
 
@@ -46,6 +47,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
       setName('')
       setImage('')
       setDomain('')
+      setIsPublic(false)
       setBasicAuthEnabled(false)
       envRows.reset()
       portRows.reset()
@@ -112,6 +114,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
       ports: portRows.rows.map(r => r.port.trim()),
       volumes: volumeRows.rows.map(r => `${r.left.trim()}:${r.right.trim()}`),
       domain: domain.trim(),
+      public: isPublic,
       basic_auth: basicAuth,
     })
   }
@@ -120,6 +123,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
     name, setName,
     image, setImage,
     domain, setDomain,
+    isPublic, setIsPublic,
     basicAuthEnabled, setBasicAuthEnabled,
     envRows,
     portRows,

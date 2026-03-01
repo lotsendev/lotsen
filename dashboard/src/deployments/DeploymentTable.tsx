@@ -12,7 +12,6 @@ type Props = {
   isError: boolean
   isDeleting: boolean
   onDelete: (deployment: Deployment) => void
-  onEdit: (deployment: Deployment) => void
   onCreate: () => void
   onClearFilters: () => void
   onRetry: () => void
@@ -26,7 +25,6 @@ export function DeploymentTable({
   isError,
   isDeleting,
   onDelete,
-  onEdit,
   onCreate,
   onClearFilters,
   onRetry,
@@ -100,7 +98,6 @@ export function DeploymentTable({
           deployment={d}
           onDelete={onDelete}
           isDeleting={isDeleting}
-          onEdit={onEdit}
         />
       ))}
     </div>

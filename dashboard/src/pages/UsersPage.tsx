@@ -5,9 +5,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
+import { useAuth } from '../auth/useAuth'
 import { createUser, deleteUser, getUsers, updateUserPassword } from '../lib/api'
 
 export function UsersPage() {
+  const { isAuthDisabled } = useAuth()
   const queryClient = useQueryClient()
   const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -19,6 +21,7 @@ export function UsersPage() {
   const usersQuery = useQuery({
     queryKey: ['users'],
     queryFn: getUsers,
+    enabled: !isAuthDisabled,
   })
 
   const createUserMutation = useMutation({
@@ -57,6 +60,24 @@ export function UsersPage() {
   const passwordError = updatePasswordMutation.error instanceof Error ? updatePasswordMutation.error.message : null
   const deleteError = deleteUserMutation.error instanceof Error ? deleteUserMutation.error.message : null
   const canConfirmDelete = deleteUserName !== null && deleteConfirmationInput === deleteUserName
+
+  if (isAuthDisabled) {
+    return (
+      <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Authentication disabled</p>
+        <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">User management unavailable</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          User management APIs are only available when authentication is enabled. In local dev, set
+          {' '}<code>LOTSEN_JWT_SECRET</code>{' '}
+          (and optionally
+          {' '}<code>LOTSEN_AUTH_USER</code>{' '}
+          +
+          {' '}<code>LOTSEN_AUTH_PASSWORD</code>{' '}
+          for first-user bootstrap) in the API process.
+        </p>
+      </section>
+    )
+  }
 
   return (
     <div className="space-y-5">

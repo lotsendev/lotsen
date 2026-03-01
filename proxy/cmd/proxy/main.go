@@ -270,24 +270,22 @@ func envOrDefault(key, fallback string) string {
 
 func dashboardAuthFromEnv() (*handler.DashboardAuth, error) {
 	domain := normalizeDomain(os.Getenv("LOTSEN_DASHBOARD_DOMAIN"))
-	user := os.Getenv("LOTSEN_DASHBOARD_USER")
-	password := os.Getenv("LOTSEN_DASHBOARD_PASSWORD")
+	user := strings.TrimSpace(os.Getenv("LOTSEN_DASHBOARD_USER"))
+	password := strings.TrimSpace(os.Getenv("LOTSEN_DASHBOARD_PASSWORD"))
 
 	if domain == "" {
 		if user != "" || password != "" {
-			log.Printf("proxy: ignoring dashboard auth credentials because LOTSEN_DASHBOARD_DOMAIN is unset")
+			log.Printf("proxy: ignoring LOTSEN_DASHBOARD_USER/LOTSEN_DASHBOARD_PASSWORD because LOTSEN_DASHBOARD_DOMAIN is unset")
 		}
 		return nil, nil
 	}
 
-	if user == "" || password == "" {
-		return nil, fmt.Errorf("LOTSEN_DASHBOARD_DOMAIN requires both LOTSEN_DASHBOARD_USER and LOTSEN_DASHBOARD_PASSWORD")
+	if user != "" || password != "" {
+		log.Printf("proxy: LOTSEN_DASHBOARD_USER/LOTSEN_DASHBOARD_PASSWORD are deprecated and ignored; dashboard relies on app JWT auth")
 	}
 
 	return &handler.DashboardAuth{
-		Domain:   domain,
-		Username: user,
-		Password: password,
+		Domain: domain,
 	}, nil
 }
 

@@ -59,7 +59,7 @@ const (
 // Option customizes handler behavior.
 type Option func(*Handler)
 
-// DashboardAuth configures host-scoped authentication for the dashboard domain.
+// DashboardAuth configures host-scoped behavior for the dashboard domain.
 type DashboardAuth struct {
 	Domain   string
 	Username string
@@ -274,14 +274,6 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 				http.Error(rw, "forbidden", result.Status)
 				return
 			}
-		}
-	}
-
-	if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
-		if !middleware.ValidBasicAuth(r, h.dashboardAuth.Username, h.dashboardAuth.Password) {
-			outcome = "unauthorized"
-			middleware.WriteBasicAuthChallenge(rw, "Lotsen")
-			return
 		}
 	}
 

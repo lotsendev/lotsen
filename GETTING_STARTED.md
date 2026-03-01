@@ -39,7 +39,7 @@ In interactive mode, setup recommends the `strict` security profile.
 
 Open the dashboard at `http://<your-vps-ip>:8080`.
 
-> **Why port 8080?** The API now serves the embedded dashboard bundle directly, so production no longer requires Bun or Node on the VPS. For HTTPS + Basic Auth on a dedicated domain, run `sudo lotsen setup` and set dashboard exposure.
+> **Why port 8080?** The API now serves the embedded dashboard bundle directly, so production no longer requires Bun or Node on the VPS. For HTTPS on a dedicated domain, run `sudo lotsen setup` and set dashboard exposure.
 
 ### Configure dashboard access after install
 

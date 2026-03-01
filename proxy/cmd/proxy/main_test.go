@@ -133,14 +133,17 @@ func TestNewAutocertManager_UsesDirectoryAndEmail(t *testing.T) {
 	}
 }
 
-func TestDashboardAuthFromEnv_DomainWithoutCredentialsFails(t *testing.T) {
+func TestDashboardAuthFromEnv_DomainWithoutCredentialsSucceeds(t *testing.T) {
 	t.Setenv("LOTSEN_DASHBOARD_DOMAIN", "dashboard.example.com")
 	t.Setenv("LOTSEN_DASHBOARD_USER", "")
 	t.Setenv("LOTSEN_DASHBOARD_PASSWORD", "")
 
-	_, err := dashboardAuthFromEnv()
-	if err == nil {
-		t.Fatal("want validation error when dashboard credentials are missing")
+	auth, err := dashboardAuthFromEnv()
+	if err != nil {
+		t.Fatalf("dashboardAuthFromEnv: %v", err)
+	}
+	if auth == nil {
+		t.Fatal("want dashboard domain config")
 	}
 }
 
@@ -159,8 +162,8 @@ func TestDashboardAuthFromEnv_ReturnsNormalizedAuth(t *testing.T) {
 	if auth.Domain != "dashboard.example.com" {
 		t.Fatalf("want normalized domain dashboard.example.com, got %s", auth.Domain)
 	}
-	if auth.Username != "admin" || auth.Password != "secret" {
-		t.Fatal("want configured credentials")
+	if auth.Username != "" || auth.Password != "" {
+		t.Fatal("want dashboard basic auth credentials ignored")
 	}
 }
 

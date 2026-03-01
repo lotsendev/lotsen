@@ -57,11 +57,9 @@ validate_domain() {
 
 write_dashboard_env() {
     local dashboard_domain="$1"
-    local dashboard_user="$2"
-    local dashboard_password="$3"
-    local auth_user="$4"
-    local auth_password="$5"
-    local jwt_secret="$6"
+    local auth_user="$2"
+    local auth_password="$3"
+    local jwt_secret="$4"
     local tmp
 
     install -m 700 -d /etc/dirigent
@@ -74,11 +72,7 @@ write_dashboard_env() {
     if [ -n "${dashboard_domain}" ]; then
         {
             echo "DIRIGENT_DASHBOARD_DOMAIN=${dashboard_domain}"
-            echo "DIRIGENT_DASHBOARD_USER=${dashboard_user}"
-            echo "DIRIGENT_DASHBOARD_PASSWORD=${dashboard_password}"
             echo "LOTSEN_DASHBOARD_DOMAIN=${dashboard_domain}"
-            echo "LOTSEN_DASHBOARD_USER=${dashboard_user}"
-            echo "LOTSEN_DASHBOARD_PASSWORD=${dashboard_password}"
         } >> "${tmp}"
     fi
 
@@ -427,35 +421,23 @@ fi
 # ─── dashboard public exposure setup ──────────────────────────────────────────
 
 DASHBOARD_DOMAIN="${DIRIGENT_DASHBOARD_DOMAIN:-}"
-DASHBOARD_USER="${DIRIGENT_DASHBOARD_USER:-}"
-DASHBOARD_PASSWORD="${DIRIGENT_DASHBOARD_PASSWORD:-}"
 AUTH_USER="${DIRIGENT_AUTH_USER:-${LOTSEN_AUTH_USER:-}}"
 AUTH_PASSWORD="${DIRIGENT_AUTH_PASSWORD:-${LOTSEN_AUTH_PASSWORD:-}}"
 JWT_SECRET="${DIRIGENT_JWT_SECRET:-${LOTSEN_JWT_SECRET:-}}"
 GENERATED_AUTH_PASSWORD=0
 GENERATED_JWT_SECRET=0
 EXISTING_DASHBOARD_DOMAIN=""
-EXISTING_DASHBOARD_USER=""
-EXISTING_DASHBOARD_PASSWORD=""
 EXISTING_AUTH_USER=""
 EXISTING_AUTH_PASSWORD=""
 EXISTING_JWT_SECRET=""
 
 if [ -f "${ENV_FILE}" ]; then
     EXISTING_DASHBOARD_DOMAIN=$(read_env_value "DIRIGENT_DASHBOARD_DOMAIN")
-    EXISTING_DASHBOARD_USER=$(read_env_value "DIRIGENT_DASHBOARD_USER")
-    EXISTING_DASHBOARD_PASSWORD=$(read_env_value "DIRIGENT_DASHBOARD_PASSWORD")
     EXISTING_AUTH_USER=$(read_env_value "DIRIGENT_AUTH_USER")
     EXISTING_AUTH_PASSWORD=$(read_env_value "DIRIGENT_AUTH_PASSWORD")
     EXISTING_JWT_SECRET=$(read_env_value "DIRIGENT_JWT_SECRET")
     if [ -z "${EXISTING_DASHBOARD_DOMAIN}" ]; then
         EXISTING_DASHBOARD_DOMAIN=$(read_env_value "LOTSEN_DASHBOARD_DOMAIN")
-    fi
-    if [ -z "${EXISTING_DASHBOARD_USER}" ]; then
-        EXISTING_DASHBOARD_USER=$(read_env_value "LOTSEN_DASHBOARD_USER")
-    fi
-    if [ -z "${EXISTING_DASHBOARD_PASSWORD}" ]; then
-        EXISTING_DASHBOARD_PASSWORD=$(read_env_value "LOTSEN_DASHBOARD_PASSWORD")
     fi
     if [ -z "${EXISTING_AUTH_USER}" ]; then
         EXISTING_AUTH_USER=$(read_env_value "LOTSEN_AUTH_USER")
@@ -469,12 +451,6 @@ if [ -f "${ENV_FILE}" ]; then
 
     if [ -z "${DASHBOARD_DOMAIN}" ] && [ -n "${EXISTING_DASHBOARD_DOMAIN}" ]; then
         DASHBOARD_DOMAIN="${EXISTING_DASHBOARD_DOMAIN}"
-    fi
-    if [ -z "${DASHBOARD_USER}" ] && [ -n "${EXISTING_DASHBOARD_USER}" ]; then
-        DASHBOARD_USER="${EXISTING_DASHBOARD_USER}"
-    fi
-    if [ -z "${DASHBOARD_PASSWORD}" ] && [ -n "${EXISTING_DASHBOARD_PASSWORD}" ]; then
-        DASHBOARD_PASSWORD="${EXISTING_DASHBOARD_PASSWORD}"
     fi
     if [ -z "${AUTH_USER}" ] && [ -n "${EXISTING_AUTH_USER}" ]; then
         AUTH_USER="${EXISTING_AUTH_USER}"
@@ -534,7 +510,7 @@ fi
 if [ -t 0 ] && [ "${DIRIGENT_NON_INTERACTIVE:-0}" != "1" ] && [ "${DIRIGENT_UPGRADE:-0}" != "1" ]; then
     echo ""
     echo "Dashboard public exposure setup"
-    echo "  Configure HTTPS + Basic Auth on a dedicated domain (optional)."
+    echo "  Configure HTTPS on a dedicated domain (optional)."
     read -r -p "Expose dashboard publicly through the proxy? [y/N]: " EXPOSE_DASHBOARD
     if [[ "${EXPOSE_DASHBOARD}" =~ ^[Yy]$ ]]; then
         while true; do
@@ -553,55 +529,19 @@ if [ -t 0 ] && [ "${DIRIGENT_NON_INTERACTIVE:-0}" != "1" ] && [ "${DIRIGENT_UPGR
             echo "Invalid domain. Use a valid hostname like dashboard.example.com"
         done
 
-        while true; do
-            if [ -n "${DASHBOARD_USER}" ]; then
-                read -r -p "Dashboard basic auth username [${DASHBOARD_USER}]: " INPUT_DASHBOARD_USER
-                if [ -n "${INPUT_DASHBOARD_USER}" ]; then
-                    DASHBOARD_USER="${INPUT_DASHBOARD_USER}"
-                fi
-            else
-                read -r -p "Dashboard basic auth username: " DASHBOARD_USER
-            fi
-
-            if [ -n "${DASHBOARD_USER}" ]; then
-                break
-            fi
-            echo "Username cannot be empty."
-        done
-
-        while true; do
-            read -r -s -p "Dashboard basic auth password: " DASHBOARD_PASSWORD
-            echo ""
-            read -r -s -p "Confirm password: " DASHBOARD_PASSWORD_CONFIRM
-            echo ""
-            if [ -z "${DASHBOARD_PASSWORD}" ]; then
-                echo "Password cannot be empty."
-                continue
-            fi
-            if [ "${DASHBOARD_PASSWORD}" != "${DASHBOARD_PASSWORD_CONFIRM}" ]; then
-                echo "Passwords do not match. Try again."
-                continue
-            fi
-            break
-        done
     else
         DASHBOARD_DOMAIN=""
-        DASHBOARD_USER=""
-        DASHBOARD_PASSWORD=""
     fi
 fi
 
-if [ -n "${DASHBOARD_DOMAIN}" ] || [ -n "${DASHBOARD_USER}" ] || [ -n "${DASHBOARD_PASSWORD}" ]; then
+if [ -n "${DASHBOARD_DOMAIN}" ]; then
     if ! validate_domain "${DASHBOARD_DOMAIN}"; then
         error "DIRIGENT_DASHBOARD_DOMAIN is set but invalid. Example: dashboard.example.com"
-    fi
-    if [ -z "${DASHBOARD_USER}" ] || [ -z "${DASHBOARD_PASSWORD}" ]; then
-        error "DIRIGENT_DASHBOARD_DOMAIN requires DIRIGENT_DASHBOARD_USER and DIRIGENT_DASHBOARD_PASSWORD"
     fi
 fi
 
 step "Writing shared environment file"
-write_dashboard_env "${DASHBOARD_DOMAIN}" "${DASHBOARD_USER}" "${DASHBOARD_PASSWORD}" "${AUTH_USER}" "${AUTH_PASSWORD}" "${JWT_SECRET}"
+write_dashboard_env "${DASHBOARD_DOMAIN}" "${AUTH_USER}" "${AUTH_PASSWORD}" "${JWT_SECRET}"
 
 configure_firewall "${SECURITY_PROFILE}"
 if [ "${SECURITY_PROFILE}" = "strict" ]; then
@@ -730,7 +670,6 @@ printf "    %-30s %s\n" "lotsen-proxy          :80"    "$(systemctl is-active lo
 echo ""
 if [ -n "${DASHBOARD_DOMAIN}" ]; then
     echo "  Dashboard:  https://${DASHBOARD_DOMAIN}"
-    echo "              (Basic Auth user: ${DASHBOARD_USER})"
 else
     echo "  Dashboard:  http://${SERVER_IP}:8080"
 fi
@@ -750,7 +689,7 @@ if [ -n "${DASHBOARD_DOMAIN}" ]; then
 else
     echo "  Note: The dashboard is served directly by lotsen-api on :8080."
     echo "  Configure DIRIGENT_DASHBOARD_DOMAIN in setup to expose it through"
-    echo "  the :80/:443 reverse proxy with TLS and optional Basic Auth."
+    echo "  the :80/:443 reverse proxy with TLS."
 fi
 echo ""
 echo "  Setup summary:"

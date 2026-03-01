@@ -60,7 +60,7 @@ sudo DIRIGENT_PROXY_HARDENING_PROFILE=strict dirigent setup
 | `lotsen-orchestrator` | —      | Reconciler — syncs state with Docker (no port) |
 | `lotsen-proxy`        | `:80`  | Reverse proxy — routes traffic to containers   |
 
-The dashboard is served by `lotsen-api` on `:8080` by default. If you set `DIRIGENT_DASHBOARD_DOMAIN` during setup, the proxy exposes it on `:80/:443` with optional Basic Auth.
+The dashboard is served by `lotsen-api` on `:8080` by default. If you set `DIRIGENT_DASHBOARD_DOMAIN` during setup, the proxy exposes it on `:80/:443` over HTTPS.
 
 `DIRIGENT_AUTH_USER`/`DIRIGENT_AUTH_PASSWORD` (`LOTSEN_` aliases also supported) are bootstrap-only: they seed the first dashboard user when `users.db` is empty and are ignored after users already exist.
 

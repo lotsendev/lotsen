@@ -390,7 +390,7 @@ func TestProxy_HTTPSKnownDomainReachesBackend(t *testing.T) {
 	}
 }
 
-func TestProxy_DashboardDomainRequiresBasicAuth(t *testing.T) {
+func TestProxy_DashboardDomainDoesNotRequireBasicAuth(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -415,11 +415,8 @@ func TestProxy_DashboardDomainRequiresBasicAuth(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("want 401, got %d", resp.StatusCode)
-	}
-	if got := resp.Header.Get("WWW-Authenticate"); got != `Basic realm="Lotsen"` {
-		t.Fatalf("want WWW-Authenticate header, got %q", got)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
 	}
 }
 

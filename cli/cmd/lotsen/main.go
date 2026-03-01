@@ -76,8 +76,8 @@ func runSetup(args []string) error {
 	version := fs.String("version", "latest", "Lotsen version to install")
 	dashboardExpose := fs.Bool("dashboard-expose", false, "Expose dashboard via proxy")
 	dashboardDomain := fs.String("dashboard-domain", "", "Dashboard domain")
-	dashboardUser := fs.String("dashboard-user", "", "Dashboard basic auth username")
-	dashboardPasswordStdin := fs.Bool("dashboard-password-stdin", false, "Read dashboard password from stdin")
+	dashboardUser := fs.String("dashboard-user", "", "(deprecated) Dashboard basic auth username")
+	dashboardPasswordStdin := fs.Bool("dashboard-password-stdin", false, "(deprecated) Read dashboard password from stdin")
 
 	if err := fs.Parse(args); err != nil {
 		return setupUsage(err)
@@ -121,24 +121,12 @@ func runSetup(args []string) error {
 		return fmt.Errorf("invalid --proxy-hardening-profile %q (expected strict, standard, or off)", selectedProxyHardeningProfile)
 	}
 
-	dashboardPassword := ""
-	if *dashboardPasswordStdin {
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("read password from stdin: %w", err)
-		}
-		dashboardPassword = strings.TrimSpace(string(data))
-	}
-
 	if *dashboardExpose {
 		if strings.TrimSpace(*dashboardDomain) == "" {
 			return errors.New("--dashboard-expose requires --dashboard-domain")
 		}
-		if strings.TrimSpace(*dashboardUser) == "" {
-			return errors.New("--dashboard-expose requires --dashboard-user")
-		}
-		if !*dashboardPasswordStdin && !*interactive {
-			return errors.New("--dashboard-expose in non-interactive mode requires --dashboard-password-stdin")
+		if strings.TrimSpace(*dashboardUser) != "" || *dashboardPasswordStdin {
+			fmt.Fprintln(os.Stderr, "warning: --dashboard-user and --dashboard-password-stdin are deprecated and ignored")
 		}
 	}
 
@@ -163,8 +151,6 @@ func runSetup(args []string) error {
 	if *dashboardExpose {
 		env = append(env,
 			"LOTSEN_DASHBOARD_DOMAIN="+strings.TrimSpace(*dashboardDomain),
-			"LOTSEN_DASHBOARD_USER="+strings.TrimSpace(*dashboardUser),
-			"LOTSEN_DASHBOARD_PASSWORD="+dashboardPassword,
 		)
 	}
 
@@ -186,10 +172,10 @@ func setupUsage(parseErr error) error {
 	fmt.Fprintln(b, "  --profile <name>          Security profile: strict, standard, off")
 	fmt.Fprintln(b, "  --proxy-hardening-profile <name> Proxy hardening profile: strict, standard, off")
 	fmt.Fprintln(b, "  --version <value>         Version to install (default: latest)")
-	fmt.Fprintln(b, "  --dashboard-expose        Configure dashboard domain and basic auth")
+	fmt.Fprintln(b, "  --dashboard-expose        Configure dashboard domain exposure")
 	fmt.Fprintln(b, "  --dashboard-domain <fqdn> Dashboard domain")
-	fmt.Fprintln(b, "  --dashboard-user <name>   Dashboard basic auth username")
-	fmt.Fprintln(b, "  --dashboard-password-stdin Read dashboard password from stdin")
+	fmt.Fprintln(b, "  --dashboard-user <name>   (deprecated) Ignored")
+	fmt.Fprintln(b, "  --dashboard-password-stdin (deprecated) Ignored")
 	return errors.New(strings.TrimSpace(b.String()))
 }
 

@@ -45,6 +45,7 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 	if body.Volumes == nil {
 		body.Volumes = []string{}
 	}
+	body.Security = normalizeSecurityConfig(body.Security)
 
 	allDeployments, err := h.store.List()
 	if err != nil {
@@ -86,5 +87,5 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		Status:       string(store.StatusDeploying),
 	})
 
-	writeJSON(w, http.StatusCreated, created)
+	writeJSON(w, http.StatusCreated, normalizeDeploymentSecurity(created))
 }

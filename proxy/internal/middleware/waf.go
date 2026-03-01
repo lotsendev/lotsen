@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	coreruleset "github.com/corazawaf/coraza-coreruleset"
 	"github.com/corazawaf/coraza/v3"
 )
 
@@ -28,45 +27,39 @@ type WAFResult struct {
 }
 
 type WAF struct {
-	enabled bool
-	mode    WAFMode
-	baseWAF coraza.WAF
+	baseWAFByMode map[WAFMode]coraza.WAF
 
 	mu    sync.RWMutex
 	cache map[string]coraza.WAF
 }
 
-func NewWAF(enabled bool, mode WAFMode) (*WAF, error) {
-	mode = normalizeWAFMode(mode)
-	w := &WAF{enabled: enabled, mode: mode, cache: make(map[string]coraza.WAF)}
-	if !enabled {
-		return w, nil
-	}
-	base, err := buildCorazaWAF(mode, nil)
+func NewWAF() (*WAF, error) {
+	baseDetection, err := buildCorazaWAF(WAFModeDetection, nil)
 	if err != nil {
 		return nil, err
 	}
-	w.baseWAF = base
+	baseEnforcement, err := buildCorazaWAF(WAFModeEnforcement, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	w := &WAF{
+		baseWAFByMode: map[WAFMode]coraza.WAF{
+			WAFModeDetection:   baseDetection,
+			WAFModeEnforcement: baseEnforcement,
+		},
+		cache: make(map[string]coraza.WAF),
+	}
 	return w, nil
 }
 
-func (w *WAF) Enabled() bool {
-	return w != nil && w.enabled
-}
-
-func (w *WAF) Mode() WAFMode {
+func (w *WAF) Evaluate(r *http.Request, clientIP string, mode WAFMode, customRules []string) (WAFResult, error) {
 	if w == nil {
-		return WAFModeDetection
-	}
-	return normalizeWAFMode(w.mode)
-}
-
-func (w *WAF) Evaluate(r *http.Request, clientIP string, customRules []string) (WAFResult, error) {
-	if w == nil || !w.enabled || w.baseWAF == nil {
 		return WAFResult{}, nil
 	}
+	mode = normalizeWAFMode(mode)
 
-	wafInstance, err := w.wafForRules(customRules)
+	wafInstance, err := w.wafForRules(mode, customRules)
 	if err != nil {
 		return WAFResult{}, err
 	}
@@ -95,7 +88,7 @@ func (w *WAF) Evaluate(r *http.Request, clientIP string, customRules []string) (
 	}
 
 	if interruption := tx.ProcessRequestHeaders(); interruption != nil {
-		if w.mode == WAFModeEnforcement {
+		if mode == WAFModeEnforcement {
 			return WAFResult{Blocked: true, Status: interruptionStatus(interruption.Status)}, nil
 		}
 		return WAFResult{Detected: true}, nil
@@ -111,7 +104,7 @@ func (w *WAF) Evaluate(r *http.Request, clientIP string, customRules []string) (
 			if interruption, _, writeErr := tx.WriteRequestBody(body); writeErr != nil {
 				return WAFResult{}, writeErr
 			} else if interruption != nil {
-				if w.mode == WAFModeEnforcement {
+				if mode == WAFModeEnforcement {
 					return WAFResult{Blocked: true, Status: interruptionStatus(interruption.Status)}, nil
 				}
 				return WAFResult{Detected: true}, nil
@@ -122,26 +115,31 @@ func (w *WAF) Evaluate(r *http.Request, clientIP string, customRules []string) (
 	if interruption, err := tx.ProcessRequestBody(); err != nil {
 		return WAFResult{}, err
 	} else if interruption != nil {
-		if w.mode == WAFModeEnforcement {
+		if mode == WAFModeEnforcement {
 			return WAFResult{Blocked: true, Status: interruptionStatus(interruption.Status)}, nil
 		}
 		return WAFResult{Detected: true}, nil
 	}
 
-	if w.mode == WAFModeDetection && len(tx.MatchedRules()) > 0 {
+	if mode == WAFModeDetection && len(tx.MatchedRules()) > 0 {
 		return WAFResult{Detected: true}, nil
 	}
 
 	return WAFResult{}, nil
 }
 
-func (w *WAF) wafForRules(customRules []string) (coraza.WAF, error) {
-	rules := normalizeRules(customRules)
-	if len(rules) == 0 {
-		return w.baseWAF, nil
+func (w *WAF) wafForRules(mode WAFMode, customRules []string) (coraza.WAF, error) {
+	baseWAF := w.baseWAFByMode[mode]
+	if baseWAF == nil {
+		return nil, fmt.Errorf("waf base mode %q is unavailable", mode)
 	}
 
-	key := strings.Join(rules, "\n")
+	rules := normalizeRules(customRules)
+	if len(rules) == 0 {
+		return baseWAF, nil
+	}
+
+	key := string(mode) + "\n" + strings.Join(rules, "\n")
 	w.mu.RLock()
 	cached := w.cache[key]
 	w.mu.RUnlock()
@@ -149,7 +147,7 @@ func (w *WAF) wafForRules(customRules []string) (coraza.WAF, error) {
 		return cached, nil
 	}
 
-	built, err := buildCorazaWAF(w.mode, rules)
+	built, err := buildCorazaWAF(mode, rules)
 	if err != nil {
 		return nil, err
 	}
@@ -171,10 +169,7 @@ func buildCorazaWAF(mode WAFMode, customRules []string) (coraza.WAF, error) {
 	}
 
 	directives := strings.Builder{}
-	directives.WriteString("Include @coraza.conf-recommended\n")
-	directives.WriteString("Include @crs-setup.conf.example\n")
 	directives.WriteString(fmt.Sprintf("SecRuleEngine %s\n", ruleEngine))
-	directives.WriteString("Include @owasp_crs/*.conf\n")
 	for _, rule := range normalizeRules(customRules) {
 		directives.WriteString(rule)
 		directives.WriteString("\n")
@@ -182,7 +177,6 @@ func buildCorazaWAF(mode WAFMode, customRules []string) (coraza.WAF, error) {
 
 	return coraza.NewWAF(
 		coraza.NewWAFConfig().
-			WithRootFS(coreruleset.FS).
 			WithRequestBodyAccess().
 			WithDirectives(directives.String()),
 	)

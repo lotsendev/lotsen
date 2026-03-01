@@ -1,10 +1,10 @@
 import { type FormEvent } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Label } from '../components/ui/label'
-import { getSecurityConfig, type Deployment } from '../lib/api'
+import { type Deployment } from '../lib/api'
 import { SecurityCIDRListField } from './SecurityCIDRListField'
+import { splitRules } from './securityConfig'
 import { useDeploymentSecurityForm } from './useDeploymentSecurityForm'
 
 type Props = {
@@ -12,13 +12,8 @@ type Props = {
 }
 
 export function DeploymentSecurityPanel({ deployment }: Props) {
-  const securityQuery = useQuery({
-    queryKey: ['security-config'],
-    queryFn: getSecurityConfig,
-  })
-  const globalWAFEnabled = securityQuery.data?.wafEnabled ?? true
-
-  const form = useDeploymentSecurityForm(deployment, globalWAFEnabled)
+  const form = useDeploymentSecurityForm(deployment)
+  const customRuleCount = splitRules(form.customRulesText).length
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -32,18 +27,10 @@ export function DeploymentSecurityPanel({ deployment }: Props) {
           <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">Security</p>
           <p className="mt-1 text-xs text-muted-foreground">Configure per-deployment WAF, IP filtering, and custom rules.</p>
         </div>
-        {securityQuery.data?.wafMode ? (
-          <Badge variant="info" className="capitalize">
-            Global mode: {securityQuery.data.wafMode}
-          </Badge>
-        ) : null}
+        <Badge variant={form.config.waf_mode === 'enforcement' ? 'destructive' : 'warning'} className="capitalize">
+          Mode: {form.config.waf_mode}
+        </Badge>
       </div>
-
-      {!securityQuery.isLoading && securityQuery.data?.wafEnabled === false ? (
-        <p className="mt-3 rounded-md border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          Global WAF is disabled. Enabling WAF here will not take effect until global WAF is enabled.
-        </p>
-      ) : null}
 
       <form onSubmit={handleSubmit} className="mt-4 space-y-4">
         <label className="flex items-center gap-2 text-sm text-foreground">
@@ -54,6 +41,19 @@ export function DeploymentSecurityPanel({ deployment }: Props) {
           />
           Enable WAF for this deployment
         </label>
+
+        <div className="space-y-2">
+          <Label htmlFor={`security-waf-mode-${deployment.id}`}>WAF mode</Label>
+          <select
+            id={`security-waf-mode-${deployment.id}`}
+            value={form.config.waf_mode}
+            onChange={event => form.setWAFMode(event.target.value as 'detection' | 'enforcement')}
+            className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+          >
+            <option value="detection">Detection (log only)</option>
+            <option value="enforcement">Enforcement (block requests)</option>
+          </select>
+        </div>
 
         <SecurityCIDRListField
           id={`security-denylist-${deployment.id}`}
@@ -89,6 +89,24 @@ export function DeploymentSecurityPanel({ deployment }: Props) {
             className="min-h-28 w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs text-foreground shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
           />
           <p className="text-xs text-muted-foreground">Use one ModSecurity SecRule per line.</p>
+        </div>
+
+        <div className="space-y-2 rounded-md border border-border/60 bg-background/60 p-3">
+          <p className="text-xs font-medium text-foreground">Effective rules for this deployment</p>
+          <ul className="space-y-1 text-xs text-muted-foreground">
+            <li>Custom deployment rules: {customRuleCount}</li>
+            <li>
+              Rule syntax guide:{' '}
+              <a
+                href="https://coraza.io/docs/seclang/directives/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-sky-700 underline decoration-sky-300 underline-offset-2 transition-colors hover:text-sky-800"
+              >
+                Coraza SecLang directives
+              </a>
+            </li>
+          </ul>
         </div>
 
         {form.inputError ? <p className="text-xs text-destructive">{form.inputError}</p> : null}

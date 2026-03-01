@@ -71,6 +71,7 @@ type BasicAuthUser struct {
 
 type SecurityConfig struct {
 	WAFEnabled  bool     `json:"waf_enabled"`
+	WAFMode     string   `json:"waf_mode,omitempty"`
 	IPDenylist  []string `json:"ip_denylist,omitempty"`
 	IPAllowlist []string `json:"ip_allowlist,omitempty"`
 	CustomRules []string `json:"custom_rules,omitempty"`

@@ -45,9 +45,10 @@ export function isValidCIDROrIP(input: string) {
   return false
 }
 
-export function toSecurityConfig(security: Deployment['security'], defaultWAFEnabled: boolean): SecurityConfig {
+export function toSecurityConfig(security: Deployment['security']): SecurityConfig {
   return {
-    waf_enabled: security?.waf_enabled ?? defaultWAFEnabled,
+    waf_enabled: security?.waf_enabled ?? true,
+    waf_mode: security?.waf_mode ?? 'detection',
     ip_denylist: security?.ip_denylist ?? [],
     ip_allowlist: security?.ip_allowlist ?? [],
     custom_rules: security?.custom_rules ?? [],
@@ -65,10 +66,11 @@ export function splitRules(value: string) {
     .filter(Boolean)
 }
 
-export function hasSecurityChanges(config: SecurityConfig, existing: Deployment['security'], globalWAFEnabled: boolean) {
+export function hasSecurityChanges(config: SecurityConfig, existing: Deployment['security']) {
   if (!existing) {
     return (
-      config.waf_enabled !== globalWAFEnabled ||
+      config.waf_enabled !== true ||
+      config.waf_mode !== 'detection' ||
       config.ip_denylist.length > 0 ||
       config.ip_allowlist.length > 0 ||
       config.custom_rules.length > 0

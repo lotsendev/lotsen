@@ -134,8 +134,6 @@ type HardeningSettings struct {
 	SuspiciousWindowSeconds   int64            `json:"suspiciousWindowSeconds"`
 	SuspiciousThreshold       int              `json:"suspiciousThreshold"`
 	SuspiciousBlockForSeconds int64            `json:"suspiciousBlockForSeconds"`
-	WAFEnabled                bool             `json:"wafEnabled"`
-	WAFMode                   string           `json:"wafMode,omitempty"`
 	GlobalIPDenylist          []string         `json:"globalIpDenylist,omitempty"`
 	GlobalIPAllowlist         []string         `json:"globalIpAllowlist,omitempty"`
 }
@@ -254,10 +252,12 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.waf != nil && applyWAF {
 		customRules := []string(nil)
+		mode := middleware.WAFModeDetection
 		if route.Security != nil {
 			customRules = route.Security.CustomRules
+			mode = middleware.WAFMode(route.Security.WAFMode)
 		}
-		result, err := h.waf.Evaluate(r, client, customRules)
+		result, err := h.waf.Evaluate(r, client, mode, customRules)
 		if err != nil {
 			log.Printf("proxy: waf evaluate: %v", err)
 		} else {
@@ -333,10 +333,6 @@ func (h *Handler) securityConfig(w http.ResponseWriter, _ *http.Request) {
 		cfg.SuspiciousWindowSeconds = int64(h.scanner.window.Seconds())
 		cfg.SuspiciousThreshold = h.scanner.threshold
 		cfg.SuspiciousBlockForSeconds = int64(h.scanner.blockFor.Seconds())
-	}
-	if h.waf != nil {
-		cfg.WAFEnabled = h.waf.Enabled()
-		cfg.WAFMode = string(h.waf.Mode())
 	}
 	if h.ipFilter != nil {
 		cfg.GlobalIPDenylist, cfg.GlobalIPAllowlist = h.ipFilter.GlobalConfig()

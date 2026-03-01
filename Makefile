@@ -13,7 +13,7 @@ dev:
 	@trap 'kill 0' SIGINT; \
 	(cd api && DIRIGENT_DATA=/tmp/dirigent.json DIRIGENT_PROXY_ACCESS_LOG_DIR=/tmp/dirigent-proxy-logs $(AIR)) & \
 	(cd orchestrator && DIRIGENT_DATA=/tmp/dirigent.json DIRIGENT_PROXY_HEALTH_URL=http://localhost:8090/internal/health DIRIGENT_PROXY_TRAFFIC_URL=http://localhost:8090/internal/traffic $(AIR)) & \
-	(cd proxy && DIRIGENT_DATA=/tmp/dirigent.json DIRIGENT_PROXY_ADDR=:8090 DIRIGENT_PROXY_ACCESS_LOG_DIR=/tmp/dirigent-proxy-logs $(AIR)) & \
+	(cd proxy && DIRIGENT_DATA=/tmp/dirigent.json DIRIGENT_PROXY_ADDR=:8090 DIRIGENT_PROXY_HTTPS_ADDR=:8443 DIRIGENT_CERT_CACHE_DIR=/tmp/dirigent-certs DIRIGENT_PROXY_ACCESS_LOG_DIR=/tmp/dirigent-proxy-logs $(AIR)) & \
 	(cd dashboard && bun run dev) & \
 	wait
 

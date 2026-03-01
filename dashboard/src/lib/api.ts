@@ -40,6 +40,43 @@ export async function logout(): Promise<void> {
   await fetch('/auth/logout', { method: 'POST' })
 }
 
+export type DashboardUser = {
+  username: string
+}
+
+export async function getUsers(): Promise<DashboardUser[]> {
+  const res = await apiFetch('/api/users')
+  if (!res.ok) throw new Error('Failed to fetch users')
+  const body = await res.json() as { users?: DashboardUser[] }
+  return body.users ?? []
+}
+
+export async function createUser(username: string, password: string): Promise<void> {
+  const res = await apiFetch('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+  if (res.status === 409) throw new Error('User already exists')
+  if (!res.ok) throw new Error('Failed to create user')
+}
+
+export async function updateUserPassword(username: string, password: string): Promise<void> {
+  const res = await apiFetch(`/api/users/${encodeURIComponent(username)}/password`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+  if (res.status === 404) throw new Error('User not found')
+  if (!res.ok) throw new Error('Failed to update user password')
+}
+
+export async function deleteUser(username: string): Promise<void> {
+  const res = await apiFetch(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' })
+  if (res.status === 404) throw new Error('User not found')
+  if (!res.ok) throw new Error('Failed to delete user')
+}
+
 export type DeploymentStatus = 'idle' | 'deploying' | 'healthy' | 'failed'
 
 export type BasicAuthUser = {

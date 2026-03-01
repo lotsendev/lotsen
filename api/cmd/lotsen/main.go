@@ -92,8 +92,19 @@ func authFromEnv(storePath string) (*auth.UserStore, []byte, error) {
 
 	user := strings.TrimSpace(os.Getenv("LOTSEN_AUTH_USER"))
 	password := strings.TrimSpace(os.Getenv("LOTSEN_AUTH_PASSWORD"))
+	ensureBootstrap := strings.EqualFold(strings.TrimSpace(os.Getenv("LOTSEN_AUTH_ENSURE_BOOTSTRAP")), "true") || strings.TrimSpace(os.Getenv("LOTSEN_AUTH_ENSURE_BOOTSTRAP")) == "1"
 	if hasUsers {
-		if user != "" || password != "" {
+		if ensureBootstrap {
+			if user != "" && password != "" {
+				if err := userStore.SetPassword(user, password); err != nil {
+					userStore.Close()
+					return nil, nil, fmt.Errorf("ensure bootstrap credentials: %w", err)
+				}
+				log.Printf("lotsen: ensured bootstrap user %q from env", user)
+			} else if user != "" || password != "" {
+				log.Printf("lotsen: WARNING: LOTSEN_AUTH_USER and LOTSEN_AUTH_PASSWORD must both be set when LOTSEN_AUTH_ENSURE_BOOTSTRAP is enabled")
+			}
+		} else if user != "" || password != "" {
 			log.Printf("lotsen: auth users already exist; ignoring LOTSEN_AUTH_USER/LOTSEN_AUTH_PASSWORD bootstrap env")
 		}
 	} else if user != "" && password != "" {

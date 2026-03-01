@@ -81,6 +81,103 @@ func TestUserStore_HasUsers(t *testing.T) {
 	}
 }
 
+func TestUserStore_CreateUser_Duplicate(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.CreateUser("eve", "pass1"); err != nil {
+		t.Fatalf("CreateUser first: %v", err)
+	}
+
+	err := s.CreateUser("eve", "pass2")
+	if !errors.Is(err, ErrUserExists) {
+		t.Fatalf("want ErrUserExists, got %v", err)
+	}
+
+	if err := s.Authenticate("eve", "pass1"); err != nil {
+		t.Fatalf("Authenticate with original password: %v", err)
+	}
+}
+
+func TestUserStore_UpdatePassword_UserNotFound(t *testing.T) {
+	s := newTestStore(t)
+
+	err := s.UpdatePassword("missing", "new-pass")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("want ErrUserNotFound, got %v", err)
+	}
+}
+
+func TestUserStore_UpdatePassword(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.CreateUser("frank", "old-pass"); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	if err := s.UpdatePassword("frank", "new-pass"); err != nil {
+		t.Fatalf("UpdatePassword: %v", err)
+	}
+
+	if err := s.Authenticate("frank", "new-pass"); err != nil {
+		t.Fatalf("Authenticate with new password: %v", err)
+	}
+
+	err := s.Authenticate("frank", "old-pass")
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("want ErrInvalidCredentials, got %v", err)
+	}
+}
+
+func TestUserStore_DeleteUser(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.CreateUser("grace", "pass"); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	if err := s.DeleteUser("grace"); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+
+	err := s.Authenticate("grace", "pass")
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("want ErrInvalidCredentials after delete, got %v", err)
+	}
+}
+
+func TestUserStore_DeleteUser_UserNotFound(t *testing.T) {
+	s := newTestStore(t)
+
+	err := s.DeleteUser("missing")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("want ErrUserNotFound, got %v", err)
+	}
+}
+
+func TestUserStore_ListUsers(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.CreateUser("zoe", "pass"); err != nil {
+		t.Fatalf("CreateUser zoe: %v", err)
+	}
+	if err := s.CreateUser("amy", "pass"); err != nil {
+		t.Fatalf("CreateUser amy: %v", err)
+	}
+
+	users, err := s.ListUsers()
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+
+	if len(users) != 2 {
+		t.Fatalf("want 2 users, got %d", len(users))
+	}
+
+	if users[0].Username != "amy" || users[1].Username != "zoe" {
+		t.Fatalf("want users sorted by username, got %#v", users)
+	}
+}
+
 func TestNewUserStore_EmptyPath(t *testing.T) {
 	_, err := NewUserStore("")
 	if err == nil {

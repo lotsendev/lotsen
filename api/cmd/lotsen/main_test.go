@@ -67,3 +67,39 @@ func TestAuthFromEnvIgnoresBootstrapEnvWhenUsersExist(t *testing.T) {
 		t.Fatalf("Authenticate(new bootstrap pass) error = %v, want %v", err, auth.ErrInvalidCredentials)
 	}
 }
+
+func TestAuthFromEnvEnsuresBootstrapUserWhenEnabled(t *testing.T) {
+	storeDir := t.TempDir()
+	storePath := filepath.Join(storeDir, "deployments.json")
+
+	seedStore, err := auth.NewUserStore(filepath.Join(storeDir, "users.db"))
+	if err != nil {
+		t.Fatalf("NewUserStore() error = %v", err)
+	}
+	if err := seedStore.SetPassword("existing", "existing-pass"); err != nil {
+		t.Fatalf("SetPassword(existing) error = %v", err)
+	}
+	if err := seedStore.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	t.Setenv("LOTSEN_JWT_SECRET", "test-secret")
+	t.Setenv("LOTSEN_AUTH_USER", "admin")
+	t.Setenv("LOTSEN_AUTH_PASSWORD", "admin")
+	t.Setenv("LOTSEN_AUTH_ENSURE_BOOTSTRAP", "1")
+
+	userStore, _, err := authFromEnv(storePath)
+	if err != nil {
+		t.Fatalf("authFromEnv() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = userStore.Close()
+	})
+
+	if err := userStore.Authenticate("admin", "admin"); err != nil {
+		t.Fatalf("Authenticate(admin) error = %v, want nil", err)
+	}
+	if err := userStore.Authenticate("existing", "existing-pass"); err != nil {
+		t.Fatalf("Authenticate(existing) error = %v, want nil", err)
+	}
+}

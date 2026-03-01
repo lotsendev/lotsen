@@ -11,7 +11,7 @@ import { StatusBadge } from '../deployments/StatusBadge'
 import { getDeployments, restartDeployment, type Deployment } from '../lib/api'
 
 export function DeploymentDetailPage() {
-  const { deploymentId } = useParams({ from: '/deployments/$deploymentId' })
+  const { deploymentId } = useParams({ from: '/_app/deployments/$deploymentId' })
   const queryClient = useQueryClient()
   const { data: deployments, isLoading, isError } = useQuery({
     queryKey: ['deployments'],

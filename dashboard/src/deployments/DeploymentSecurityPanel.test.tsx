@@ -25,6 +25,7 @@ const deployment: api.Deployment = {
   ports: [],
   volumes: [],
   domain: 'app.example.com',
+  public: false,
   status: 'healthy',
 }
 

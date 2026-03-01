@@ -58,6 +58,11 @@ type UpgradeRunner interface {
 	IsRunning() bool
 }
 
+// AuthUserStore authenticates and manages Dirigent users.
+type AuthUserStore interface {
+	Authenticate(username, password string) error
+}
+
 type basicAuthUserRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -74,6 +79,7 @@ type deploymentRequest struct {
 	Ports     []string              `json:"ports"`
 	Volumes   []string              `json:"volumes"`
 	Domain    string                `json:"domain"`
+	Public    bool                  `json:"public"`
 	BasicAuth *basicAuthRequest     `json:"basic_auth"`
 	Security  *store.SecurityConfig `json:"security"`
 }
@@ -84,6 +90,7 @@ type patchDeploymentRequest struct {
 	Ports     []string              `json:"ports"`
 	Volumes   []string              `json:"volumes"`
 	Domain    string                `json:"domain"`
+	Public    *bool                 `json:"public"`
 	BasicAuth *basicAuthRequest     `json:"basic_auth"`
 	Security  *store.SecurityConfig `json:"security"`
 }
@@ -106,6 +113,8 @@ type Handler struct {
 	versions       VersionInfoProvider
 	upgrade        UpgradeRunner
 	containerStats *ContainerStatsCache
+	authStore      AuthUserStore
+	jwtSecret      []byte
 }
 
 const defaultOrchestratorStaleAfter = 30 * time.Second
@@ -173,6 +182,13 @@ func NewWithDependencies(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 	}
 }
 
+// SetAuth configures the user store and JWT secret for API authentication.
+// When not called (or called with nil/empty arguments), all API routes are open.
+func (h *Handler) SetAuth(userStore AuthUserStore, jwtSecret []byte) {
+	h.authStore = userStore
+	h.jwtSecret = jwtSecret
+}
+
 func buildAPIStoreChecker(s Store) func(context.Context) bool {
 	if s == nil {
 		return nil
@@ -184,30 +200,42 @@ func buildAPIStoreChecker(s Store) func(context.Context) bool {
 	}
 }
 
-// RegisterRoutes wires all deployment endpoints into mux.
+// RegisterRoutes wires all endpoints into mux. Auth endpoints are open;
+// all /api/* routes require a valid JWT when an authStore is configured.
+// Internal orchestrator endpoints (heartbeat and status update) are exempt.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/deployments", h.listDeployments)
-	mux.HandleFunc("GET /api/system-status", h.systemStatus)
-	mux.HandleFunc("GET /api/system-status/events", h.systemStatusEvents)
-	mux.HandleFunc("GET /api/core-services/logs", h.coreServiceLogs)
-	mux.HandleFunc("GET /api/load-balancer/access-logs", h.loadBalancerAccessLogs)
+	// Auth endpoints — always open.
+	mux.HandleFunc("POST /auth/login", h.login)
+	mux.HandleFunc("POST /auth/logout", h.logout)
+	mux.HandleFunc("GET /auth/me", h.me)
+
+	// Orchestrator-internal endpoints — exempt from JWT so the orchestrator
+	// process can call them without user credentials.
 	mux.HandleFunc("POST /api/system-status/orchestrator-heartbeat", h.recordOrchestratorHeartbeat)
-	mux.HandleFunc("GET /api/version", h.getVersion)
-	mux.HandleFunc("GET /api/version/releases", h.getVersionReleases)
-	mux.HandleFunc("GET /api/access-logs", h.accessLogs)
-	mux.HandleFunc("GET /api/security-config", h.securityConfig)
-	mux.HandleFunc("POST /api/upgrade", h.startUpgrade)
-	mux.HandleFunc("GET /api/upgrade/logs", h.upgradeLogs)
-	mux.HandleFunc("POST /api/deployments", h.createDeployment)
-	mux.HandleFunc("GET /api/deployments/events", h.deploymentEvents)
-	mux.HandleFunc("GET /api/deployments/{id}/logs", h.deploymentLogs)
-	mux.HandleFunc("GET /api/deployments/{id}/logs/recent", h.deploymentRecentLogs)
-	mux.HandleFunc("GET /api/deployments/{id}", h.getDeployment)
-	mux.HandleFunc("PUT /api/deployments/{id}", h.updateDeployment)
-	mux.HandleFunc("POST /api/deployments/{id}/restart", h.restartDeployment)
-	mux.HandleFunc("DELETE /api/deployments/{id}", h.deleteDeployment)
 	mux.HandleFunc("PATCH /api/deployments/{id}/status", h.updateDeploymentStatus)
-	mux.HandleFunc("PATCH /api/deployments/{id}", h.patchDeployment)
+
+	// All remaining API routes require JWT when auth is configured.
+	protect := h.requireAuth
+	mux.Handle("GET /api/deployments", protect(http.HandlerFunc(h.listDeployments)))
+	mux.Handle("GET /api/system-status", protect(http.HandlerFunc(h.systemStatus)))
+	mux.Handle("GET /api/system-status/events", protect(http.HandlerFunc(h.systemStatusEvents)))
+	mux.Handle("GET /api/core-services/logs", protect(http.HandlerFunc(h.coreServiceLogs)))
+	mux.Handle("GET /api/load-balancer/access-logs", protect(http.HandlerFunc(h.loadBalancerAccessLogs)))
+	mux.Handle("GET /api/version", protect(http.HandlerFunc(h.getVersion)))
+	mux.Handle("GET /api/version/releases", protect(http.HandlerFunc(h.getVersionReleases)))
+	mux.Handle("GET /api/access-logs", protect(http.HandlerFunc(h.accessLogs)))
+	mux.Handle("GET /api/security-config", protect(http.HandlerFunc(h.securityConfig)))
+	mux.Handle("POST /api/upgrade", protect(http.HandlerFunc(h.startUpgrade)))
+	mux.Handle("GET /api/upgrade/logs", protect(http.HandlerFunc(h.upgradeLogs)))
+	mux.Handle("POST /api/deployments", protect(http.HandlerFunc(h.createDeployment)))
+	mux.Handle("GET /api/deployments/events", protect(http.HandlerFunc(h.deploymentEvents)))
+	mux.Handle("GET /api/deployments/{id}/logs", protect(http.HandlerFunc(h.deploymentLogs)))
+	mux.Handle("GET /api/deployments/{id}/logs/recent", protect(http.HandlerFunc(h.deploymentRecentLogs)))
+	mux.Handle("GET /api/deployments/{id}", protect(http.HandlerFunc(h.getDeployment)))
+	mux.Handle("PUT /api/deployments/{id}", protect(http.HandlerFunc(h.updateDeployment)))
+	mux.Handle("POST /api/deployments/{id}/restart", protect(http.HandlerFunc(h.restartDeployment)))
+	mux.Handle("DELETE /api/deployments/{id}", protect(http.HandlerFunc(h.deleteDeployment)))
+	mux.Handle("PATCH /api/deployments/{id}", protect(http.HandlerFunc(h.patchDeployment)))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

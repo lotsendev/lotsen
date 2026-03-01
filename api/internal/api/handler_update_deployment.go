@@ -83,6 +83,7 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		Ports:     body.Ports,
 		Volumes:   body.Volumes,
 		Domain:    body.Domain,
+		Public:    body.Public,
 		BasicAuth: basicAuth,
 		Security:  body.Security,
 		Status:    nextStatus,

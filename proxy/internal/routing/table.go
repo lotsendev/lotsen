@@ -6,9 +6,10 @@ import (
 	"github.com/ercadev/dirigent/store"
 )
 
-// Route stores upstream and optional basic auth config.
+// Route stores upstream and optional per-deployment configuration.
 type Route struct {
 	Upstream  string
+	Public    bool
 	BasicAuth *store.BasicAuthConfig
 	Security  *store.SecurityConfig
 }
@@ -29,10 +30,10 @@ func NewTable() *Table {
 }
 
 // Set registers or replaces the route for domain.
-func (t *Table) Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
+func (t *Table) Set(domain, upstream string, public bool, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.dynamicRoutes[domain] = Route{Upstream: upstream, BasicAuth: basicAuth, Security: security}
+	t.dynamicRoutes[domain] = Route{Upstream: upstream, Public: public, BasicAuth: basicAuth, Security: security}
 }
 
 // SetStatic registers or replaces a static upstream for domain.

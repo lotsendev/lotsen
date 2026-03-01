@@ -54,12 +54,19 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		body.Ports = assignedPorts
 	}
 
+	// Preserve Public when the field is absent from the patch request.
+	public := existing.Public
+	if body.Public != nil {
+		public = *body.Public
+	}
+
 	patch := store.Deployment{
 		Image:     body.Image,
 		Envs:      body.Envs,
 		Ports:     body.Ports,
 		Volumes:   body.Volumes,
 		Domain:    body.Domain,
+		Public:    public,
 		BasicAuth: basicAuth,
 		Security:  body.Security,
 	}

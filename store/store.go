@@ -53,6 +53,7 @@ type Deployment struct {
 	Ports     []string          `json:"ports"`
 	Volumes   []string          `json:"volumes"`
 	Domain    string            `json:"domain"`
+	Public    bool              `json:"public,omitempty"`
 	BasicAuth *BasicAuthConfig  `json:"basic_auth,omitempty"`
 	Security  *SecurityConfig   `json:"security,omitempty"`
 	Status    Status            `json:"status"`
@@ -312,6 +313,7 @@ func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 		if patch.Domain != "" {
 			d.Domain = patch.Domain
 		}
+		d.Public = patch.Public
 		if patch.BasicAuth != nil {
 			d.BasicAuth = patch.BasicAuth
 		}

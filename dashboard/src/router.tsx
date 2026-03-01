@@ -5,9 +5,11 @@ import {
   createRoute,
   createRouter,
   redirect,
+  useNavigate,
   useRouterState,
 } from '@tanstack/react-router'
-import { Activity, Boxes, FileText, Moon, Rocket, Server, Settings, Sun } from 'lucide-react'
+import { Activity, Boxes, FileText, LogOut, Moon, Rocket, Server, Settings, Sun } from 'lucide-react'
+import { useEffect } from 'react'
 import { Button } from './components/ui/button'
 import {
   Sidebar,
@@ -23,10 +25,12 @@ import {
 } from './components/ui/sidebar'
 import DeploymentList from './pages/DeploymentList'
 import { DeploymentDetailPage } from './pages/DeploymentDetailPage'
+import { LoginPage } from './pages/LoginPage'
 import { LogsPage } from './pages/LogsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SystemStatusPage } from './pages/SystemStatusPage'
 import { TrafficPage } from './pages/TrafficPage'
+import { useAuth, useLogout } from './auth/useAuth'
 import { useVersionCheck } from './settings/useVersionCheck'
 import { useTheme } from './theme'
 
@@ -34,6 +38,20 @@ function DashboardLayout() {
   const pathname = useRouterState({ select: state => state.location.pathname })
   const { theme, toggleTheme } = useTheme()
   const { upgradeAvailable } = useVersionCheck()
+  const { isAuthenticated, isAuthDisabled, isLoading, username } = useAuth()
+  const navigate = useNavigate()
+  const logoutMutation = useLogout()
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated && !isAuthDisabled) {
+      navigate({ to: '/login', search: { redirect: pathname } })
+    }
+  }, [isLoading, isAuthenticated, isAuthDisabled, pathname, navigate])
+
+  if (isLoading || (!isAuthenticated && !isAuthDisabled)) {
+    return null
+  }
+
   const isSystemStatusPage = pathname === '/system-status'
   const isSettingsPage = pathname === '/settings'
   const isTrafficPage = pathname === '/traffic'
@@ -76,9 +94,24 @@ function DashboardLayout() {
                 dirigent
               </p>
             </div>
-            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={toggleTheme} aria-label="Toggle theme">
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={toggleTheme} aria-label="Toggle theme">
+                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
+              {!isAuthDisabled && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => logoutMutation.mutate()}
+                  aria-label={username ? `Sign out ${username}` : 'Sign out'}
+                  title={username ? `Sign out (${username})` : 'Sign out'}
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         </SidebarHeader>
         <SidebarContent className="px-4 pb-4 pt-1">
@@ -155,11 +188,26 @@ function DashboardLayout() {
 }
 
 const rootRoute = createRootRoute({
+  component: () => <Outlet />,
+})
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/login',
+  component: LoginPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
+  }),
+})
+
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: '_app',
   component: DashboardLayout,
 })
 
 const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: '/',
   beforeLoad: () => {
     throw redirect({ to: '/deployments' })
@@ -167,49 +215,52 @@ const indexRoute = createRoute({
 })
 
 const deploymentsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: '/deployments',
   component: DeploymentList,
 })
 
 const deploymentDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: '/deployments/$deploymentId',
   component: DeploymentDetailPage,
 })
 
 const systemStatusRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: '/system-status',
   component: SystemStatusPage,
 })
 
 const trafficRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: '/traffic',
   component: TrafficPage,
 })
 
 const logsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: '/logs',
   component: LogsPage,
 })
 
 const settingsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: '/settings',
   component: SettingsPage,
 })
 
 const routeTree = rootRoute.addChildren([
-  indexRoute,
-  deploymentsRoute,
-  deploymentDetailRoute,
-  systemStatusRoute,
-  trafficRoute,
-  logsRoute,
-  settingsRoute,
+  loginRoute,
+  appRoute.addChildren([
+    indexRoute,
+    deploymentsRoute,
+    deploymentDetailRoute,
+    systemStatusRoute,
+    trafficRoute,
+    logsRoute,
+    settingsRoute,
+  ]),
 ])
 
 export const router = createRouter({ routeTree })

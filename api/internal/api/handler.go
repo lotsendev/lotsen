@@ -78,26 +78,28 @@ type basicAuthRequest struct {
 }
 
 type deploymentRequest struct {
-	Name      string                `json:"name"`
-	Image     string                `json:"image"`
-	Envs      map[string]string     `json:"envs"`
-	Ports     []string              `json:"ports"`
-	Volumes   []string              `json:"volumes"`
-	Domain    string                `json:"domain"`
-	Public    bool                  `json:"public"`
-	BasicAuth *basicAuthRequest     `json:"basic_auth"`
-	Security  *store.SecurityConfig `json:"security"`
+	Name         string                `json:"name"`
+	Image        string                `json:"image"`
+	Envs         map[string]string     `json:"envs"`
+	Ports        []string              `json:"ports"`
+	Volumes      []string              `json:"volumes"`
+	Domain       string                `json:"domain"`
+	Public       bool                  `json:"public"`
+	BasicAuth    *basicAuthRequest     `json:"basic_auth"`
+	RegistryAuth *store.RegistryAuth   `json:"registry_auth"`
+	Security     *store.SecurityConfig `json:"security"`
 }
 
 type patchDeploymentRequest struct {
-	Image     string                `json:"image"`
-	Envs      map[string]string     `json:"envs"`
-	Ports     []string              `json:"ports"`
-	Volumes   []string              `json:"volumes"`
-	Domain    string                `json:"domain"`
-	Public    *bool                 `json:"public"`
-	BasicAuth *basicAuthRequest     `json:"basic_auth"`
-	Security  *store.SecurityConfig `json:"security"`
+	Image        string                `json:"image"`
+	Envs         map[string]string     `json:"envs"`
+	Ports        []string              `json:"ports"`
+	Volumes      []string              `json:"volumes"`
+	Domain       string                `json:"domain"`
+	Public       *bool                 `json:"public"`
+	BasicAuth    *basicAuthRequest     `json:"basic_auth"`
+	RegistryAuth *store.RegistryAuth   `json:"registry_auth"`
+	Security     *store.SecurityConfig `json:"security"`
 }
 
 // Handler holds the dependencies for the API layer.
@@ -432,7 +434,8 @@ func updateRequiresRedeploy(existing store.Deployment, body deploymentRequest) b
 		!equalStringMap(existing.Envs, body.Envs) ||
 		!slices.Equal(existing.Ports, body.Ports) ||
 		!slices.Equal(existing.Volumes, body.Volumes) ||
-		!equalBasicAuthConfig(existing.BasicAuth, body.BasicAuth)
+		!equalBasicAuthConfig(existing.BasicAuth, body.BasicAuth) ||
+		!equalRegistryAuthConfig(existing.RegistryAuth, body.RegistryAuth)
 }
 
 func patchRequiresRedeploy(existing store.Deployment, body patchDeploymentRequest) bool {
@@ -451,7 +454,73 @@ func patchRequiresRedeploy(existing store.Deployment, body patchDeploymentReques
 	if body.BasicAuth != nil && !equalBasicAuthConfig(existing.BasicAuth, body.BasicAuth) {
 		return true
 	}
+	if body.RegistryAuth != nil && !equalRegistryAuthConfig(existing.RegistryAuth, body.RegistryAuth) {
+		return true
+	}
 	return false
+}
+
+func sanitizeRegistryAuth(input *store.RegistryAuth) (*store.RegistryAuth, error) {
+	if input == nil {
+		return nil, nil
+	}
+
+	server := strings.TrimSpace(input.ServerAddress)
+	username := strings.TrimSpace(input.Username)
+	password := strings.TrimSpace(input.Password)
+	token := strings.TrimSpace(input.IdentityToken)
+
+	if server == "" {
+		return nil, fmt.Errorf("registry auth server_address is required")
+	}
+
+	usingUserPass := username != "" || password != ""
+	usingToken := token != ""
+
+	if usingUserPass && usingToken {
+		return nil, fmt.Errorf("registry auth must use either username/password or identity_token")
+	}
+	if !usingUserPass && !usingToken {
+		return nil, fmt.Errorf("registry auth requires username/password or identity_token")
+	}
+	if usingUserPass {
+		if username == "" || password == "" {
+			return nil, fmt.Errorf("registry auth username and password are both required")
+		}
+	}
+
+	return &store.RegistryAuth{
+		ServerAddress: server,
+		Username:      username,
+		Password:      password,
+		IdentityToken: token,
+	}, nil
+}
+
+func normalizeRegistryAuthResponse(auth *store.RegistryAuth) *store.RegistryAuth {
+	if auth == nil {
+		return nil
+	}
+
+	return &store.RegistryAuth{
+		ServerAddress: auth.ServerAddress,
+		Username:      auth.Username,
+		Password:      "",
+		IdentityToken: "",
+	}
+}
+
+func equalRegistryAuthConfig(existing *store.RegistryAuth, request *store.RegistryAuth) bool {
+	if request == nil {
+		return existing == nil
+	}
+	if existing == nil {
+		return false
+	}
+	return strings.TrimSpace(existing.ServerAddress) == strings.TrimSpace(request.ServerAddress) &&
+		strings.TrimSpace(existing.Username) == strings.TrimSpace(request.Username) &&
+		strings.TrimSpace(existing.Password) == strings.TrimSpace(request.Password) &&
+		strings.TrimSpace(existing.IdentityToken) == strings.TrimSpace(request.IdentityToken)
 }
 
 func sanitizeAndHashBasicAuth(input *basicAuthRequest) (*store.BasicAuthConfig, error) {
@@ -575,6 +644,7 @@ func normalizeSecurityConfig(cfg *store.SecurityConfig) *store.SecurityConfig {
 
 func normalizeDeploymentSecurity(d store.Deployment) store.Deployment {
 	d.Security = normalizeSecurityConfig(d.Security)
+	d.RegistryAuth = normalizeRegistryAuthResponse(d.RegistryAuth)
 	return d
 }
 
@@ -596,5 +666,6 @@ func updateRequestMatchesExisting(existing store.Deployment, body deploymentRequ
 		existing.Domain == body.Domain &&
 		existing.Public == body.Public &&
 		equalStoredBasicAuthConfig(existing.BasicAuth, basicAuth) &&
+		equalRegistryAuthConfig(existing.RegistryAuth, body.RegistryAuth) &&
 		equalSecurityConfig(existing.Security, body.Security)
 }

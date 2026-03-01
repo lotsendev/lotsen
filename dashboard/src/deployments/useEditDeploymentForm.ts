@@ -4,6 +4,7 @@ import { updateDeployment, type BasicAuthConfig, type Deployment, type UpdateDep
 import { hashPasswordIfNeeded } from '../lib/password'
 import { useDynamicRows } from './useDynamicRows'
 import type { BasicAuthUserRow, EnvRow, FormErrors, PairRow, PortRow } from './useCreateDeploymentForm'
+import type { RegistryAuthMode } from './useCreateDeploymentForm'
 
 const EMPTY_ERRORS: FormErrors = { envs: {}, ports: {}, volumes: {}, basicAuth: {} }
 
@@ -51,6 +52,12 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
   const [domain, setDomain] = useState(deployment.domain)
   const [isPublic, setIsPublic] = useState(deployment.public)
   const [basicAuthEnabled, setBasicAuthEnabled] = useState(Boolean(deployment.basic_auth && deployment.basic_auth.users.length > 0))
+  const [registryAuthEnabled, setRegistryAuthEnabled] = useState(Boolean(deployment.registry_auth))
+  const [registryServerAddress, setRegistryServerAddress] = useState(deployment.registry_auth?.server_address ?? '')
+  const [registryUsername, setRegistryUsername] = useState(deployment.registry_auth?.username ?? '')
+  const [registryPassword, setRegistryPassword] = useState('')
+  const [registryIdentityToken, setRegistryIdentityToken] = useState('')
+  const [registryAuthMode, setRegistryAuthMode] = useState<RegistryAuthMode>('username_password')
   const [errors, setErrors] = useState<FormErrors>(EMPTY_ERRORS)
 
   const envRows = useDynamicRows<EnvRow>(id => ({ id, key: '', value: '' }), toEnvRows(deployment.envs))
@@ -80,9 +87,17 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
             })),
           }
         : undefined,
+      registry_auth: registryAuthEnabled
+        ? {
+            server_address: registryServerAddress.trim(),
+            username: registryAuthMode === 'username_password' ? registryUsername.trim() : undefined,
+            password: registryAuthMode === 'username_password' ? registryPassword.trim() : undefined,
+            identity_token: registryAuthMode === 'identity_token' ? registryIdentityToken.trim() : undefined,
+          }
+        : undefined,
       security: deployment.security,
     }
-  }, [name, image, domain, isPublic, envRows.rows, portRows.rows, volumeRows.rows, basicAuthEnabled, basicAuthRows.rows, deployment.security])
+  }, [name, image, domain, isPublic, envRows.rows, portRows.rows, volumeRows.rows, basicAuthEnabled, basicAuthRows.rows, registryAuthEnabled, registryServerAddress, registryAuthMode, registryUsername, registryPassword, registryIdentityToken, deployment.security])
 
   const isDirty = useMemo(() => {
     const initial: UpdateDeploymentInput = {
@@ -97,7 +112,18 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
       domain: deployment.domain,
       public: deployment.public,
       basic_auth: deployment.basic_auth,
+      registry_auth: deployment.registry_auth,
       security: deployment.security,
+    }
+
+    if ((initial.registry_auth?.server_address ?? '') !== (normalizedInput.registry_auth?.server_address ?? '')) {
+      return true
+    }
+    if ((initial.registry_auth?.username ?? '') !== (normalizedInput.registry_auth?.username ?? '')) {
+      return true
+    }
+    if ((normalizedInput.registry_auth?.password ?? '') !== '' || (normalizedInput.registry_auth?.identity_token ?? '') !== '') {
+      return true
     }
 
     if (initial.name !== normalizedInput.name ||
@@ -168,6 +194,15 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
         if (!row.username.trim() || !row.password.trim()) errs.basicAuth[row.id] = 'Username and password are required'
       }
     }
+    if (registryAuthEnabled) {
+      if (!registryServerAddress.trim()) errs.form = 'Registry server is required when private registry is enabled'
+      if (registryAuthMode === 'username_password' && (!registryUsername.trim() || !registryPassword.trim())) {
+        errs.form = 'Registry username and password are required'
+      }
+      if (registryAuthMode === 'identity_token' && !registryIdentityToken.trim()) {
+        errs.form = 'Registry identity token is required'
+      }
+    }
     setErrors(errs)
     return (
       !errs.name &&
@@ -206,6 +241,12 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
     domain, setDomain,
     isPublic, setIsPublic,
     basicAuthEnabled, setBasicAuthEnabled,
+    registryAuthEnabled, setRegistryAuthEnabled,
+    registryServerAddress, setRegistryServerAddress,
+    registryUsername, setRegistryUsername,
+    registryPassword, setRegistryPassword,
+    registryIdentityToken, setRegistryIdentityToken,
+    registryAuthMode, setRegistryAuthMode,
     envRows,
     portRows,
     volumeRows,

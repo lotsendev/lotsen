@@ -33,6 +33,11 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	registryAuth, err := sanitizeRegistryAuth(body.RegistryAuth)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	if body.Envs == nil {
 		body.Envs = map[string]string{}
@@ -76,17 +81,18 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	d := store.Deployment{
-		ID:        id,
-		Name:      body.Name,
-		Image:     body.Image,
-		Envs:      body.Envs,
-		Ports:     body.Ports,
-		Volumes:   body.Volumes,
-		Domain:    body.Domain,
-		Public:    body.Public,
-		BasicAuth: basicAuth,
-		Security:  body.Security,
-		Status:    nextStatus,
+		ID:           id,
+		Name:         body.Name,
+		Image:        body.Image,
+		Envs:         body.Envs,
+		Ports:        body.Ports,
+		Volumes:      body.Volumes,
+		Domain:       body.Domain,
+		Public:       body.Public,
+		BasicAuth:    basicAuth,
+		RegistryAuth: registryAuth,
+		Security:     body.Security,
+		Status:       nextStatus,
 	}
 
 	updated, err := h.store.Update(d)

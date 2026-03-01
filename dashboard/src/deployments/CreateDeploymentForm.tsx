@@ -21,6 +21,12 @@ export default function CreateDeploymentForm({ onSuccess, className, hideHeader 
     name, setName, image, setImage, domain, setDomain,
     isPublic, setIsPublic,
     envRows, portRows, volumeRows, basicAuthEnabled, setBasicAuthEnabled, basicAuthRows,
+    registryAuthEnabled, setRegistryAuthEnabled,
+    registryServerAddress, setRegistryServerAddress,
+    registryUsername, setRegistryUsername,
+    registryPassword, setRegistryPassword,
+    registryIdentityToken, setRegistryIdentityToken,
+    registryAuthMode, setRegistryAuthMode,
     errors, handleSubmit, isPending,
   } = useCreateDeploymentForm({ onSuccess })
 
@@ -129,6 +135,57 @@ export default function CreateDeploymentForm({ onSuccess, className, hideHeader 
                 <span className="text-xs font-medium text-foreground">{isPublic ? 'Public' : 'Private'}</span>
               </label>
             </div>
+          </section>
+
+
+          <section className="space-y-3 rounded-lg border border-border/60 bg-background/60 p-3 sm:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-foreground">Private registry (optional)</p>
+              <label className="inline-flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={registryAuthEnabled}
+                  onChange={e => setRegistryAuthEnabled(e.target.checked)}
+                />
+                <span className="text-xs font-medium text-foreground">Enable credentials</span>
+              </label>
+            </div>
+
+            {registryAuthEnabled && (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="flex flex-col gap-1 md:col-span-2">
+                  <Label htmlFor="registry-server">Registry server</Label>
+                  <Input id="registry-server" value={registryServerAddress} onChange={e => setRegistryServerAddress(e.target.value)} placeholder="ghcr.io" />
+                </div>
+                <div className="flex items-center gap-4 md:col-span-2 text-sm">
+                  <label className="inline-flex items-center gap-2">
+                    <input type="radio" checked={registryAuthMode === 'username_password'} onChange={() => setRegistryAuthMode('username_password')} />
+                    Username/password
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input type="radio" checked={registryAuthMode === 'identity_token'} onChange={() => setRegistryAuthMode('identity_token')} />
+                    Identity token
+                  </label>
+                </div>
+                {registryAuthMode === 'username_password' ? (
+                  <>
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="registry-username">Username</Label>
+                      <Input id="registry-username" value={registryUsername} onChange={e => setRegistryUsername(e.target.value)} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="registry-password">Password</Label>
+                      <Input id="registry-password" type="password" value={registryPassword} onChange={e => setRegistryPassword(e.target.value)} />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col gap-1 md:col-span-2">
+                    <Label htmlFor="registry-token">Identity token</Label>
+                    <Input id="registry-token" type="password" value={registryIdentityToken} onChange={e => setRegistryIdentityToken(e.target.value)} />
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           <DynamicSection<EnvRow>

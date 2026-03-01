@@ -96,6 +96,13 @@ export type SecurityConfig = {
   custom_rules: string[]
 }
 
+export type RegistryAuth = {
+  server_address: string
+  username?: string
+  password?: string
+  identity_token?: string
+}
+
 export type Deployment = {
   id: string
   name: string
@@ -106,6 +113,7 @@ export type Deployment = {
   domain: string
   public: boolean
   basic_auth?: BasicAuthConfig
+  registry_auth?: RegistryAuth
   security?: SecurityConfig
   status: DeploymentStatus
   error?: string
@@ -282,6 +290,7 @@ export type CreateDeploymentInput = {
   domain: string
   public: boolean
   basic_auth?: BasicAuthConfig
+  registry_auth?: RegistryAuth
 }
 
 export async function createDeployment(data: CreateDeploymentInput): Promise<Deployment> {
@@ -303,6 +312,7 @@ export type UpdateDeploymentInput = {
   domain: string
   public: boolean
   basic_auth?: BasicAuthConfig
+  registry_auth?: RegistryAuth
   security?: SecurityConfig
 }
 
@@ -324,6 +334,7 @@ export type PatchDeploymentInput = {
   domain?: string
   public?: boolean
   basic_auth?: BasicAuthConfig
+  registry_auth?: RegistryAuth
   security?: SecurityConfig
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ercadev/dirigent/store"
@@ -444,5 +445,46 @@ func TestJSONStore_Patch_StatusClearsError(t *testing.T) {
 	}
 	if updated.Error != "" {
 		t.Fatalf("want error cleared, got %q", updated.Error)
+	}
+}
+
+func TestJSONStore_RegistryAuthEncryptedAtRest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	t.Setenv("LOTSEN_SECRET_KEY", "12345678901234567890123456789012")
+
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{
+		ID:    "d1",
+		Name:  "api",
+		Image: "ghcr.io/acme/private:1",
+		RegistryAuth: &store.RegistryAuth{
+			ServerAddress: "ghcr.io",
+			Username:      "acme",
+			Password:      "secret",
+		},
+		Status: store.StatusDeploying,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read store file: %v", err)
+	}
+	if strings.Contains(string(raw), "secret") {
+		t.Fatalf("expected password encrypted at rest")
+	}
+
+	d, err := s.Get("d1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if d.RegistryAuth == nil || d.RegistryAuth.Password != "secret" {
+		t.Fatalf("expected decrypted password, got %#v", d.RegistryAuth)
 	}
 }

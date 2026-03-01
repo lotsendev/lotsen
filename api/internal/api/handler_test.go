@@ -3028,3 +3028,49 @@ func TestPatchDeployment_UpdatesSecurityConfig(t *testing.T) {
 		t.Fatalf("want default waf mode detection on patch, got %q", updated.Security.WAFMode)
 	}
 }
+
+func TestCreateDeployment_WithRegistryAuth_RedactsSecretsInResponse(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body := `{"name":"api","image":"ghcr.io/acme/private-api:1.0.0","registry_auth":{"server_address":"ghcr.io","username":"acme","password":"secret"}}`
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("want 201, got %d", resp.StatusCode)
+	}
+
+	var got store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.RegistryAuth == nil {
+		t.Fatalf("want registry_auth in response")
+	}
+	if got.RegistryAuth.Password != "" || got.RegistryAuth.IdentityToken != "" {
+		t.Fatalf("want redacted registry auth secrets, got %#v", got.RegistryAuth)
+	}
+	if got.RegistryAuth.ServerAddress != "ghcr.io" || got.RegistryAuth.Username != "acme" {
+		t.Fatalf("unexpected registry auth metadata: %#v", got.RegistryAuth)
+	}
+}
+
+func TestCreateDeployment_RejectsInvalidRegistryAuth(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body := `{"name":"api","image":"nginx:latest","registry_auth":{"username":"acme","password":"secret"}}`
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}

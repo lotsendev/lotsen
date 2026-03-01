@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/registry"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -100,7 +102,7 @@ func (d *Docker) Start(ctx context.Context, dep store.Deployment) ([]string, err
 		return nil, fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
 	}
 
-	if err := d.pullImage(dep.Image); err != nil {
+	if err := d.pullImage(dep); err != nil {
 		return nil, err
 	}
 
@@ -275,7 +277,7 @@ func (d *Docker) StartAndReplace(ctx context.Context, dep store.Deployment, oldC
 		return d.Start(ctx, dep)
 	}
 
-	if err := d.pullImage(dep.Image); err != nil {
+	if err := d.pullImage(dep); err != nil {
 		return nil, err
 	}
 
@@ -364,7 +366,8 @@ func (d *Docker) StartAndReplace(ctx context.Context, dep store.Deployment, oldC
 // loop's short deadline. Without this, a large image on a slow connection
 // would time out, be retried on every reconcile cycle, and cause multiple
 // concurrent decompression jobs that saturate the host CPU.
-func (d *Docker) pullImage(imageRef string) error {
+func (d *Docker) pullImage(dep store.Deployment) error {
+	imageRef := dep.Image
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
@@ -378,17 +381,50 @@ func (d *Docker) pullImage(imageRef string) error {
 		}
 	}
 
+	pullOptions, err := pullOptionsForDeployment(dep)
+	if err != nil {
+		return err
+	}
+
 	log.Printf("docker: pulling image %s", imageRef)
-	rc, err := d.client.ImagePull(ctx, imageRef, image.PullOptions{})
+	rc, err := d.client.ImagePull(ctx, imageRef, pullOptions)
 	if err != nil {
 		if dockerclient.IsErrConnectionFailed(err) {
 			return fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
 		}
-		return fmt.Errorf("docker: pull image %s: %w", imageRef, err)
+		return normalizePullError(imageRef, err)
 	}
 	_, _ = io.Copy(io.Discard, rc)
 	rc.Close()
 	return nil
+}
+
+func pullOptionsForDeployment(dep store.Deployment) (image.PullOptions, error) {
+	if dep.RegistryAuth == nil {
+		return image.PullOptions{}, nil
+	}
+
+	authConfig := registry.AuthConfig{
+		ServerAddress: dep.RegistryAuth.ServerAddress,
+		Username:      dep.RegistryAuth.Username,
+		Password:      dep.RegistryAuth.Password,
+		IdentityToken: dep.RegistryAuth.IdentityToken,
+	}
+
+	payload, err := json.Marshal(authConfig)
+	if err != nil {
+		return image.PullOptions{}, fmt.Errorf("docker: encode registry auth: %w", err)
+	}
+
+	return image.PullOptions{RegistryAuth: base64.URLEncoding.EncodeToString(payload)}, nil
+}
+
+func normalizePullError(imageRef string, err error) error {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "unauthorized") || strings.Contains(message, "authentication required") || strings.Contains(message, "denied") {
+		return fmt.Errorf("docker: pull image %s: invalid registry credentials", imageRef)
+	}
+	return fmt.Errorf("docker: pull image %s: %w", imageRef, err)
 }
 
 // isLatestTag reports whether imageRef resolves to the mutable :latest tag.

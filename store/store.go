@@ -1,11 +1,17 @@
 package store
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 )
@@ -46,19 +52,27 @@ const (
 
 // Deployment holds the full configuration and runtime state of a container deployment.
 type Deployment struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Image     string            `json:"image"`
-	Envs      map[string]string `json:"envs"`
-	Ports     []string          `json:"ports"`
-	Volumes   []string          `json:"volumes"`
-	Domain    string            `json:"domain"`
-	Public    bool              `json:"public,omitempty"`
-	BasicAuth *BasicAuthConfig  `json:"basic_auth,omitempty"`
-	Security  *SecurityConfig   `json:"security,omitempty"`
-	Status    Status            `json:"status"`
-	Reason    StatusReason      `json:"reason,omitempty"`
-	Error     string            `json:"error,omitempty"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Image        string            `json:"image"`
+	Envs         map[string]string `json:"envs"`
+	Ports        []string          `json:"ports"`
+	Volumes      []string          `json:"volumes"`
+	Domain       string            `json:"domain"`
+	Public       bool              `json:"public,omitempty"`
+	BasicAuth    *BasicAuthConfig  `json:"basic_auth,omitempty"`
+	RegistryAuth *RegistryAuth     `json:"registry_auth,omitempty"`
+	Security     *SecurityConfig   `json:"security,omitempty"`
+	Status       Status            `json:"status"`
+	Reason       StatusReason      `json:"reason,omitempty"`
+	Error        string            `json:"error,omitempty"`
+}
+
+type RegistryAuth struct {
+	ServerAddress string `json:"server_address"`
+	Username      string `json:"username,omitempty"`
+	Password      string `json:"password,omitempty"`
+	IdentityToken string `json:"identity_token,omitempty"`
 }
 
 type BasicAuthConfig struct {
@@ -84,7 +98,13 @@ type SecurityConfig struct {
 type JSONStore struct {
 	mu   sync.RWMutex
 	path string
+	key  []byte
 }
+
+const (
+	secretKeyEnv       = "LOTSEN_SECRET_KEY"
+	encryptedValuePref = "enc:v1:"
+)
 
 // NewJSONStore opens or creates the JSON store at path.
 // path must be a non-empty absolute file path.
@@ -99,7 +119,22 @@ func NewJSONStore(path string) (*JSONStore, error) {
 		return nil, fmt.Errorf("store: create data dir: %w", err)
 	}
 
-	return &JSONStore{path: path}, nil
+	key, err := encryptionKeyFromEnv()
+	if err != nil {
+		return nil, err
+	}
+
+	if key == nil {
+		hasEncrypted, checkErr := fileHasEncryptedRegistrySecrets(path)
+		if checkErr != nil {
+			return nil, checkErr
+		}
+		if hasEncrypted {
+			return nil, fmt.Errorf("store: encrypted registry credentials found but %s is not set", secretKeyEnv)
+		}
+	}
+
+	return &JSONStore{path: path, key: key}, nil
 }
 
 // withLock acquires an exclusive OS-level file lock and the in-process mutex,
@@ -161,6 +196,10 @@ func (s *JSONStore) read() (map[string]Deployment, error) {
 	}
 
 	for _, d := range deployments {
+		d, err = s.decryptDeployment(d)
+		if err != nil {
+			return nil, err
+		}
 		data[d.ID] = d
 	}
 
@@ -171,7 +210,11 @@ func (s *JSONStore) read() (map[string]Deployment, error) {
 func (s *JSONStore) persist(data map[string]Deployment) error {
 	deployments := make([]Deployment, 0, len(data))
 	for _, d := range data {
-		deployments = append(deployments, d)
+		encrypted, err := s.encryptDeployment(d)
+		if err != nil {
+			return err
+		}
+		deployments = append(deployments, encrypted)
 	}
 
 	tmp := s.path + ".tmp"
@@ -317,6 +360,9 @@ func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 		if patch.BasicAuth != nil {
 			d.BasicAuth = patch.BasicAuth
 		}
+		if patch.RegistryAuth != nil {
+			d.RegistryAuth = patch.RegistryAuth
+		}
 		if patch.Security != nil {
 			d.Security = patch.Security
 		}
@@ -374,4 +420,166 @@ func (s *JSONStore) UpdateStatus(id string, status Status) error {
 		data[id] = d
 		return s.persist(data)
 	})
+}
+
+func encryptionKeyFromEnv() ([]byte, error) {
+	raw := strings.TrimSpace(os.Getenv(secretKeyEnv))
+	if raw == "" {
+		return nil, nil
+	}
+
+	if len(raw) == 32 {
+		return []byte(raw), nil
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(raw)
+	if err == nil {
+		if len(decoded) != 32 {
+			return nil, fmt.Errorf("store: %s must decode to 32 bytes", secretKeyEnv)
+		}
+		return decoded, nil
+	}
+
+	return nil, fmt.Errorf("store: %s must be 32 bytes (raw) or base64-encoded 32 bytes", secretKeyEnv)
+}
+
+func fileHasEncryptedRegistrySecrets(path string) (bool, error) {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	var deployments []Deployment
+	if err := json.NewDecoder(f).Decode(&deployments); err != nil {
+		return false, nil
+	}
+
+	for _, d := range deployments {
+		if d.RegistryAuth == nil {
+			continue
+		}
+		if strings.HasPrefix(d.RegistryAuth.Password, encryptedValuePref) || strings.HasPrefix(d.RegistryAuth.IdentityToken, encryptedValuePref) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (s *JSONStore) encryptDeployment(d Deployment) (Deployment, error) {
+	if d.RegistryAuth == nil {
+		return d, nil
+	}
+	if s.key == nil {
+		return d, nil
+	}
+
+	copyDep := d
+	copyAuth := *d.RegistryAuth
+
+	password, err := encryptSecret(s.key, copyAuth.Password)
+	if err != nil {
+		return Deployment{}, err
+	}
+	token, err := encryptSecret(s.key, copyAuth.IdentityToken)
+	if err != nil {
+		return Deployment{}, err
+	}
+
+	copyAuth.Password = password
+	copyAuth.IdentityToken = token
+	copyDep.RegistryAuth = &copyAuth
+	return copyDep, nil
+}
+
+func (s *JSONStore) decryptDeployment(d Deployment) (Deployment, error) {
+	if d.RegistryAuth == nil {
+		return d, nil
+	}
+
+	copyDep := d
+	copyAuth := *d.RegistryAuth
+
+	password, err := decryptSecret(s.key, copyAuth.Password)
+	if err != nil {
+		return Deployment{}, err
+	}
+	token, err := decryptSecret(s.key, copyAuth.IdentityToken)
+	if err != nil {
+		return Deployment{}, err
+	}
+
+	copyAuth.Password = password
+	copyAuth.IdentityToken = token
+	copyDep.RegistryAuth = &copyAuth
+	return copyDep, nil
+}
+
+func encryptSecret(key []byte, plaintext string) (string, error) {
+	if plaintext == "" || strings.HasPrefix(plaintext, encryptedValuePref) {
+		return plaintext, nil
+	}
+	if key == nil {
+		return plaintext, nil
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("store: init cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("store: init gcm: %w", err)
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("store: generate nonce: %w", err)
+	}
+
+	sealed := gcm.Seal(nil, nonce, []byte(plaintext), nil)
+	payload := append(nonce, sealed...)
+	return encryptedValuePref + base64.RawStdEncoding.EncodeToString(payload), nil
+}
+
+func decryptSecret(key []byte, value string) (string, error) {
+	if value == "" || !strings.HasPrefix(value, encryptedValuePref) {
+		return value, nil
+	}
+	if key == nil {
+		return "", fmt.Errorf("store: encrypted registry credentials found but %s is not set", secretKeyEnv)
+	}
+
+	encoded := strings.TrimPrefix(value, encryptedValuePref)
+	payload, err := base64.RawStdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", fmt.Errorf("store: decode encrypted secret: %w", err)
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("store: init cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("store: init gcm: %w", err)
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(payload) < nonceSize {
+		return "", fmt.Errorf("store: encrypted payload too short")
+	}
+
+	nonce := payload[:nonceSize]
+	ciphertext := payload[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("store: decrypt secret: %w", err)
+	}
+
+	return string(plaintext), nil
 }

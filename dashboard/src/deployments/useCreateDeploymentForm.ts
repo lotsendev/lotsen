@@ -8,6 +8,7 @@ export type EnvRow = { id: number; key: string; value: string }
 export type PairRow = { id: number; left: string; right: string }
 export type PortRow = { id: number; port: string }
 export type BasicAuthUserRow = { id: number; username: string; password: string }
+export type RegistryAuthMode = 'username_password' | 'identity_token'
 
 export type FormErrors = {
   name?: string
@@ -33,6 +34,12 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
   const [domain, setDomain] = useState('')
   const [isPublic, setIsPublic] = useState(false)
   const [basicAuthEnabled, setBasicAuthEnabled] = useState(false)
+  const [registryAuthEnabled, setRegistryAuthEnabled] = useState(false)
+  const [registryServerAddress, setRegistryServerAddress] = useState('')
+  const [registryUsername, setRegistryUsername] = useState('')
+  const [registryPassword, setRegistryPassword] = useState('')
+  const [registryIdentityToken, setRegistryIdentityToken] = useState('')
+  const [registryAuthMode, setRegistryAuthMode] = useState<RegistryAuthMode>('username_password')
   const [errors, setErrors] = useState<FormErrors>(EMPTY_ERRORS)
 
   const envRows = useDynamicRows<EnvRow>(id => ({ id, key: '', value: '' }))
@@ -49,6 +56,12 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
       setDomain('')
       setIsPublic(false)
       setBasicAuthEnabled(false)
+      setRegistryAuthEnabled(false)
+      setRegistryServerAddress('')
+      setRegistryUsername('')
+      setRegistryPassword('')
+      setRegistryIdentityToken('')
+      setRegistryAuthMode('username_password')
       envRows.reset()
       portRows.reset()
       volumeRows.reset()
@@ -76,6 +89,15 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
       if (basicAuthRows.rows.length === 0) errs.form = 'Add at least one basic auth user'
       for (const row of basicAuthRows.rows) {
         if (!row.username.trim() || !row.password.trim()) errs.basicAuth[row.id] = 'Username and password are required'
+      }
+    }
+    if (registryAuthEnabled) {
+      if (!registryServerAddress.trim()) errs.form = 'Registry server is required when private registry is enabled'
+      if (registryAuthMode === 'username_password' && (!registryUsername.trim() || !registryPassword.trim())) {
+        errs.form = 'Registry username and password are required'
+      }
+      if (registryAuthMode === 'identity_token' && !registryIdentityToken.trim()) {
+        errs.form = 'Registry identity token is required'
       }
     }
     setErrors(errs)
@@ -116,6 +138,14 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
       domain: domain.trim(),
       public: isPublic,
       basic_auth: basicAuth,
+      registry_auth: registryAuthEnabled
+        ? {
+            server_address: registryServerAddress.trim(),
+            username: registryAuthMode === 'username_password' ? registryUsername.trim() : undefined,
+            password: registryAuthMode === 'username_password' ? registryPassword.trim() : undefined,
+            identity_token: registryAuthMode === 'identity_token' ? registryIdentityToken.trim() : undefined,
+          }
+        : undefined,
     })
   }
 
@@ -125,6 +155,12 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
     domain, setDomain,
     isPublic, setIsPublic,
     basicAuthEnabled, setBasicAuthEnabled,
+    registryAuthEnabled, setRegistryAuthEnabled,
+    registryServerAddress, setRegistryServerAddress,
+    registryUsername, setRegistryUsername,
+    registryPassword, setRegistryPassword,
+    registryIdentityToken, setRegistryIdentityToken,
+    registryAuthMode, setRegistryAuthMode,
     envRows,
     portRows,
     volumeRows,

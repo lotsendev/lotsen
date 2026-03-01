@@ -29,6 +29,11 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	registryAuth, err := sanitizeRegistryAuth(body.RegistryAuth)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	existing, err := h.store.Get(id)
 	if err != nil {
@@ -61,14 +66,15 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	patch := store.Deployment{
-		Image:     body.Image,
-		Envs:      body.Envs,
-		Ports:     body.Ports,
-		Volumes:   body.Volumes,
-		Domain:    body.Domain,
-		Public:    public,
-		BasicAuth: basicAuth,
-		Security:  body.Security,
+		Image:        body.Image,
+		Envs:         body.Envs,
+		Ports:        body.Ports,
+		Volumes:      body.Volumes,
+		Domain:       body.Domain,
+		Public:       public,
+		BasicAuth:    basicAuth,
+		RegistryAuth: registryAuth,
+		Security:     body.Security,
 	}
 	if patchRequiresRedeploy(existing, body) {
 		patch.Status = store.StatusDeploying

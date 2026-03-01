@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 
+	"github.com/ercadev/dirigent/auth"
 	"github.com/ercadev/dirigent/proxy/internal/handler"
 	"github.com/ercadev/dirigent/proxy/internal/middleware"
 	"github.com/ercadev/dirigent/proxy/internal/poller"
@@ -81,6 +83,14 @@ func main() {
 		log.Printf("proxy: registered dashboard domain %s -> localhost:8080", dashboardAuth.Domain)
 	}
 
+	userStore, jwtSecret, err := authFromEnv(dataPath())
+	if err != nil {
+		log.Fatalf("proxy: %v", err)
+	}
+	if userStore != nil {
+		defer userStore.Close()
+	}
+
 	log.Printf("proxy: hardening profile %s", hardeningProfile)
 	log.Printf("proxy: waf initialized for per-deployment mode")
 
@@ -100,6 +110,8 @@ func main() {
 		handler.WithIPFilter(ipFilter),
 		handler.WithUAFilter(uaFilter),
 		handler.WithWAF(waf),
+		handler.WithAuthStore(userStore),
+		handler.WithJWTSecret(jwtSecret),
 	)
 
 	hostPolicy := hostPolicyFromTable(table)
@@ -315,6 +327,21 @@ func accessLogConfigFromEnv() (handler.AccessLogConfig, error) {
 		Retention:       retention,
 		WhitelistedKeys: headers,
 	}, nil
+}
+
+func authFromEnv(dataPath string) (*auth.UserStore, []byte, error) {
+	secret := strings.TrimSpace(os.Getenv("DIRIGENT_JWT_SECRET"))
+	if secret == "" {
+		return nil, nil, nil
+	}
+
+	dbPath := filepath.Join(filepath.Dir(dataPath), "users.db")
+	userStore, err := auth.NewUserStore(dbPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open user store: %w", err)
+	}
+
+	return userStore, []byte(secret), nil
 }
 
 func parseCSVList(raw string) []string {

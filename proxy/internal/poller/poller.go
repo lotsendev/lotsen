@@ -12,12 +12,13 @@ import (
 
 // Table is the routing table the poller updates as deployments change.
 type Table interface {
-	Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig)
+	Set(domain, upstream string, public bool, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig)
 	Delete(domain string)
 }
 
 type routeState struct {
 	Upstream      string
+	Public        bool
 	BasicAuthJSON string
 	SecurityJSON  string
 }
@@ -89,6 +90,7 @@ func (p *Poller) sync() {
 		}
 		current[domain] = routeState{
 			Upstream:      upstream,
+			Public:        d.Public,
 			BasicAuthJSON: mustBasicAuthJSON(d.BasicAuth),
 			SecurityJSON:  mustSecurityJSON(d.Security),
 		}
@@ -111,7 +113,7 @@ func (p *Poller) sync() {
 					continue
 				}
 			}
-			p.table.Set(domain, route.Upstream, basicAuth, security)
+			p.table.Set(domain, route.Upstream, route.Public, basicAuth, security)
 		}
 	}
 

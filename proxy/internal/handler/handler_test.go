@@ -31,7 +31,7 @@ func newTestTable() *testTable {
 	return &testTable{routes: make(map[string]routing.Route)}
 }
 
-func (t *testTable) Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
+func (t *testTable) Set(domain, upstream string, public bool, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.routes[domain] = routing.Route{Upstream: upstream, BasicAuth: basicAuth, Security: security}
@@ -77,7 +77,7 @@ func TestProxy_KnownDomainReachesBackend(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -126,7 +126,7 @@ func TestProxy_RemovedDeploymentIsUnreachable(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -246,7 +246,7 @@ func TestProxy_AtomicSwap_KeepsInflightRequestsAndRoutesNewTraffic(t *testing.T)
 	defer newBackend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", oldBackend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", oldBackend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -343,7 +343,7 @@ func TestHealth_Returns200(t *testing.T) {
 func TestProxy_UpstreamUnavailableReturns502(t *testing.T) {
 	tbl := newTestTable()
 	// Point to a port nobody is listening on.
-	tbl.Set("example.com", "localhost:1", nil, nil)
+	tbl.Set("example.com", "localhost:1", false, nil, nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -369,7 +369,7 @@ func TestProxy_HTTPSKnownDomainReachesBackend(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	mux := http.NewServeMux()
 	handler.New(tbl, nil).RegisterRoutes(mux)
@@ -397,7 +397,7 @@ func TestProxy_DashboardDomainRequiresBasicAuth(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServerWithDashboardAuth(tbl, &handler.DashboardAuth{
 		Domain:   "dashboard.example.com",
@@ -430,7 +430,7 @@ func TestProxy_DashboardDomainWithValidBasicAuth(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServerWithDashboardAuth(tbl, &handler.DashboardAuth{
 		Domain:   "dashboard.example.com",
@@ -463,7 +463,7 @@ func TestProxy_DashboardDomainBypassesWAF(t *testing.T) {
 	wafRule := `SecRule REQUEST_URI "@contains dashboard-waf-trigger" "id:10098,phase:1,deny,status:403,log,msg:'dashboard waf trigger'"`
 
 	tbl := newTestTable()
-	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), nil, &store.SecurityConfig{
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), false, nil, &store.SecurityConfig{
 		WAFEnabled:  true,
 		WAFMode:     "enforcement",
 		CustomRules: []string{wafRule},
@@ -519,7 +519,7 @@ func TestProxy_NonDashboardDomainDoesNotRequireBasicAuth(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("app.example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("app.example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServerWithDashboardAuth(tbl, &handler.DashboardAuth{
 		Domain:   "dashboard.example.com",
@@ -549,7 +549,7 @@ func TestProxy_StandardHardeningBlocksSensitivePaths(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -578,7 +578,7 @@ func TestProxy_OffHardeningAllowsSensitivePaths(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServerWithOptions(tbl, handler.WithHardeningProfile(handler.HardeningOff))
 	defer proxy.Close()
@@ -604,7 +604,7 @@ func TestProxy_StrictHardeningBlocksScannerPaths(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServerWithOptions(tbl, handler.WithHardeningProfile(handler.HardeningStrict))
 	defer proxy.Close()
@@ -630,7 +630,7 @@ func TestProxy_StandardHardeningRateLimitsRepeatedScans(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -667,7 +667,7 @@ func TestInternalTraffic_ReportsBlockedIPsAndCounters(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServer(tbl)
 	defer proxy.Close()
@@ -756,7 +756,7 @@ func TestProxy_WritesAccessLogWithWhitelistedHeaders(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServerWithOptions(tbl, handler.WithAccessLogger(logger))
 	defer proxy.Close()
@@ -841,7 +841,7 @@ func TestProxy_DeploymentBasicAuthRequiresCredentials(t *testing.T) {
 	}
 
 	tbl := newTestTable()
-	tbl.Set("private.example.com", backend.Listener.Addr().String(), &store.BasicAuthConfig{Users: []store.BasicAuthUser{{
+	tbl.Set("private.example.com", backend.Listener.Addr().String(), false, &store.BasicAuthConfig{Users: []store.BasicAuthUser{{
 		Username: "admin",
 		Password: string(hash),
 	}}}, nil)
@@ -878,7 +878,7 @@ func TestProxy_DeploymentBasicAuthWithValidCredentials(t *testing.T) {
 	}
 
 	tbl := newTestTable()
-	tbl.Set("private.example.com", backend.Listener.Addr().String(), &store.BasicAuthConfig{Users: []store.BasicAuthUser{{
+	tbl.Set("private.example.com", backend.Listener.Addr().String(), false, &store.BasicAuthConfig{Users: []store.BasicAuthUser{{
 		Username: "admin",
 		Password: string(hash),
 	}}}, nil)
@@ -908,7 +908,7 @@ func TestProxy_GlobalIPDenylistBlocksRequest(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	ipFilter, err := middleware.NewIPFilter([]string{"203.0.113.0/24"}, nil)
 	if err != nil {
@@ -939,7 +939,7 @@ func TestProxy_UABlockingIncrementsTrafficCounter(t *testing.T) {
 	defer backend.Close()
 
 	tbl := newTestTable()
-	tbl.Set("example.com", backend.Listener.Addr().String(), nil, nil)
+	tbl.Set("example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	proxy := newProxyServerWithOptions(tbl, handler.WithUAFilter(middleware.NewUAFilter(false, nil)))
 	defer proxy.Close()
@@ -984,7 +984,7 @@ func TestProxy_WAFDetectionAndEnforcement(t *testing.T) {
 
 	// detection mode should not block but should mark request as detected.
 	tblDetection := newTestTable()
-	tblDetection.Set("example.com", backend.Listener.Addr().String(), nil, newRoute())
+	tblDetection.Set("example.com", backend.Listener.Addr().String(), false, nil, newRoute())
 	wafDetection, err := middleware.NewWAF()
 	if err != nil {
 		t.Fatalf("NewWAF detection: %v", err)
@@ -1005,7 +1005,7 @@ func TestProxy_WAFDetectionAndEnforcement(t *testing.T) {
 
 	// enforcement mode should block and increment waf blocked counter.
 	tblEnforcement := newTestTable()
-	tblEnforcement.Set("example.com", backend.Listener.Addr().String(), nil, &store.SecurityConfig{WAFEnabled: true, WAFMode: "enforcement", CustomRules: []string{wafRule}})
+	tblEnforcement.Set("example.com", backend.Listener.Addr().String(), false, nil, &store.SecurityConfig{WAFEnabled: true, WAFMode: "enforcement", CustomRules: []string{wafRule}})
 	wafEnforcement, err := middleware.NewWAF()
 	if err != nil {
 		t.Fatalf("NewWAF enforcement: %v", err)

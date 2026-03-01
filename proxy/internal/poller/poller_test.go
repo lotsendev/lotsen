@@ -36,7 +36,7 @@ func newSpyTable() *spyTable {
 	return &spyTable{routes: make(map[string]routing.Route)}
 }
 
-func (s *spyTable) Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
+func (s *spyTable) Set(domain, upstream string, public bool, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.routes[domain] = routing.Route{Upstream: upstream, BasicAuth: basicAuth, Security: security}

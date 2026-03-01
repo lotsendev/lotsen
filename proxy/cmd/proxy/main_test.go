@@ -31,7 +31,7 @@ func (t *tableStub) Get(domain string) (routing.Route, bool) {
 	return route, ok
 }
 
-func (t *tableStub) Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
+func (t *tableStub) Set(domain, upstream string, public bool, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.routes[domain] = routing.Route{Upstream: upstream, BasicAuth: basicAuth, Security: security}
@@ -108,7 +108,7 @@ func TestHTTPMux_InternalRoutesCanBeUpdated(t *testing.T) {
 
 func TestHostPolicyFromTable(t *testing.T) {
 	tbl := newTableStub()
-	tbl.Set("example.com", "localhost:3000", nil, nil)
+	tbl.Set("example.com", "localhost:3000", false, nil, nil)
 	policy := hostPolicyFromTable(tbl)
 
 	if err := policy(context.Background(), "example.com"); err != nil {

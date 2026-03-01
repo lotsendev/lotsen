@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ercadev/dirigent/auth"
 	"github.com/ercadev/dirigent/proxy/internal/middleware"
 	"github.com/ercadev/dirigent/proxy/internal/routing"
 	"github.com/ercadev/dirigent/store"
@@ -25,7 +26,7 @@ import (
 // and the control API writes to when swapping upstreams.
 type RoutingTable interface {
 	Get(domain string) (routing.Route, bool)
-	Set(domain, upstream string, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig)
+	Set(domain, upstream string, public bool, basicAuth *store.BasicAuthConfig, security *store.SecurityConfig)
 }
 
 // Handler serves inbound HTTP requests by routing them to the upstream
@@ -42,6 +43,8 @@ type Handler struct {
 	waf           *middleware.WAF
 	wafBlocked    atomic.Int64
 	uaBlocked     atomic.Int64
+	authStore     *auth.UserStore
+	jwtSecret     []byte
 }
 
 // HardeningProfile controls request filtering and anti-scan behavior.
@@ -107,6 +110,7 @@ func (h *Handler) RegisterInternalRoutes(mux *http.ServeMux) {
 
 // RegisterProxyRoutes wires the proxy catch-all route into mux.
 func (h *Handler) RegisterProxyRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /__dirigent/login", h.proxyLogin)
 	mux.HandleFunc("/", h.proxy)
 }
 
@@ -287,6 +291,14 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !route.Public && h.jwtSecret != nil {
+		if !h.validProxyToken(r) {
+			outcome = "unauthorized"
+			h.serveLoginPage(rw, r, "")
+			return
+		}
+	}
+
 	target := &url.URL{
 		Scheme: "http",
 		Host:   route.Upstream,
@@ -441,13 +453,27 @@ func (h *Handler) setRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.table.Set(normalizeDomain(body.Domain), body.Upstream, nil, nil)
+	h.table.Set(normalizeDomain(body.Domain), body.Upstream, false, nil, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func WithIPFilter(filter *middleware.IPFilter) Option {
 	return func(h *Handler) {
 		h.ipFilter = filter
+	}
+}
+
+// WithAuthStore provides the user store used for proxy-level login on private deployments.
+func WithAuthStore(s *auth.UserStore) Option {
+	return func(h *Handler) {
+		h.authStore = s
+	}
+}
+
+// WithJWTSecret sets the HMAC secret used to sign and verify session tokens.
+func WithJWTSecret(secret []byte) Option {
+	return func(h *Handler) {
+		h.jwtSecret = secret
 	}
 }
 

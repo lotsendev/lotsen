@@ -9,7 +9,7 @@ import (
 
 func TestTable_SetAndGet(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("example.com", "localhost:8080", nil, nil)
+	tbl.Set("example.com", "localhost:8080", false, nil, nil)
 
 	route, ok := tbl.Get("example.com")
 	if !ok {
@@ -22,8 +22,8 @@ func TestTable_SetAndGet(t *testing.T) {
 
 func TestTable_Update(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("example.com", "localhost:8080", nil, nil)
-	tbl.Set("example.com", "localhost:9090", nil, nil)
+	tbl.Set("example.com", "localhost:8080", false, nil, nil)
+	tbl.Set("example.com", "localhost:9090", false, nil, nil)
 
 	route, ok := tbl.Get("example.com")
 	if !ok {
@@ -36,7 +36,7 @@ func TestTable_Update(t *testing.T) {
 
 func TestTable_Delete(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("example.com", "localhost:8080", nil, nil)
+	tbl.Set("example.com", "localhost:8080", false, nil, nil)
 	tbl.Delete("example.com")
 
 	if _, ok := tbl.Get("example.com"); ok {
@@ -61,7 +61,7 @@ func TestTable_UnknownDomain(t *testing.T) {
 func TestTable_StaticRoutePersistsWhenDynamicDeleted(t *testing.T) {
 	tbl := routing.NewTable()
 	tbl.SetStatic("dashboard.example.com", "localhost:3000")
-	tbl.Set("dashboard.example.com", "localhost:8080", nil, nil)
+	tbl.Set("dashboard.example.com", "localhost:8080", false, nil, nil)
 
 	tbl.Delete("dashboard.example.com")
 
@@ -76,8 +76,8 @@ func TestTable_StaticRoutePersistsWhenDynamicDeleted(t *testing.T) {
 
 func TestTable_MultipleDomains(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("foo.com", "localhost:3000", nil, nil)
-	tbl.Set("bar.com", "localhost:4000", nil, nil)
+	tbl.Set("foo.com", "localhost:3000", false, nil, nil)
+	tbl.Set("bar.com", "localhost:4000", false, nil, nil)
 
 	if route, ok := tbl.Get("foo.com"); !ok || route.Upstream != "localhost:3000" {
 		t.Errorf("foo.com: want localhost:3000, got %s (ok=%v)", route.Upstream, ok)
@@ -98,7 +98,7 @@ func TestTable_MultipleDomains(t *testing.T) {
 
 func TestTable_SetStoresSecurityConfig(t *testing.T) {
 	tbl := routing.NewTable()
-	tbl.Set("example.com", "localhost:8080", nil, &store.SecurityConfig{WAFEnabled: true})
+	tbl.Set("example.com", "localhost:8080", false, nil, &store.SecurityConfig{WAFEnabled: true})
 
 	route, ok := tbl.Get("example.com")
 	if !ok {

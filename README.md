@@ -28,6 +28,7 @@ Then `dirigent setup` will:
 - Create the `/var/lib/dirigent/` data directory and the `dirigent` Docker network
 - Offer security profiles in guided mode (`strict` is recommended)
 - Configure proxy hardening profiles (`standard` by default, `strict` recommended for internet-facing hosts)
+- Prompt for initial dashboard `/login` credentials in interactive setup (blank password auto-generates one)
 
 Re-running the installer performs an in-place upgrade.
 
@@ -60,6 +61,8 @@ sudo DIRIGENT_PROXY_HARDENING_PROFILE=strict dirigent setup
 | `dirigent-proxy`      | `:80`  | Reverse proxy — routes traffic to containers   |
 
 The dashboard is served by `dirigent-api` on `:8080` by default. If you set `DIRIGENT_DASHBOARD_DOMAIN` during setup, the proxy exposes it on `:80/:443` with optional Basic Auth.
+
+`DIRIGENT_AUTH_USER`/`DIRIGENT_AUTH_PASSWORD` (`LOTSEN_` aliases also supported) are bootstrap-only: they seed the first dashboard user when `users.db` is empty and are ignored after users already exist.
 
 ## Features
 

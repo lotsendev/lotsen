@@ -13,6 +13,7 @@ A deployment is the central object in Dirigent. It describes a container you wan
 | envs    | object   | No       | Environment variables passed into the container as a key-value map. Values are stored in the Dirigent data file on disk. Example: `{"DATABASE_URL": "postgres://..."}`. |
 | domain  | string   | No       | A fully-qualified domain name to route to this container via the integrated reverse proxy. Point your DNS A record to the VPS IP, and Dirigent will forward HTTP traffic on port 80. Example: `api.example.com`. |
 | basic_auth | object | No       | Require HTTP Basic Auth on the proxy route for this deployment. Only applies when `domain` is set. Contains a `users` list of `{ username, password }` pairs. |
+| security | object | No | Per-deployment traffic security settings. Includes `waf_enabled`, `waf_mode` (`detection` or `enforcement`), `ip_denylist`, `ip_allowlist`, and `custom_rules`. |
 
 ## Ports
 
@@ -75,6 +76,62 @@ You can protect a domain-exposed deployment with HTTP Basic Auth. When configure
 Set credentials in the dashboard when creating or editing a deployment. Multiple users can be added — useful for granting access to teammates without sharing a single credential.
 
 > **Security note:** Basic Auth over plain HTTP transmits credentials in base64. Combine with HTTPS termination (via an upstream proxy or CDN) for production use.
+
+## WAF rules
+
+WAF behavior is configured per deployment in **Security** on the deployment details page.
+
+- `waf_enabled`: toggles WAF for this deployment only.
+- `waf_mode`: `detection` (log only) or `enforcement` (block matching requests).
+- `custom_rules`: one ModSecurity/Coraza rule per line.
+
+By default, `custom_rules` is empty. Add only the rules you want for each deployment.
+
+Coraza rule syntax reference:
+
+- [Coraza SecLang directives](https://coraza.io/docs/seclang/directives/)
+
+Example starter rules:
+
+```text
+# Block direct probes for common sensitive files.
+SecRule REQUEST_URI "@rx (?i)^/(\.env|\.git|\.svn|\.DS_Store)$" "id:110001,phase:1,deny,status:403,log,msg:'Sensitive file probe'"
+
+# Block obvious SQL injection patterns in query strings.
+SecRule ARGS "@rx (?i)(union\s+select|or\s+1=1|information_schema)" "id:110002,phase:2,deny,status:403,log,msg:'SQLi pattern in args'"
+
+# Block path traversal attempts.
+SecRule REQUEST_URI "@rx (\.\./|%2e%2e%2f|%252e%252e%252f)" "id:110003,phase:1,deny,status:403,log,msg:'Path traversal attempt'"
+```
+
+> **Rule ID note:** Keep rule IDs unique per deployment to avoid conflicts.
+
+### Copy-paste starter pack
+
+You can start with these additional rules and then tune based on your app behavior.
+
+```text
+# Block command injection separators in common input args.
+SecRule ARGS "@rx (?i)(;|\|\||&&|`|\$\()" "id:110004,phase:2,deny,status:403,log,msg:'Command injection pattern in args'"
+
+# Block requests with known scanner user agents.
+SecRule REQUEST_HEADERS:User-Agent "@rx (?i)(sqlmap|nikto|nmap|masscan|acunetix)" "id:110005,phase:1,deny,status:403,log,msg:'Scanner user-agent blocked'"
+
+# Block direct access to common admin/debug endpoints.
+SecRule REQUEST_URI "@rx (?i)^/(phpmyadmin|wp-admin|wp-login\.php|actuator|_debugbar)" "id:110006,phase:1,deny,status:403,log,msg:'Admin/debug endpoint probe'"
+
+# Restrict methods to common web/API verbs.
+SecRule REQUEST_METHOD "!@within GET POST PUT PATCH DELETE OPTIONS HEAD" "id:110007,phase:1,deny,status:405,log,msg:'Unexpected HTTP method'"
+
+# Block oversized query strings (basic abuse guard).
+SecRule QUERY_STRING "@gt 2048" "id:110008,phase:1,deny,status:414,log,msg:'Query string too long'"
+```
+
+Suggested rollout:
+
+1. Enable `waf_mode: detection` first and review access logs.
+2. Keep rules that catch bad traffic without false positives.
+3. Switch to `waf_mode: enforcement` after validation.
 
 ## Deployment lifecycle
 

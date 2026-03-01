@@ -98,6 +98,7 @@ journalctl -u dirigent-orchestrator -n 100
 - API/dashboard default exposure is `:8080` unless dashboard domain exposure is configured.
 - Proxy enforces domain routing and optional Basic Auth for dashboard access.
 - Proxy hardening profiles (`standard` or `strict`) block common scanner and sensitive-path traffic.
+- WAF rules are opt-in per deployment via `custom_rules`; no default deployment WAF rule set is applied.
 
 ### Internet-facing hardening checklist
 

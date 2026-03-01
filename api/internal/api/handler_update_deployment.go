@@ -40,6 +40,7 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 	if body.Volumes == nil {
 		body.Volumes = []string{}
 	}
+	body.Security = normalizeSecurityConfig(body.Security)
 
 	existing, err := h.store.Get(id)
 	if err != nil {
@@ -65,7 +66,7 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 	body.Ports = assignedPorts
 
 	if updateRequestMatchesExisting(existing, body, basicAuth) {
-		writeJSON(w, http.StatusOK, existing)
+		writeJSON(w, http.StatusOK, normalizeDeploymentSecurity(existing))
 		return
 	}
 
@@ -100,5 +101,5 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, updated)
+	writeJSON(w, http.StatusOK, normalizeDeploymentSecurity(updated))
 }

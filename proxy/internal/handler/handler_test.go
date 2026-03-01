@@ -465,10 +465,11 @@ func TestProxy_DashboardDomainBypassesWAF(t *testing.T) {
 	tbl := newTestTable()
 	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), nil, &store.SecurityConfig{
 		WAFEnabled:  true,
+		WAFMode:     "enforcement",
 		CustomRules: []string{wafRule},
 	})
 
-	waf, err := middleware.NewWAF(true, middleware.WAFModeEnforcement)
+	waf, err := middleware.NewWAF()
 	if err != nil {
 		t.Fatalf("NewWAF enforcement: %v", err)
 	}
@@ -978,13 +979,13 @@ func TestProxy_WAFDetectionAndEnforcement(t *testing.T) {
 	wafRule := `SecRule REQUEST_URI "@contains waf-trigger" "id:10099,phase:1,deny,status:403,log,msg:'waf trigger'"`
 
 	newRoute := func() *store.SecurityConfig {
-		return &store.SecurityConfig{WAFEnabled: true, CustomRules: []string{wafRule}}
+		return &store.SecurityConfig{WAFEnabled: true, WAFMode: "detection", CustomRules: []string{wafRule}}
 	}
 
 	// detection mode should not block but should mark request as detected.
 	tblDetection := newTestTable()
 	tblDetection.Set("example.com", backend.Listener.Addr().String(), nil, newRoute())
-	wafDetection, err := middleware.NewWAF(true, middleware.WAFModeDetection)
+	wafDetection, err := middleware.NewWAF()
 	if err != nil {
 		t.Fatalf("NewWAF detection: %v", err)
 	}
@@ -1004,8 +1005,8 @@ func TestProxy_WAFDetectionAndEnforcement(t *testing.T) {
 
 	// enforcement mode should block and increment waf blocked counter.
 	tblEnforcement := newTestTable()
-	tblEnforcement.Set("example.com", backend.Listener.Addr().String(), nil, newRoute())
-	wafEnforcement, err := middleware.NewWAF(true, middleware.WAFModeEnforcement)
+	tblEnforcement.Set("example.com", backend.Listener.Addr().String(), nil, &store.SecurityConfig{WAFEnabled: true, WAFMode: "enforcement", CustomRules: []string{wafRule}})
+	wafEnforcement, err := middleware.NewWAF()
 	if err != nil {
 		t.Fatalf("NewWAF enforcement: %v", err)
 	}

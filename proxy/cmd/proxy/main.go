@@ -63,12 +63,7 @@ func main() {
 		log.Fatalf("proxy: %v", err)
 	}
 	uaFilter := middleware.NewUAFilter(hardeningProfile == handler.HardeningStrict, parseCSVList(os.Getenv("DIRIGENT_UA_BLOCK_LIST")))
-	wafEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("DIRIGENT_WAF_ENABLED")), "true")
-	wafMode, err := wafModeFromEnv()
-	if err != nil {
-		log.Fatalf("proxy: %v", err)
-	}
-	waf, err := middleware.NewWAF(wafEnabled, wafMode)
+	waf, err := middleware.NewWAF()
 	if err != nil {
 		log.Fatalf("proxy: initialize waf: %v", err)
 	}
@@ -87,11 +82,7 @@ func main() {
 	}
 
 	log.Printf("proxy: hardening profile %s", hardeningProfile)
-	if wafEnabled {
-		log.Printf("proxy: waf enabled (mode=%s)", wafMode)
-	} else {
-		log.Printf("proxy: waf disabled")
-	}
+	log.Printf("proxy: waf initialized for per-deployment mode")
 
 	interval := 5 * time.Second
 	if v := os.Getenv("DIRIGENT_POLL_INTERVAL"); v != "" {
@@ -324,16 +315,6 @@ func accessLogConfigFromEnv() (handler.AccessLogConfig, error) {
 		Retention:       retention,
 		WhitelistedKeys: headers,
 	}, nil
-}
-
-func wafModeFromEnv() (middleware.WAFMode, error) {
-	raw := strings.ToLower(strings.TrimSpace(envOrDefault("DIRIGENT_WAF_MODE", string(middleware.WAFModeDetection))))
-	switch middleware.WAFMode(raw) {
-	case middleware.WAFModeDetection, middleware.WAFModeEnforcement:
-		return middleware.WAFMode(raw), nil
-	default:
-		return "", fmt.Errorf("DIRIGENT_WAF_MODE must be one of: detection, enforcement")
-	}
 }
 
 func parseCSVList(raw string) []string {

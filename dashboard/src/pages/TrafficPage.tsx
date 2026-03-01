@@ -97,18 +97,6 @@ export function TrafficPage() {
     return `Blocked until ${date.toLocaleTimeString()}`
   }
 
-  const wafMode = securityConfig.data?.wafMode ?? 'off'
-
-  const wafModeVariant = () => {
-    if (wafMode === 'enforcement') {
-      return 'destructive' as const
-    }
-    if (wafMode === 'detection') {
-      return 'warning' as const
-    }
-    return 'secondary' as const
-  }
-
   return (
     <div className="space-y-5">
       <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
@@ -198,14 +186,9 @@ export function TrafficPage() {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Global security</p>
             <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">
-              Effective WAF and IP filtering mode
+              Global IP filtering posture
             </h2>
           </div>
-          {securityConfig.isLoading ? null : securityConfig.isError ? null : (
-            <Badge variant={wafModeVariant()} className="capitalize">
-              WAF mode: {wafMode}
-            </Badge>
-          )}
         </div>
 
         {securityConfig.isLoading ? (

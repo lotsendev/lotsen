@@ -418,7 +418,7 @@ func TestProxy_DashboardDomainRequiresBasicAuth(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d", resp.StatusCode)
 	}
-	if got := resp.Header.Get("WWW-Authenticate"); got != `Basic realm="Dirigent"` {
+	if got := resp.Header.Get("WWW-Authenticate"); got != `Basic realm="Lotsen"` {
 		t.Fatalf("want WWW-Authenticate header, got %q", got)
 	}
 }
@@ -763,7 +763,7 @@ func TestProxy_WritesAccessLogWithWhitelistedHeaders(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/v1/health?deep=1", nil)
 	req.Host = "example.com"
-	req.Header.Set("User-Agent", "dirigent-test")
+	req.Header.Set("User-Agent", "lotsen-test")
 	req.Header.Set("Authorization", "secret-token")
 	req.Header.Set("X-Forwarded-For", "203.0.113.7")
 
@@ -824,7 +824,7 @@ func TestProxy_WritesAccessLogWithWhitelistedHeaders(t *testing.T) {
 	if _, ok := entry.Headers["authorization"]; ok {
 		t.Fatal("authorization header must not be logged")
 	}
-	if entry.Headers["user-agent"] != "dirigent-test" {
+	if entry.Headers["user-agent"] != "lotsen-test" {
 		t.Fatalf("want user-agent header, got %q", entry.Headers["user-agent"])
 	}
 }
@@ -861,7 +861,7 @@ func TestProxy_DeploymentBasicAuthRequiresCredentials(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d", resp.StatusCode)
 	}
-	if got := resp.Header.Get("WWW-Authenticate"); got != `Basic realm="Dirigent"` {
+	if got := resp.Header.Get("WWW-Authenticate"); got != `Basic realm="Lotsen"` {
 		t.Fatalf("want Basic realm challenge, got %q", got)
 	}
 }

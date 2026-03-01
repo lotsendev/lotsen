@@ -3,7 +3,7 @@ import { join } from "path"
 const dist = join(import.meta.dir, "dist")
 const index = Bun.file(join(dist, "index.html"))
 
-const API_URL = (process.env.DIRIGENT_API_URL ?? "http://localhost:8080").replace(/\/$/, "")
+const API_URL = (process.env.LOTSEN_API_URL ?? "http://localhost:8080").replace(/\/$/, "")
 
 Bun.serve({
   port: 3000,

@@ -20,7 +20,7 @@ const (
 	StateFailed  State = "failed"
 )
 
-const defaultLogPath = "/tmp/dirigent-upgrade.log"
+const defaultLogPath = "/tmp/lotsen-upgrade.log"
 
 var (
 	ErrAlreadyRunning = errors.New("upgrade already running")
@@ -207,7 +207,7 @@ func defaultProcessBuilder(targetVersion string) (processConfig, error) {
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 
 	if systemdRunPath, err := exec.LookPath("systemd-run"); err == nil {
-		unit := fmt.Sprintf("dirigent-upgrade-%d", time.Now().UnixNano())
+		unit := fmt.Sprintf("lotsen-upgrade-%d", time.Now().UnixNano())
 		return processConfig{
 			path: systemdRunPath,
 			args: []string{
@@ -215,10 +215,10 @@ func defaultProcessBuilder(targetVersion string) (processConfig, error) {
 				"--unit", unit,
 				"--collect",
 				"--no-block",
-				"--setenv=DIRIGENT_UPGRADE_STARTED_AT=" + startedAt,
+				"--setenv=LOTSEN_UPGRADE_STARTED_AT=" + startedAt,
 				"/bin/sh",
 				"-c",
-				"exec /usr/local/bin/dirigent upgrade --to \"$1\" --non-interactive --yes >> /tmp/dirigent-upgrade.log 2>&1",
+				"exec /usr/local/bin/lotsen upgrade --to \"$1\" --non-interactive --yes >> /tmp/lotsen-upgrade.log 2>&1",
 				"sh",
 				targetVersion,
 			},
@@ -228,9 +228,9 @@ func defaultProcessBuilder(targetVersion string) (processConfig, error) {
 		}, nil
 	}
 
-	path := "/usr/local/bin/dirigent"
-	args := []string{"dirigent", "upgrade", "--to", targetVersion, "--non-interactive", "--yes"}
-	env := append(os.Environ(), "DIRIGENT_UPGRADE_STARTED_AT="+startedAt)
+	path := "/usr/local/bin/lotsen"
+	args := []string{"lotsen", "upgrade", "--to", targetVersion, "--non-interactive", "--yes"}
+	env := append(os.Environ(), "LOTSEN_UPGRADE_STARTED_AT="+startedAt)
 
 	return processConfig{
 		path:    path,

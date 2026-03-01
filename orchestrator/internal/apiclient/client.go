@@ -10,7 +10,7 @@ import (
 	"github.com/ercadev/dirigent/store"
 )
 
-// Client calls the Dirigent API to notify it of deployment status transitions.
+// Client calls the Lotsen API to notify it of deployment status transitions.
 type Client struct {
 	baseURL    string
 	httpClient *http.Client

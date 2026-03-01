@@ -31,12 +31,12 @@ func TestValidBasicAuth_InvalidCredentials(t *testing.T) {
 func TestWriteBasicAuthChallenge(t *testing.T) {
 	w := httptest.NewRecorder()
 
-	middleware.WriteBasicAuthChallenge(w, "Dirigent")
+	middleware.WriteBasicAuthChallenge(w, "Lotsen")
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d", w.Code)
 	}
-	if got := w.Header().Get("WWW-Authenticate"); got != `Basic realm="Dirigent"` {
+	if got := w.Header().Get("WWW-Authenticate"); got != `Basic realm="Lotsen"` {
 		t.Fatalf("want Basic realm challenge, got %q", got)
 	}
 }

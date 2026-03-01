@@ -29,17 +29,17 @@ import (
 const (
 	defaultHTTPAddr                = ":80"
 	defaultHTTPSAddr               = ":443"
-	defaultCertCacheDir            = "/var/lib/dirigent/certs"
-	defaultAccessLogDir            = "/var/lib/dirigent/logs/proxy"
+	defaultCertCacheDir            = "/var/lib/lotsen/certs"
+	defaultAccessLogDir            = "/var/lib/lotsen/logs/proxy"
 	letsencryptProdDirectoryURL    = "https://acme-v02.api.letsencrypt.org/directory"
 	letsencryptStagingDirectoryURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
 )
 
 func dataPath() string {
-	if p := os.Getenv("DIRIGENT_DATA"); p != "" {
+	if p := os.Getenv("LOTSEN_DATA"); p != "" {
 		return p
 	}
-	return "/var/lib/dirigent/deployments.json"
+	return "/var/lib/lotsen/deployments.json"
 }
 
 func main() {
@@ -58,13 +58,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("proxy: %v", err)
 	}
-	ipDenylist := parseCSVList(os.Getenv("DIRIGENT_IP_DENYLIST"))
-	ipAllowlist := parseCSVList(os.Getenv("DIRIGENT_IP_ALLOWLIST"))
+	ipDenylist := parseCSVList(os.Getenv("LOTSEN_IP_DENYLIST"))
+	ipAllowlist := parseCSVList(os.Getenv("LOTSEN_IP_ALLOWLIST"))
 	ipFilter, err := middleware.NewIPFilter(ipDenylist, ipAllowlist)
 	if err != nil {
 		log.Fatalf("proxy: %v", err)
 	}
-	uaFilter := middleware.NewUAFilter(hardeningProfile == handler.HardeningStrict, parseCSVList(os.Getenv("DIRIGENT_UA_BLOCK_LIST")))
+	uaFilter := middleware.NewUAFilter(hardeningProfile == handler.HardeningStrict, parseCSVList(os.Getenv("LOTSEN_UA_BLOCK_LIST")))
 	waf, err := middleware.NewWAF()
 	if err != nil {
 		log.Fatalf("proxy: initialize waf: %v", err)
@@ -95,7 +95,7 @@ func main() {
 	log.Printf("proxy: waf initialized for per-deployment mode")
 
 	interval := 5 * time.Second
-	if v := os.Getenv("DIRIGENT_POLL_INTERVAL"); v != "" {
+	if v := os.Getenv("LOTSEN_POLL_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			interval = d
 		}
@@ -115,19 +115,19 @@ func main() {
 	)
 
 	hostPolicy := hostPolicyFromTable(table)
-	cacheDir := envOrDefault("DIRIGENT_CERT_CACHE_DIR", defaultCertCacheDir)
+	cacheDir := envOrDefault("LOTSEN_CERT_CACHE_DIR", defaultCertCacheDir)
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		log.Fatalf("proxy: create cert cache dir %s: %v", cacheDir, err)
 	}
 	manager := newAutocertManager(
 		cacheDir,
-		os.Getenv("DIRIGENT_ACME_EMAIL"),
-		envOrDefault("DIRIGENT_ACME_DIRECTORY_URL", letsencryptProdDirectoryURL),
+		os.Getenv("LOTSEN_ACME_EMAIL"),
+		envOrDefault("LOTSEN_ACME_DIRECTORY_URL", letsencryptProdDirectoryURL),
 		hostPolicy,
 	)
 
-	httpsAddr := envOrDefault("DIRIGENT_PROXY_HTTPS_ADDR", defaultHTTPSAddr)
-	httpAddr := envOrDefault("DIRIGENT_PROXY_HTTP_ADDR", envOrDefault("DIRIGENT_PROXY_ADDR", defaultHTTPAddr))
+	httpsAddr := envOrDefault("LOTSEN_PROXY_HTTPS_ADDR", defaultHTTPSAddr)
+	httpAddr := envOrDefault("LOTSEN_PROXY_HTTP_ADDR", envOrDefault("LOTSEN_PROXY_ADDR", defaultHTTPAddr))
 
 	httpMux := newHTTPMux(h, manager.HTTPHandler(http.HandlerFunc(redirectToHTTPS(httpsAddr))))
 	httpsMux := newHTTPSMux(h)
@@ -269,19 +269,19 @@ func envOrDefault(key, fallback string) string {
 }
 
 func dashboardAuthFromEnv() (*handler.DashboardAuth, error) {
-	domain := normalizeDomain(os.Getenv("DIRIGENT_DASHBOARD_DOMAIN"))
-	user := os.Getenv("DIRIGENT_DASHBOARD_USER")
-	password := os.Getenv("DIRIGENT_DASHBOARD_PASSWORD")
+	domain := normalizeDomain(os.Getenv("LOTSEN_DASHBOARD_DOMAIN"))
+	user := os.Getenv("LOTSEN_DASHBOARD_USER")
+	password := os.Getenv("LOTSEN_DASHBOARD_PASSWORD")
 
 	if domain == "" {
 		if user != "" || password != "" {
-			log.Printf("proxy: ignoring dashboard auth credentials because DIRIGENT_DASHBOARD_DOMAIN is unset")
+			log.Printf("proxy: ignoring dashboard auth credentials because LOTSEN_DASHBOARD_DOMAIN is unset")
 		}
 		return nil, nil
 	}
 
 	if user == "" || password == "" {
-		return nil, fmt.Errorf("DIRIGENT_DASHBOARD_DOMAIN requires both DIRIGENT_DASHBOARD_USER and DIRIGENT_DASHBOARD_PASSWORD")
+		return nil, fmt.Errorf("LOTSEN_DASHBOARD_DOMAIN requires both LOTSEN_DASHBOARD_USER and LOTSEN_DASHBOARD_PASSWORD")
 	}
 
 	return &handler.DashboardAuth{
@@ -292,24 +292,24 @@ func dashboardAuthFromEnv() (*handler.DashboardAuth, error) {
 }
 
 func hardeningProfileFromEnv() (handler.HardeningProfile, error) {
-	profile := handler.HardeningProfile(strings.ToLower(strings.TrimSpace(envOrDefault("DIRIGENT_PROXY_HARDENING_PROFILE", string(handler.HardeningStandard)))))
+	profile := handler.HardeningProfile(strings.ToLower(strings.TrimSpace(envOrDefault("LOTSEN_PROXY_HARDENING_PROFILE", string(handler.HardeningStandard)))))
 	switch profile {
 	case handler.HardeningOff, handler.HardeningStandard, handler.HardeningStrict:
 		return profile, nil
 	default:
-		return "", fmt.Errorf("DIRIGENT_PROXY_HARDENING_PROFILE must be one of: off, standard, strict")
+		return "", fmt.Errorf("LOTSEN_PROXY_HARDENING_PROFILE must be one of: off, standard, strict")
 	}
 }
 
 func accessLogConfigFromEnv() (handler.AccessLogConfig, error) {
-	retentionRaw := strings.TrimSpace(envOrDefault("DIRIGENT_PROXY_ACCESS_LOG_RETENTION", "168h"))
+	retentionRaw := strings.TrimSpace(envOrDefault("LOTSEN_PROXY_ACCESS_LOG_RETENTION", "168h"))
 	retention, err := time.ParseDuration(retentionRaw)
 	if err != nil || retention <= 0 {
-		return handler.AccessLogConfig{}, fmt.Errorf("DIRIGENT_PROXY_ACCESS_LOG_RETENTION must be a positive duration")
+		return handler.AccessLogConfig{}, fmt.Errorf("LOTSEN_PROXY_ACCESS_LOG_RETENTION must be a positive duration")
 	}
 
 	headers := []string{"host", "user-agent", "accept", "accept-encoding", "accept-language", "referer", "x-forwarded-for", "x-real-ip"}
-	if raw := strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_ACCESS_LOG_HEADERS")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("LOTSEN_PROXY_ACCESS_LOG_HEADERS")); raw != "" {
 		headers = headers[:0]
 		for _, part := range strings.Split(raw, ",") {
 			header := strings.ToLower(strings.TrimSpace(part))
@@ -318,19 +318,19 @@ func accessLogConfigFromEnv() (handler.AccessLogConfig, error) {
 			}
 		}
 		if len(headers) == 0 {
-			return handler.AccessLogConfig{}, fmt.Errorf("DIRIGENT_PROXY_ACCESS_LOG_HEADERS must contain at least one header")
+			return handler.AccessLogConfig{}, fmt.Errorf("LOTSEN_PROXY_ACCESS_LOG_HEADERS must contain at least one header")
 		}
 	}
 
 	return handler.AccessLogConfig{
-		Dir:             strings.TrimSpace(envOrDefault("DIRIGENT_PROXY_ACCESS_LOG_DIR", defaultAccessLogDir)),
+		Dir:             strings.TrimSpace(envOrDefault("LOTSEN_PROXY_ACCESS_LOG_DIR", defaultAccessLogDir)),
 		Retention:       retention,
 		WhitelistedKeys: headers,
 	}, nil
 }
 
 func authFromEnv(dataPath string) (*auth.UserStore, []byte, error) {
-	secret := strings.TrimSpace(os.Getenv("DIRIGENT_JWT_SECRET"))
+	secret := strings.TrimSpace(os.Getenv("LOTSEN_JWT_SECRET"))
 	if secret == "" {
 		return nil, nil, nil
 	}

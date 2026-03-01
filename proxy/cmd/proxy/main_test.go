@@ -120,7 +120,7 @@ func TestHostPolicyFromTable(t *testing.T) {
 }
 
 func TestNewAutocertManager_UsesDirectoryAndEmail(t *testing.T) {
-	mgr := newAutocertManager("/tmp/dirigent-certs-test", "ops@example.com", letsencryptStagingDirectoryURL, autocert.HostWhitelist("example.com"))
+	mgr := newAutocertManager("/tmp/lotsen-certs-test", "ops@example.com", letsencryptStagingDirectoryURL, autocert.HostWhitelist("example.com"))
 
 	if mgr.Email != "ops@example.com" {
 		t.Fatalf("want email ops@example.com, got %s", mgr.Email)
@@ -134,9 +134,9 @@ func TestNewAutocertManager_UsesDirectoryAndEmail(t *testing.T) {
 }
 
 func TestDashboardAuthFromEnv_DomainWithoutCredentialsFails(t *testing.T) {
-	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "dashboard.example.com")
-	t.Setenv("DIRIGENT_DASHBOARD_USER", "")
-	t.Setenv("DIRIGENT_DASHBOARD_PASSWORD", "")
+	t.Setenv("LOTSEN_DASHBOARD_DOMAIN", "dashboard.example.com")
+	t.Setenv("LOTSEN_DASHBOARD_USER", "")
+	t.Setenv("LOTSEN_DASHBOARD_PASSWORD", "")
 
 	_, err := dashboardAuthFromEnv()
 	if err == nil {
@@ -145,9 +145,9 @@ func TestDashboardAuthFromEnv_DomainWithoutCredentialsFails(t *testing.T) {
 }
 
 func TestDashboardAuthFromEnv_ReturnsNormalizedAuth(t *testing.T) {
-	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "Dashboard.Example.com.")
-	t.Setenv("DIRIGENT_DASHBOARD_USER", "admin")
-	t.Setenv("DIRIGENT_DASHBOARD_PASSWORD", "secret")
+	t.Setenv("LOTSEN_DASHBOARD_DOMAIN", "Dashboard.Example.com.")
+	t.Setenv("LOTSEN_DASHBOARD_USER", "admin")
+	t.Setenv("LOTSEN_DASHBOARD_PASSWORD", "secret")
 
 	auth, err := dashboardAuthFromEnv()
 	if err != nil {
@@ -165,9 +165,9 @@ func TestDashboardAuthFromEnv_ReturnsNormalizedAuth(t *testing.T) {
 }
 
 func TestDashboardAuthFromEnv_IgnoresCredentialsWithoutDomain(t *testing.T) {
-	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "")
-	t.Setenv("DIRIGENT_DASHBOARD_USER", "admin")
-	t.Setenv("DIRIGENT_DASHBOARD_PASSWORD", "secret")
+	t.Setenv("LOTSEN_DASHBOARD_DOMAIN", "")
+	t.Setenv("LOTSEN_DASHBOARD_USER", "admin")
+	t.Setenv("LOTSEN_DASHBOARD_PASSWORD", "secret")
 
 	auth, err := dashboardAuthFromEnv()
 	if err != nil {
@@ -179,7 +179,7 @@ func TestDashboardAuthFromEnv_IgnoresCredentialsWithoutDomain(t *testing.T) {
 }
 
 func TestHardeningProfileFromEnv_DefaultsToStandard(t *testing.T) {
-	t.Setenv("DIRIGENT_PROXY_HARDENING_PROFILE", "")
+	t.Setenv("LOTSEN_PROXY_HARDENING_PROFILE", "")
 
 	profile, err := hardeningProfileFromEnv()
 	if err != nil {
@@ -191,7 +191,7 @@ func TestHardeningProfileFromEnv_DefaultsToStandard(t *testing.T) {
 }
 
 func TestHardeningProfileFromEnv_AcceptsStrict(t *testing.T) {
-	t.Setenv("DIRIGENT_PROXY_HARDENING_PROFILE", " STRICT ")
+	t.Setenv("LOTSEN_PROXY_HARDENING_PROFILE", " STRICT ")
 
 	profile, err := hardeningProfileFromEnv()
 	if err != nil {
@@ -203,7 +203,7 @@ func TestHardeningProfileFromEnv_AcceptsStrict(t *testing.T) {
 }
 
 func TestHardeningProfileFromEnv_RejectsInvalidValue(t *testing.T) {
-	t.Setenv("DIRIGENT_PROXY_HARDENING_PROFILE", "aggressive")
+	t.Setenv("LOTSEN_PROXY_HARDENING_PROFILE", "aggressive")
 
 	if _, err := hardeningProfileFromEnv(); err == nil {
 		t.Fatal("want validation error for invalid profile")

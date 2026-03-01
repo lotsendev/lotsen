@@ -54,14 +54,14 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("Dirigent CLI")
+	fmt.Println("Lotsen CLI")
 	fmt.Println("")
 	fmt.Println("Usage:")
-	fmt.Println("  dirigent setup [flags]")
-	fmt.Println("  dirigent upgrade [flags]")
-	fmt.Println("  dirigent doctor [flags]")
+	fmt.Println("  lotsen setup [flags]")
+	fmt.Println("  lotsen upgrade [flags]")
+	fmt.Println("  lotsen doctor [flags]")
 	fmt.Println("")
-	fmt.Println("Run `dirigent <command> --help` for command-specific options.")
+	fmt.Println("Run `lotsen <command> --help` for command-specific options.")
 }
 
 func runSetup(args []string) error {
@@ -73,7 +73,7 @@ func runSetup(args []string) error {
 	yes := fs.Bool("yes", false, "Skip confirmation prompts")
 	profile := fs.String("profile", "", "Security profile: strict, standard, off")
 	proxyHardeningProfile := fs.String("proxy-hardening-profile", "", "Proxy hardening profile: strict, standard, off")
-	version := fs.String("version", "latest", "Dirigent version to install")
+	version := fs.String("version", "latest", "Lotsen version to install")
 	dashboardExpose := fs.Bool("dashboard-expose", false, "Expose dashboard via proxy")
 	dashboardDomain := fs.String("dashboard-domain", "", "Dashboard domain")
 	dashboardUser := fs.String("dashboard-user", "", "Dashboard basic auth username")
@@ -109,7 +109,7 @@ func runSetup(args []string) error {
 
 	selectedProxyHardeningProfile := strings.TrimSpace(*proxyHardeningProfile)
 	if selectedProxyHardeningProfile == "" {
-		selectedProxyHardeningProfile = strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_HARDENING_PROFILE"))
+		selectedProxyHardeningProfile = strings.TrimSpace(os.Getenv("LOTSEN_PROXY_HARDENING_PROFILE"))
 	}
 	if selectedProxyHardeningProfile == "" {
 		selectedProxyHardeningProfile = selectedProfile
@@ -153,18 +153,18 @@ func runSetup(args []string) error {
 	}
 
 	env := append(os.Environ(),
-		"DIRIGENT_VERSION="+*version,
-		"DIRIGENT_SECURITY_PROFILE="+selectedProfile,
-		"DIRIGENT_PROXY_HARDENING_PROFILE="+selectedProxyHardeningProfile,
+		"LOTSEN_VERSION="+*version,
+		"LOTSEN_SECURITY_PROFILE="+selectedProfile,
+		"LOTSEN_PROXY_HARDENING_PROFILE="+selectedProxyHardeningProfile,
 	)
 	if *nonInteractive {
-		env = append(env, "DIRIGENT_NON_INTERACTIVE=1")
+		env = append(env, "LOTSEN_NON_INTERACTIVE=1")
 	}
 	if *dashboardExpose {
 		env = append(env,
-			"DIRIGENT_DASHBOARD_DOMAIN="+strings.TrimSpace(*dashboardDomain),
-			"DIRIGENT_DASHBOARD_USER="+strings.TrimSpace(*dashboardUser),
-			"DIRIGENT_DASHBOARD_PASSWORD="+dashboardPassword,
+			"LOTSEN_DASHBOARD_DOMAIN="+strings.TrimSpace(*dashboardDomain),
+			"LOTSEN_DASHBOARD_USER="+strings.TrimSpace(*dashboardUser),
+			"LOTSEN_DASHBOARD_PASSWORD="+dashboardPassword,
 		)
 	}
 
@@ -177,7 +177,7 @@ func setupUsage(parseErr error) error {
 	b := &strings.Builder{}
 	fmt.Fprintln(b, parseErr)
 	fmt.Fprintln(b, "")
-	fmt.Fprintln(b, "Usage: dirigent setup [flags]")
+	fmt.Fprintln(b, "Usage: lotsen setup [flags]")
 	fmt.Fprintln(b, "")
 	fmt.Fprintln(b, "Flags:")
 	fmt.Fprintln(b, "  --interactive             Force interactive setup")
@@ -202,11 +202,11 @@ func runUpgrade(args []string) error {
 	yes := fs.Bool("yes", false, "Skip confirmation prompts")
 
 	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("%w\n\nUsage: dirigent upgrade [--to latest|vX.Y.Z] [--non-interactive] [--yes]", err)
+		return fmt.Errorf("%w\n\nUsage: lotsen upgrade [--to latest|vX.Y.Z] [--non-interactive] [--yes]", err)
 	}
 
 	currentVersion, targetVersion := determineUpgradeVersions(*target, fetchLocalVersionSnapshot)
-	fmt.Printf("--> Upgrading Dirigent from %s to %s\n", currentVersion, targetVersion)
+	fmt.Printf("--> Upgrading Lotsen from %s to %s\n", currentVersion, targetVersion)
 
 	effectiveNonInteractive := *nonInteractive || !stdinIsTTY()
 	if !effectiveNonInteractive && !*yes {
@@ -220,14 +220,14 @@ func runUpgrade(args []string) error {
 	}
 
 	env := append(os.Environ(),
-		"DIRIGENT_VERSION="+*target,
-		"DIRIGENT_UPGRADE=1",
+		"LOTSEN_VERSION="+*target,
+		"LOTSEN_UPGRADE=1",
 	)
 	if effectiveNonInteractive {
-		env = append(env, "DIRIGENT_NON_INTERACTIVE=1")
+		env = append(env, "LOTSEN_NON_INTERACTIVE=1")
 	}
 	if *yes {
-		env = append(env, "DIRIGENT_YES=1")
+		env = append(env, "LOTSEN_YES=1")
 	}
 
 	url := releaseScriptURL(*target, "setup.sh")
@@ -291,13 +291,13 @@ func runDoctor(args []string) error {
 	fs.SetOutput(io.Discard)
 	jsonOutput := fs.Bool("json", false, "Print JSON output")
 	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("%w\n\nUsage: dirigent doctor [--json]", err)
+		return fmt.Errorf("%w\n\nUsage: lotsen doctor [--json]", err)
 	}
 
 	status := map[string]string{
 		"binary": "ok",
 	}
-	if _, err := os.Stat("/usr/local/bin/dirigent-api"); err != nil {
+	if _, err := os.Stat("/usr/local/bin/lotsen-api"); err != nil {
 		status["api_binary"] = "missing"
 	} else {
 		status["api_binary"] = "ok"
@@ -311,7 +311,7 @@ func runDoctor(args []string) error {
 		return errors.New("doctor found issues")
 	}
 
-	fmt.Println("Dirigent doctor")
+	fmt.Println("Lotsen doctor")
 	fmt.Printf("- CLI binary: %s\n", status["binary"])
 	fmt.Printf("- API binary: %s\n", status["api_binary"])
 	if status["api_binary"] != "ok" {
@@ -404,7 +404,7 @@ func runRemoteScript(scriptURL string, env []string) error {
 		return fmt.Errorf("download script status: %d", resp.StatusCode)
 	}
 
-	tmp, err := os.CreateTemp("", "dirigent-setup-*.sh")
+	tmp, err := os.CreateTemp("", "lotsen-setup-*.sh")
 	if err != nil {
 		return fmt.Errorf("create temp script: %w", err)
 	}
@@ -426,7 +426,7 @@ func runRemoteScript(scriptURL string, env []string) error {
 	defer os.Remove(tmp.Name())
 
 	cmd := exec.Command("bash", tmp.Name())
-	cmd.Env = append(env, "DIRIGENT_SETUP_STARTED_AT="+time.Now().UTC().Format(time.RFC3339))
+	cmd.Env = append(env, "LOTSEN_SETUP_STARTED_AT="+time.Now().UTC().Format(time.RFC3339))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

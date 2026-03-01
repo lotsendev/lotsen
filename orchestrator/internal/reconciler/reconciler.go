@@ -70,7 +70,7 @@ func New(s Store, d Docker, n Notifier) *Reconciler {
 		notifier:          n,
 		retryByDeployment: make(map[string]retryState),
 		now:               time.Now,
-		dashboardDomain:   normalizeDomain(os.Getenv("DIRIGENT_DASHBOARD_DOMAIN")),
+		dashboardDomain:   normalizeDomain(os.Getenv("LOTSEN_DASHBOARD_DOMAIN")),
 	}
 }
 

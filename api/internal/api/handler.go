@@ -58,7 +58,7 @@ type UpgradeRunner interface {
 	IsRunning() bool
 }
 
-// AuthUserStore authenticates and manages Dirigent users.
+// AuthUserStore authenticates and manages Lotsen users.
 type AuthUserStore interface {
 	Authenticate(username, password string) error
 }
@@ -257,14 +257,14 @@ func newID() (string, error) {
 }
 
 func orchestratorStaleAfterFromEnv() time.Duration {
-	raw := os.Getenv("DIRIGENT_ORCHESTRATOR_STALE_AFTER")
+	raw := os.Getenv("LOTSEN_ORCHESTRATOR_STALE_AFTER")
 	if raw == "" {
 		return defaultOrchestratorStaleAfter
 	}
 
 	d, err := time.ParseDuration(raw)
 	if err != nil || d <= 0 {
-		log.Printf("invalid DIRIGENT_ORCHESTRATOR_STALE_AFTER=%q; using default %s", raw, defaultOrchestratorStaleAfter)
+		log.Printf("invalid LOTSEN_ORCHESTRATOR_STALE_AFTER=%q; using default %s", raw, defaultOrchestratorStaleAfter)
 		return defaultOrchestratorStaleAfter
 	}
 
@@ -272,14 +272,14 @@ func orchestratorStaleAfterFromEnv() time.Duration {
 }
 
 func proxyAccessLogDirFromEnv() string {
-	if dir := strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_ACCESS_LOG_DIR")); dir != "" {
+	if dir := strings.TrimSpace(os.Getenv("LOTSEN_PROXY_ACCESS_LOG_DIR")); dir != "" {
 		return dir
 	}
-	return "/var/lib/dirigent/logs/proxy"
+	return "/var/lib/lotsen/logs/proxy"
 }
 
 func proxyInternalBaseURLFromEnv() string {
-	baseURL := strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_INTERNAL_URL"))
+	baseURL := strings.TrimSpace(os.Getenv("LOTSEN_PROXY_INTERNAL_URL"))
 	if baseURL == "" {
 		return "http://127.0.0.1"
 	}
@@ -478,7 +478,7 @@ func sanitizeAndHashBasicAuth(input *basicAuthRequest) (*store.BasicAuthConfig, 
 }
 
 func dashboardDomainFromEnv() string {
-	return normalizeDomain(os.Getenv("DIRIGENT_DASHBOARD_DOMAIN"))
+	return normalizeDomain(os.Getenv("LOTSEN_DASHBOARD_DOMAIN"))
 }
 
 func conflictsWithDashboardDomain(domain string) bool {

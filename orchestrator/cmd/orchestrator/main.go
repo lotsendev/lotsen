@@ -21,15 +21,15 @@ import (
 )
 
 func dataPath() string {
-	if p := os.Getenv("DIRIGENT_DATA"); p != "" {
+	if p := os.Getenv("LOTSEN_DATA"); p != "" {
 		return p
 	}
-	return "/var/lib/dirigent/deployments.json"
+	return "/var/lib/lotsen/deployments.json"
 }
 
 func main() {
 	interval := 15 * time.Second
-	if v := os.Getenv("DIRIGENT_INTERVAL"); v != "" {
+	if v := os.Getenv("LOTSEN_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			interval = d
 		}
@@ -58,15 +58,15 @@ func main() {
 	startupCancel()
 
 	apiURL := "http://localhost:8080"
-	if v := os.Getenv("DIRIGENT_API_URL"); v != "" {
+	if v := os.Getenv("LOTSEN_API_URL"); v != "" {
 		apiURL = v
 	}
 	proxyHealthURL := "http://localhost/internal/health"
-	if v := os.Getenv("DIRIGENT_PROXY_HEALTH_URL"); v != "" {
+	if v := os.Getenv("LOTSEN_PROXY_HEALTH_URL"); v != "" {
 		proxyHealthURL = v
 	}
 	proxyTrafficURL := "http://localhost/internal/traffic"
-	if v := os.Getenv("DIRIGENT_PROXY_TRAFFIC_URL"); v != "" {
+	if v := os.Getenv("LOTSEN_PROXY_TRAFFIC_URL"); v != "" {
 		proxyTrafficURL = v
 	}
 	notifier := apiclient.New(apiURL)

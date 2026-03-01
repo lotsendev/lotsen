@@ -759,7 +759,7 @@ func TestReconcile_DockerUnavailable_DeployingBecomesFailed(t *testing.T) {
 }
 
 func TestReconcile_DeployingWithDashboardDomainConflict_BecomesFailedWithoutStart(t *testing.T) {
-	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "dashboard.example.com")
+	t.Setenv("LOTSEN_DASHBOARD_DOMAIN", "dashboard.example.com")
 
 	s := &mockStore{
 		deployments: []store.Deployment{

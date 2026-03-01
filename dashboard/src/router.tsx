@@ -91,7 +91,7 @@ function DashboardLayout() {
                 <Rocket className="h-4 w-4" />
               </div>
               <p className="font-[family-name:var(--font-display)] text-lg font-bold tracking-tight text-foreground">
-                dirigent
+                lotsen
               </p>
             </div>
             <div className="flex items-center gap-1">

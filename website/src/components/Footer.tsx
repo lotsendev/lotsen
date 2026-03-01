@@ -23,7 +23,7 @@ export function Footer() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <img
             src="/mascot.png"
-            alt="Dirigent"
+            alt="Lotsen"
             style={{ width: '28px', height: '28px', objectFit: 'contain', opacity: 0.7 }}
           />
           <span
@@ -33,7 +33,7 @@ export function Footer() {
               fontFamily: 'DM Sans, sans-serif',
             }}
           >
-            © {new Date().getFullYear()} Dirigent — MIT License
+            © {new Date().getFullYear()} Lotsen — MIT License
           </span>
         </div>
         <a

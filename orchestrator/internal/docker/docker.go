@@ -37,7 +37,7 @@ type ExitDetails struct {
 	Error     string
 }
 
-// ManagedContainer represents a container managed by Dirigent.
+// ManagedContainer represents a container managed by Lotsen.
 type ManagedContainer struct {
 	ID           string
 	Name         string
@@ -69,7 +69,7 @@ type ContainerStats struct {
 	MemoryPercent    float64
 }
 
-// Docker manages container lifecycle for Dirigent deployments.
+// Docker manages container lifecycle for Lotsen deployments.
 type Docker struct {
 	client      Client
 	proxyURL    string
@@ -116,8 +116,8 @@ func (d *Docker) Start(ctx context.Context, dep store.Deployment) ([]string, err
 		Env:          env,
 		ExposedPorts: exposedPorts,
 		Labels: map[string]string{
-			"dirigent.managed": "true",
-			"dirigent.id":      dep.ID,
+			"lotsen.managed": "true",
+			"lotsen.id":      dep.ID,
 		},
 	}
 
@@ -151,9 +151,9 @@ func (d *Docker) Start(ctx context.Context, dep store.Deployment) ([]string, err
 	return runtimePorts, nil
 }
 
-// ListManagedContainers returns all containers with the dirigent.managed=true label.
+// ListManagedContainers returns all containers with the lotsen.managed=true label.
 func (d *Docker) ListManagedContainers(ctx context.Context) ([]ManagedContainer, error) {
-	f := filters.NewArgs(filters.Arg("label", "dirigent.managed=true"))
+	f := filters.NewArgs(filters.Arg("label", "lotsen.managed=true"))
 	containers, err := d.client.ContainerList(ctx, container.ListOptions{
 		All:     true,
 		Filters: f,
@@ -174,7 +174,7 @@ func (d *Docker) ListManagedContainers(ctx context.Context) ([]ManagedContainer,
 		mc := ManagedContainer{
 			ID:           c.ID,
 			Name:         name,
-			DeploymentID: c.Labels["dirigent.id"],
+			DeploymentID: c.Labels["lotsen.id"],
 			Running:      c.State == "running",
 		}
 		if !mc.Running {
@@ -196,7 +196,7 @@ func (d *Docker) ListManagedContainers(ctx context.Context) ([]ManagedContainer,
 // container keyed by deployment ID.
 func (d *Docker) CollectStats(ctx context.Context) (map[string]ContainerStats, error) {
 	f := filters.NewArgs(
-		filters.Arg("label", "dirigent.managed=true"),
+		filters.Arg("label", "lotsen.managed=true"),
 		filters.Arg("status", "running"),
 	)
 
@@ -210,7 +210,7 @@ func (d *Docker) CollectStats(ctx context.Context) (map[string]ContainerStats, e
 
 	statsByDeployment := make(map[string]ContainerStats, len(containers))
 	for _, c := range containers {
-		deploymentID := strings.TrimSpace(c.Labels["dirigent.id"])
+		deploymentID := strings.TrimSpace(c.Labels["lotsen.id"])
 		if deploymentID == "" {
 			continue
 		}
@@ -291,8 +291,8 @@ func (d *Docker) StartAndReplace(ctx context.Context, dep store.Deployment, oldC
 		Env:          env,
 		ExposedPorts: exposedPorts,
 		Labels: map[string]string{
-			"dirigent.managed": "true",
-			"dirigent.id":      dep.ID,
+			"lotsen.managed": "true",
+			"lotsen.id":      dep.ID,
 		},
 	}
 	hostCfg := &container.HostConfig{
@@ -414,7 +414,7 @@ func envsToSlice(envs map[string]string) []string {
 	return out
 }
 
-// parsePorts converts Dirigent port strings to the Docker port set and binding
+// parsePorts converts Lotsen port strings to the Docker port set and binding
 // map required by HostConfig. Container-only declarations (for example "3001")
 // are rewritten to "0:3001" so Docker assigns an available host port.
 func parsePorts(ports []string) (nat.PortSet, nat.PortMap, error) {
@@ -590,7 +590,7 @@ func upstreamFromRuntimePorts(runtimePorts []string) string {
 }
 
 func proxyURLFromEnv() string {
-	if baseURL := strings.TrimSpace(os.Getenv("DIRIGENT_PROXY_URL")); baseURL != "" {
+	if baseURL := strings.TrimSpace(os.Getenv("LOTSEN_PROXY_URL")); baseURL != "" {
 		return strings.TrimSuffix(baseURL, "/")
 	}
 	return "http://localhost:2019"

@@ -147,7 +147,7 @@ function DashboardMockup({ compact = false }: { compact?: boolean }) {
                 letterSpacing: '-0.02em',
               }}
             >
-              dirigent
+              lotsen
             </span>
           </div>
           {[
@@ -323,14 +323,14 @@ function InstallBlock({ dark = false }: { dark?: boolean }) {
 
 // ── Comparison data ───────────────────────────────────────────────
 const compareRows = [
-  { label: 'Web dashboard', docker: false, dirigent: true, k8s: true },
-  { label: 'Zero-downtime deploys', docker: false, dirigent: true, k8s: true },
-  { label: 'Automatic restarts', docker: false, dirigent: true, k8s: true },
-  { label: 'Integrated reverse proxy', docker: false, dirigent: true, k8s: true },
-  { label: 'VPS-friendly (1 server)', docker: true, dirigent: true, k8s: false },
-  { label: 'Simple setup', docker: true, dirigent: true, k8s: false },
-  { label: 'No YAML sprawl', docker: true, dirigent: true, k8s: false },
-  { label: 'No cluster required', docker: true, dirigent: true, k8s: false },
+  { label: 'Web dashboard', docker: false, lotsen: true, k8s: true },
+  { label: 'Zero-downtime deploys', docker: false, lotsen: true, k8s: true },
+  { label: 'Automatic restarts', docker: false, lotsen: true, k8s: true },
+  { label: 'Integrated reverse proxy', docker: false, lotsen: true, k8s: true },
+  { label: 'VPS-friendly (1 server)', docker: true, lotsen: true, k8s: false },
+  { label: 'Simple setup', docker: true, lotsen: true, k8s: false },
+  { label: 'No YAML sprawl', docker: true, lotsen: true, k8s: false },
+  { label: 'No cluster required', docker: true, lotsen: true, k8s: false },
 ]
 
 // ── Features ──────────────────────────────────────────────────────
@@ -413,7 +413,7 @@ export default function Landing() {
             >
               <img
                 src="/mascot.png"
-                alt="Dirigent mascot — a conducting corgi"
+                alt="Lotsen mascot — a conducting corgi"
                 className="mascot-float"
                 style={{
                   width: '80px',
@@ -460,7 +460,7 @@ export default function Landing() {
               <br />
               Bare Docker is fragile.
               <br />
-              <span style={{ color: 'var(--clr-accent)' }}>Dirigent</span> is just right.
+              <span style={{ color: 'var(--clr-accent)' }}>Lotsen</span> is just right.
             </h1>
 
             {/* Sub */}
@@ -638,7 +638,7 @@ export default function Landing() {
               ))}
             </div>
 
-            {/* Dirigent — highlighted */}
+            {/* Lotsen — highlighted */}
             <div
               style={{
                 padding: '32px',
@@ -671,7 +671,7 @@ export default function Landing() {
                     margin: '0 0 8px 0',
                   }}
                 >
-                  Dirigent ✦
+                  Lotsen ✦
                 </p>
                 <p
                   style={{

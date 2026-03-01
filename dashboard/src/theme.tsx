@@ -10,7 +10,7 @@ type ThemeContextValue = {
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
-const STORAGE_KEY = 'dirigent-theme'
+const STORAGE_KEY = 'lotsen-theme'
 
 export function ThemeProvider({ children, defaultTheme = 'dark' }: { children: ReactNode, defaultTheme?: Theme }) {
   const [theme, setThemeState] = useState<Theme>(() => {

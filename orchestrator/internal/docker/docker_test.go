@@ -201,7 +201,7 @@ func TestDocker_ListManagedContainers(t *testing.T) {
 				ID:     "c1",
 				Names:  []string{"/web"},
 				State:  "running",
-				Labels: map[string]string{"dirigent.managed": "true", "dirigent.id": "d1"},
+				Labels: map[string]string{"lotsen.managed": "true", "lotsen.id": "d1"},
 				Ports:  []dockertypes.Port{},
 				// Satisfy filters check by having the right labels
 			},
@@ -230,7 +230,7 @@ func TestDocker_ListManagedContainers_OOMKilled_PopulatesExitDetails(t *testing.
 				ID:     "c1",
 				Names:  []string{"/web"},
 				State:  "exited",
-				Labels: map[string]string{"dirigent.managed": "true", "dirigent.id": "d1"},
+				Labels: map[string]string{"lotsen.managed": "true", "lotsen.id": "d1"},
 			},
 		},
 		inspectContainer: inspectWithState(137, true, ""),
@@ -278,7 +278,7 @@ func TestDocker_CollectStats_CollectsRunningManagedContainers(t *testing.T) {
 
 	mock := &mockClient{
 		listContainers: []dockertypes.Container{
-			{ID: "c1", Labels: map[string]string{"dirigent.id": "d1"}, State: "running"},
+			{ID: "c1", Labels: map[string]string{"lotsen.id": "d1"}, State: "running"},
 		},
 		statsByContainer: map[string]container.StatsResponseReader{"c1": statsForC1},
 	}
@@ -310,7 +310,7 @@ func TestDocker_CollectStats_CollectsRunningManagedContainers(t *testing.T) {
 func TestDocker_CollectStats_ReturnsErrorOnStatsFailure(t *testing.T) {
 	mock := &mockClient{
 		listContainers: []dockertypes.Container{
-			{ID: "c1", Labels: map[string]string{"dirigent.id": "d1"}, State: "running"},
+			{ID: "c1", Labels: map[string]string{"lotsen.id": "d1"}, State: "running"},
 		},
 		statsErr: errors.New("stats unavailable"),
 	}
@@ -329,7 +329,7 @@ func TestDocker_ListManagedContainers_InspectFails_ExitDetailsNil(t *testing.T) 
 				ID:     "c1",
 				Names:  []string{"/web"},
 				State:  "exited",
-				Labels: map[string]string{"dirigent.managed": "true", "dirigent.id": "d1"},
+				Labels: map[string]string{"lotsen.managed": "true", "lotsen.id": "d1"},
 			},
 		},
 		inspectErr: errors.New("inspect failed"),
@@ -496,7 +496,7 @@ func TestDocker_StartAndReplace_DomainConfigured_SwapsProxyBeforeStoppingOld(t *
 	}))
 	defer proxy.Close()
 
-	t.Setenv("DIRIGENT_PROXY_URL", proxy.URL)
+	t.Setenv("LOTSEN_PROXY_URL", proxy.URL)
 
 	mock := &mockClient{
 		containerCreate:  container.CreateResponse{ID: "new-c1"},
@@ -530,7 +530,7 @@ func TestDocker_StartAndReplace_ProxySwapFails_CleansUpNewAndKeepsOld(t *testing
 	}))
 	defer proxy.Close()
 
-	t.Setenv("DIRIGENT_PROXY_URL", proxy.URL)
+	t.Setenv("LOTSEN_PROXY_URL", proxy.URL)
 
 	mock := &mockClient{
 		containerCreate:  container.CreateResponse{ID: "new-c1"},

@@ -331,7 +331,7 @@ export function SettingsPage() {
           <DialogHeader>
             <DialogTitle>Confirm upgrade</DialogTitle>
             <DialogDescription>
-              Dirigent services will briefly restart while the installer runs. Continue only if a short interruption is safe.
+              Lotsen services will briefly restart while the installer runs. Continue only if a short interruption is safe.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-lg border border-border/60 bg-background/70 p-3 text-sm text-muted-foreground">

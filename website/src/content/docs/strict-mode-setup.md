@@ -4,7 +4,7 @@ Use this guide when you want the strongest default hardening for an internet-fac
 
 ## What strict mode means
 
-Dirigent has two separate security controls:
+Lotsen has two separate security controls:
 
 - **Host security profile** (`--profile`): configures host-level firewall and SSH behavior.
 - **Proxy hardening profile** (`--proxy-hardening-profile`): filters suspicious inbound HTTP paths and scanner traffic.
@@ -27,23 +27,23 @@ If you expose the dashboard on a domain, also prepare DNS:
 
 ## Install with strict mode
 
-If Dirigent is not installed yet:
+If Lotsen is not installed yet:
 
 ```bash
 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
-sudo dirigent setup --profile strict --proxy-hardening-profile strict
+sudo lotsen setup --profile strict --proxy-hardening-profile strict
 ```
 
-If Dirigent is already installed, re-run setup:
+If Lotsen is already installed, re-run setup:
 
 ```bash
-sudo dirigent setup --profile strict --proxy-hardening-profile strict
+sudo lotsen setup --profile strict --proxy-hardening-profile strict
 ```
 
 For automation/non-interactive environments:
 
 ```bash
-sudo DIRIGENT_SECURITY_PROFILE=strict DIRIGENT_PROXY_HARDENING_PROFILE=strict DIRIGENT_NON_INTERACTIVE=1 dirigent setup
+sudo LOTSEN_SECURITY_PROFILE=strict LOTSEN_PROXY_HARDENING_PROFILE=strict LOTSEN_NON_INTERACTIVE=1 lotsen setup
 ```
 
 ## Optional: expose dashboard with HTTPS and Basic Auth
@@ -51,7 +51,7 @@ sudo DIRIGENT_SECURITY_PROFILE=strict DIRIGENT_PROXY_HARDENING_PROFILE=strict DI
 Interactive mode:
 
 ```bash
-sudo dirigent setup --profile strict --proxy-hardening-profile strict
+sudo lotsen setup --profile strict --proxy-hardening-profile strict
 ```
 
 Then choose dashboard exposure and provide:
@@ -63,7 +63,7 @@ Then choose dashboard exposure and provide:
 Non-interactive mode:
 
 ```bash
-sudo DIRIGENT_SECURITY_PROFILE=strict DIRIGENT_PROXY_HARDENING_PROFILE=strict DIRIGENT_DASHBOARD_DOMAIN=dashboard.example.com DIRIGENT_DASHBOARD_USER=admin DIRIGENT_DASHBOARD_PASSWORD='change-me' DIRIGENT_NON_INTERACTIVE=1 dirigent setup
+sudo LOTSEN_SECURITY_PROFILE=strict LOTSEN_PROXY_HARDENING_PROFILE=strict LOTSEN_DASHBOARD_DOMAIN=dashboard.example.com LOTSEN_DASHBOARD_USER=admin LOTSEN_DASHBOARD_PASSWORD='change-me' LOTSEN_NON_INTERACTIVE=1 lotsen setup
 ```
 
 ## What gets hardened
@@ -85,16 +85,16 @@ sudo DIRIGENT_SECURITY_PROFILE=strict DIRIGENT_PROXY_HARDENING_PROFILE=strict DI
 Run these checks on the VPS:
 
 ```bash
-systemctl status dirigent-api
-systemctl status dirigent-orchestrator
-systemctl status dirigent-proxy
+systemctl status lotsen-api
+systemctl status lotsen-orchestrator
+systemctl status lotsen-proxy
 sudo ufw status verbose
 ```
 
 Inspect proxy logs if needed:
 
 ```bash
-journalctl -u dirigent-proxy -n 100
+journalctl -u lotsen-proxy -n 100
 ```
 
 If dashboard exposure is enabled, confirm HTTPS works:
@@ -109,10 +109,10 @@ If certificates are not issued:
 
 - confirm DNS points to the VPS,
 - confirm port `80` is open and reachable,
-- check `dirigent-proxy` logs for ACME errors.
+- check `lotsen-proxy` logs for ACME errors.
 
 If strict mode is too restrictive for your environment, re-run setup with a less strict profile:
 
 ```bash
-sudo dirigent setup --profile standard --proxy-hardening-profile standard
+sudo lotsen setup --profile standard --proxy-hardening-profile standard
 ```

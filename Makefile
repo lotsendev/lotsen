@@ -11,9 +11,9 @@ setup:
 # concurrently in a single terminal. Ctrl+C shuts down both processes cleanly.
 dev:
 	@trap 'kill 0' SIGINT; \
-	(cd api && DIRIGENT_DATA=/tmp/dirigent.json DIRIGENT_PROXY_ACCESS_LOG_DIR=/tmp/dirigent-proxy-logs $(AIR)) & \
-	(cd orchestrator && DIRIGENT_DATA=/tmp/dirigent.json DIRIGENT_PROXY_HEALTH_URL=http://localhost:8090/internal/health DIRIGENT_PROXY_TRAFFIC_URL=http://localhost:8090/internal/traffic $(AIR)) & \
-	(cd proxy && DIRIGENT_DATA=/tmp/dirigent.json DIRIGENT_PROXY_ADDR=:8090 DIRIGENT_PROXY_HTTPS_ADDR=:8443 DIRIGENT_CERT_CACHE_DIR=/tmp/dirigent-certs DIRIGENT_PROXY_ACCESS_LOG_DIR=/tmp/dirigent-proxy-logs $(AIR)) & \
+	(cd api && LOTSEN_DATA=/tmp/lotsen.json LOTSEN_PROXY_ACCESS_LOG_DIR=/tmp/lotsen-proxy-logs $(AIR)) & \
+	(cd orchestrator && LOTSEN_DATA=/tmp/lotsen.json LOTSEN_PROXY_HEALTH_URL=http://localhost:8090/internal/health LOTSEN_PROXY_TRAFFIC_URL=http://localhost:8090/internal/traffic $(AIR)) & \
+	(cd proxy && LOTSEN_DATA=/tmp/lotsen.json LOTSEN_PROXY_ADDR=:8090 LOTSEN_PROXY_HTTPS_ADDR=:8443 LOTSEN_CERT_CACHE_DIR=/tmp/lotsen-certs LOTSEN_PROXY_ACCESS_LOG_DIR=/tmp/lotsen-proxy-logs $(AIR)) & \
 	(cd dashboard && bun run dev) & \
 	wait
 
@@ -22,10 +22,10 @@ build:
 	cd dashboard && bun run build
 	mkdir -p api/internal/dashboard/static
 	cp -R dashboard/dist/. api/internal/dashboard/static/
-	cd cli && go build -o ../dirigent-cli ./cmd/dirigent
-	cd api && go build -o ../dirigent ./cmd/dirigent
-	cd orchestrator && go build -o ../dirigent-orchestrator ./cmd/orchestrator
-	cd proxy && go build -o ../dirigent-proxy ./cmd/proxy
+	cd cli && go build -o ../lotsen-cli ./cmd/lotsen
+	cd api && go build -o ../lotsen ./cmd/lotsen
+	cd orchestrator && go build -o ../lotsen-orchestrator ./cmd/orchestrator
+	cd proxy && go build -o ../lotsen-proxy ./cmd/proxy
 
 # Run the Go test suites.
 test:
@@ -43,5 +43,5 @@ release:
 
 # Remove build artifacts.
 clean:
-	rm -f dirigent-cli dirigent dirigent-orchestrator dirigent-proxy
+	rm -f lotsen-cli lotsen lotsen-orchestrator lotsen-proxy
 	rm -rf api/tmp orchestrator/tmp proxy/tmp

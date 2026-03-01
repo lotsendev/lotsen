@@ -696,7 +696,7 @@ func TestRecordOrchestratorHeartbeat_RejectsInvalidHostMetricPercent(t *testing.
 
 func TestLoadBalancerAccessLogs_PaginatesNewestFirst(t *testing.T) {
 	logDir := t.TempDir()
-	t.Setenv("DIRIGENT_PROXY_ACCESS_LOG_DIR", logDir)
+	t.Setenv("LOTSEN_PROXY_ACCESS_LOG_DIR", logDir)
 
 	writeAccessLogFile := func(name string, lines []string) {
 		t.Helper()
@@ -777,7 +777,7 @@ func TestLoadBalancerAccessLogs_PaginatesNewestFirst(t *testing.T) {
 }
 
 func TestLoadBalancerAccessLogs_InvalidCursorReturns400(t *testing.T) {
-	t.Setenv("DIRIGENT_PROXY_ACCESS_LOG_DIR", t.TempDir())
+	t.Setenv("LOTSEN_PROXY_ACCESS_LOG_DIR", t.TempDir())
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
@@ -794,7 +794,7 @@ func TestLoadBalancerAccessLogs_InvalidCursorReturns400(t *testing.T) {
 
 func TestLoadBalancerAccessLogs_FiltersByMethodStatusHostAndIP(t *testing.T) {
 	logDir := t.TempDir()
-	t.Setenv("DIRIGENT_PROXY_ACCESS_LOG_DIR", logDir)
+	t.Setenv("LOTSEN_PROXY_ACCESS_LOG_DIR", logDir)
 
 	path := filepath.Join(logDir, "access-2026-02-24-20.log")
 	content := strings.Join([]string{
@@ -843,7 +843,7 @@ func TestLoadBalancerAccessLogs_FiltersByMethodStatusHostAndIP(t *testing.T) {
 }
 
 func TestLoadBalancerAccessLogs_InvalidStatusFilterReturns400(t *testing.T) {
-	t.Setenv("DIRIGENT_PROXY_ACCESS_LOG_DIR", t.TempDir())
+	t.Setenv("LOTSEN_PROXY_ACCESS_LOG_DIR", t.TempDir())
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
@@ -1120,7 +1120,7 @@ func TestCreateDeployment_DuplicateName(t *testing.T) {
 }
 
 func TestCreateDeployment_DashboardDomainConflict(t *testing.T) {
-	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "dashboard.example.com")
+	t.Setenv("LOTSEN_DASHBOARD_DOMAIN", "dashboard.example.com")
 
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
@@ -1819,7 +1819,7 @@ func TestPatchDeployment_DomainOnly_DoesNotRedeploy(t *testing.T) {
 }
 
 func TestPatchDeployment_DashboardDomainConflict(t *testing.T) {
-	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "dashboard.example.com")
+	t.Setenv("LOTSEN_DASHBOARD_DOMAIN", "dashboard.example.com")
 
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{
@@ -2154,7 +2154,7 @@ func TestUpdateDeployment_DomainOnly_DoesNotRedeploy(t *testing.T) {
 }
 
 func TestUpdateDeployment_DashboardDomainConflict(t *testing.T) {
-	t.Setenv("DIRIGENT_DASHBOARD_DOMAIN", "dashboard.example.com")
+	t.Setenv("LOTSEN_DASHBOARD_DOMAIN", "dashboard.example.com")
 
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{
@@ -2800,7 +2800,7 @@ func TestAccessLogs_ProxiesProxyLogs(t *testing.T) {
 	}))
 	defer proxy.Close()
 
-	t.Setenv("DIRIGENT_PROXY_INTERNAL_URL", proxy.URL)
+	t.Setenv("LOTSEN_PROXY_INTERNAL_URL", proxy.URL)
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
@@ -2831,7 +2831,7 @@ func TestSecurityConfig_ProxiesProxySettings(t *testing.T) {
 	}))
 	defer proxy.Close()
 
-	t.Setenv("DIRIGENT_PROXY_INTERNAL_URL", proxy.URL)
+	t.Setenv("LOTSEN_PROXY_INTERNAL_URL", proxy.URL)
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
 

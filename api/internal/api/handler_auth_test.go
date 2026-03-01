@@ -57,12 +57,12 @@ func TestLogin_ValidCredentials(t *testing.T) {
 
 	var found bool
 	for _, c := range resp.Cookies() {
-		if c.Name == "dirigent_token" && c.Value != "" {
+		if c.Name == "lotsen_token" && c.Value != "" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("want dirigent_token cookie in response")
+		t.Error("want lotsen_token cookie in response")
 	}
 }
 
@@ -130,12 +130,12 @@ func TestLogout_ClearsCookie(t *testing.T) {
 
 	var found bool
 	for _, c := range resp.Cookies() {
-		if c.Name == "dirigent_token" && c.MaxAge < 0 {
+		if c.Name == "lotsen_token" && c.MaxAge < 0 {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("want dirigent_token cookie cleared (MaxAge<0)")
+		t.Error("want lotsen_token cookie cleared (MaxAge<0)")
 	}
 }
 
@@ -149,7 +149,7 @@ func TestMe_ValidToken(t *testing.T) {
 	}
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/auth/me", nil)
-	req.AddCookie(&http.Cookie{Name: "dirigent_token", Value: token})
+	req.AddCookie(&http.Cookie{Name: "lotsen_token", Value: token})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /auth/me: %v", err)
@@ -201,7 +201,7 @@ func TestProtectedRoute_AllowsWithToken(t *testing.T) {
 	}
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/deployments", nil)
-	req.AddCookie(&http.Cookie{Name: "dirigent_token", Value: token})
+	req.AddCookie(&http.Cookie{Name: "lotsen_token", Value: token})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /api/deployments: %v", err)

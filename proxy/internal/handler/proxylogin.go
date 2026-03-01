@@ -16,7 +16,7 @@ var loginPageHTML string
 var loginTmpl = template.Must(template.New("login").Parse(loginPageHTML))
 
 const (
-	tokenCookieName = "dirigent_token"
+	tokenCookieName = "lotsen_token"
 	tokenExpiry     = 24 * time.Hour
 )
 
@@ -48,7 +48,7 @@ func (h *Handler) serveLoginPage(w http.ResponseWriter, r *http.Request, errMsg 
 	}
 }
 
-// proxyLogin handles POST /__dirigent/login for private-deployment authentication.
+// proxyLogin handles POST /__lotsen/login for private-deployment authentication.
 func (h *Handler) proxyLogin(w http.ResponseWriter, r *http.Request) {
 	if h.authStore == nil || len(h.jwtSecret) == 0 {
 		http.Error(w, "auth not configured", http.StatusServiceUnavailable)

@@ -17,9 +17,9 @@ const (
 )
 
 var coreServiceUnits = map[string]string{
-	"api":          "dirigent-api",
-	"orchestrator": "dirigent-orchestrator",
-	"proxy":        "dirigent-proxy",
+	"api":          "lotsen-api",
+	"orchestrator": "lotsen-orchestrator",
+	"proxy":        "lotsen-proxy",
 }
 
 type coreServiceLogsResponse struct {

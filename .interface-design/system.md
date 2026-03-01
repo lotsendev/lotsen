@@ -1,4 +1,4 @@
-# Dirigent Interface System
+# Lotsen Interface System
 
 ## Direction and Feel
 - **Direction:** Fleet control board for deployment operations.

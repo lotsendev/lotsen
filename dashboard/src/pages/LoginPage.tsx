@@ -28,7 +28,7 @@ export function LoginPage() {
             <Rocket className="h-5 w-5" />
           </div>
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight">
-            dirigent
+            lotsen
           </h1>
           <p className="text-sm text-muted-foreground">Sign in to continue</p>
         </div>

@@ -1,6 +1,6 @@
 ## Getting Started
 
-Dirigent installs as three systemd services on your VPS. This guide walks you from a fresh Ubuntu or Debian server to running your first container in under five minutes.
+Lotsen installs as three systemd services on your VPS. This guide walks you from a fresh Ubuntu or Debian server to running your first container in under five minutes.
 
 ## Prerequisites
 
@@ -21,32 +21,32 @@ Run the following command on your VPS:
 The installer will:
 
 - Install Docker if it is not already present.
-- Download and install the three Dirigent binaries.
-- Create a Docker bridge network named `dirigent`.
-- Write and enable three systemd units: `dirigent-api`, `dirigent-orchestrator`, and `dirigent-proxy`.
+- Download and install the three Lotsen binaries.
+- Create a Docker bridge network named `lotsen`.
+- Write and enable three systemd units: `lotsen-api`, `lotsen-orchestrator`, and `lotsen-proxy`.
 - Prompt for optional dashboard domain + Basic Auth setup (works in normal SSH sessions, including piped install commands).
 
-> **Tip:** To pin a specific version, prefix the command with `DIRIGENT_VERSION=v0.0.2` before the curl.
+> **Tip:** To pin a specific version, prefix the command with `LOTSEN_VERSION=v0.0.2` before the curl.
 
 ## Verify the installation
 
 Once the installer completes, confirm all services are running:
 
 ```bash
-systemctl status dirigent-api
-systemctl status dirigent-orchestrator
-systemctl status dirigent-proxy
+systemctl status lotsen-api
+systemctl status lotsen-orchestrator
+systemctl status lotsen-proxy
 ```
 
 Each service should report `active (running)`. If one has failed, inspect its logs:
 
 ```bash
-journalctl -u dirigent-api -n 50
+journalctl -u lotsen-api -n 50
 ```
 
 ## Access the dashboard
 
-By default, the dashboard is available on port `8080` (served by `dirigent-api`):
+By default, the dashboard is available on port `8080` (served by `lotsen-api`):
 
 ```text
 http://<your-vps-ip>:8080
@@ -59,10 +59,10 @@ The orchestrator has no public inbound port.
 You can configure or update dashboard proxy exposure any time:
 
 ```bash
-sudo dirigent setup
+sudo lotsen setup
 ```
 
-The setup command writes values to `/etc/dirigent/dirigent.env`, restarts the proxy, and enables dashboard access at `https://dashboard.example.com` and protected by HTTP Basic Auth.
+The setup command writes values to `/etc/lotsen/lotsen.env`, restarts the proxy, and enables dashboard access at `https://dashboard.example.com` and protected by HTTP Basic Auth.
 
 ### Proxy hardening
 
@@ -75,7 +75,7 @@ The proxy ships with three hardening profiles:
 Pass the flag during setup:
 
 ```bash
-sudo dirigent setup --proxy-hardening-profile strict
+sudo lotsen setup --proxy-hardening-profile strict
 ```
 
 ### Strict mode (recommended for public VPS)
@@ -83,7 +83,7 @@ sudo dirigent setup --proxy-hardening-profile strict
 Use strict host hardening and strict proxy hardening together when your server is internet-facing:
 
 ```bash
-sudo dirigent setup --profile strict --proxy-hardening-profile strict
+sudo lotsen setup --profile strict --proxy-hardening-profile strict
 ```
 
 This applies stricter firewall and SSH defaults on the host, plus stronger scanner/path protections at the proxy layer.
@@ -94,7 +94,7 @@ For the full checklist (SSH key prerequisites, DNS, verification, and troublesho
 
 ### 1. Open the Deployments page
 
-In the sidebar, click **Deployments**. This lists all containers Dirigent is currently managing.
+In the sidebar, click **Deployments**. This lists all containers Lotsen is currently managing.
 
 ### 2. Click "Create deployment"
 
@@ -110,7 +110,7 @@ For a quick test, deploy a simple nginx container:
 
 ### 4. Save
 
-Click **Create**. Dirigent stores the deployment, and the orchestrator pulls the image and starts the container.
+Click **Create**. Lotsen stores the deployment, and the orchestrator pulls the image and starts the container.
 
 ### 5. Verify status
 
@@ -123,13 +123,13 @@ Back on the Deployments table, wait for status to become `healthy`.
 
 ## Upgrading
 
-Dirigent can be upgraded in two ways:
+Lotsen can be upgraded in two ways:
 
 - **Dashboard:** Open **Settings → System** and click **Check for updates**. If a new version is available, click **Upgrade** to trigger an in-place upgrade without leaving the browser.
 - **CLI:** Re-run the installer on your VPS:
   ```bash
   curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
-  sudo dirigent setup
+  sudo lotsen setup
   ```
 
 Both paths perform an in-place upgrade and restart the services.

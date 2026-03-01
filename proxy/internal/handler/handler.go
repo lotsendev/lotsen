@@ -110,7 +110,7 @@ func (h *Handler) RegisterInternalRoutes(mux *http.ServeMux) {
 
 // RegisterProxyRoutes wires the proxy catch-all route into mux.
 func (h *Handler) RegisterProxyRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /__dirigent/login", h.proxyLogin)
+	mux.HandleFunc("POST /__lotsen/login", h.proxyLogin)
 	mux.HandleFunc("/", h.proxy)
 }
 
@@ -280,14 +280,14 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
 		if !middleware.ValidBasicAuth(r, h.dashboardAuth.Username, h.dashboardAuth.Password) {
 			outcome = "unauthorized"
-			middleware.WriteBasicAuthChallenge(rw, "Dirigent")
+			middleware.WriteBasicAuthChallenge(rw, "Lotsen")
 			return
 		}
 	}
 
 	if !middleware.ValidBasicAuthUsers(r, route.BasicAuth) {
 		outcome = "unauthorized"
-		middleware.WriteBasicAuthChallenge(rw, "Dirigent")
+		middleware.WriteBasicAuthChallenge(rw, "Lotsen")
 		return
 	}
 

@@ -48,7 +48,7 @@ export function Navbar() {
         >
           <img
             src="/mascot.png"
-            alt="Dirigent mascot"
+            alt="Lotsen mascot"
             style={{ width: '32px', height: '32px', objectFit: 'contain' }}
           />
           <span
@@ -60,7 +60,7 @@ export function Navbar() {
               letterSpacing: '-0.03em',
             }}
           >
-            dirigent
+            lotsen
           </span>
         </Link>
 

@@ -19,7 +19,7 @@ var ErrTokenInvalid = errors.New("token invalid")
 
 const jwtHeader = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" // base64url({"alg":"HS256","typ":"JWT"})
 
-// Claims holds the payload of a Dirigent JWT token.
+// Claims holds the payload of a Lotsen JWT token.
 type Claims struct {
 	Username  string `json:"sub"`
 	IssuedAt  int64  `json:"iat"`

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	apiTokenCookieName = "dirigent_token"
+	apiTokenCookieName = "lotsen_token"
 	apiTokenExpiry     = 24 * time.Hour
 )
 

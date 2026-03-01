@@ -106,8 +106,8 @@ func (s *LogStreamer) RecentLogs(ctx context.Context, deploymentID string, tail 
 
 func (s *LogStreamer) latestContainer(ctx context.Context, deploymentID string) (*dockertypes.Container, error) {
 	f := filters.NewArgs(
-		filters.Arg("label", "dirigent.managed=true"),
-		filters.Arg("label", "dirigent.id="+deploymentID),
+		filters.Arg("label", "lotsen.managed=true"),
+		filters.Arg("label", "lotsen.id="+deploymentID),
 	)
 	containers, err := s.client.ContainerList(ctx, container.ListOptions{All: true, Filters: f})
 	if err != nil {

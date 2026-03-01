@@ -23,16 +23,16 @@ const addr = ":8080"
 var version = "dev"
 
 func dataPath() string {
-	if p := os.Getenv("DIRIGENT_DATA"); p != "" {
+	if p := os.Getenv("LOTSEN_DATA"); p != "" {
 		return p
 	}
-	return "/var/lib/dirigent/deployments.json"
+	return "/var/lib/lotsen/deployments.json"
 }
 
 func main() {
 	s, err := store.NewJSONStore(dataPath())
 	if err != nil {
-		log.Fatalf("dirigent: open store: %v", err)
+		log.Fatalf("lotsen: open store: %v", err)
 	}
 
 	dc, err := dockerclient.NewClientWithOpts(
@@ -40,7 +40,7 @@ func main() {
 		dockerclient.WithAPIVersionNegotiation(),
 	)
 	if err != nil {
-		log.Fatalf("dirigent: create docker client: %v", err)
+		log.Fatalf("lotsen: create docker client: %v", err)
 	}
 	defer dc.Close()
 
@@ -49,13 +49,13 @@ func main() {
 
 	userStore, jwtSecret, err := authFromEnv(dataPath())
 	if err != nil {
-		log.Fatalf("dirigent: %v", err)
+		log.Fatalf("lotsen: %v", err)
 	}
 	if userStore != nil {
 		defer userStore.Close()
-		log.Printf("dirigent: auth enabled")
+		log.Printf("lotsen: auth enabled")
 	} else {
-		log.Printf("dirigent: auth disabled (set DIRIGENT_JWT_SECRET to enable)")
+		log.Printf("lotsen: auth disabled (set LOTSEN_JWT_SECRET to enable)")
 	}
 
 	h := internalapi.NewWithVersion(s, broker, logStreamer, version)
@@ -65,14 +65,14 @@ func main() {
 	h.RegisterRoutes(mux)
 	handler := dashboard.New(mux)
 
-	log.Printf("dirigent API listening on %s", addr)
+	log.Printf("lotsen API listening on %s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
-		log.Fatalf("dirigent: %v", err)
+		log.Fatalf("lotsen: %v", err)
 	}
 }
 
 func authFromEnv(storePath string) (*auth.UserStore, []byte, error) {
-	secret := strings.TrimSpace(os.Getenv("DIRIGENT_JWT_SECRET"))
+	secret := strings.TrimSpace(os.Getenv("LOTSEN_JWT_SECRET"))
 	if secret == "" {
 		return nil, nil, nil
 	}
@@ -84,8 +84,8 @@ func authFromEnv(storePath string) (*auth.UserStore, []byte, error) {
 	}
 
 	// Bootstrap credentials from env on startup.
-	user := strings.TrimSpace(os.Getenv("DIRIGENT_AUTH_USER"))
-	password := strings.TrimSpace(os.Getenv("DIRIGENT_AUTH_PASSWORD"))
+	user := strings.TrimSpace(os.Getenv("LOTSEN_AUTH_USER"))
+	password := strings.TrimSpace(os.Getenv("LOTSEN_AUTH_PASSWORD"))
 	if user != "" && password != "" {
 		if err := userStore.SetPassword(user, password); err != nil {
 			userStore.Close()
@@ -98,7 +98,7 @@ func authFromEnv(storePath string) (*auth.UserStore, []byte, error) {
 			return nil, nil, fmt.Errorf("check users: %w", err)
 		}
 		if !has {
-			log.Printf("dirigent: WARNING: no users in store and DIRIGENT_AUTH_USER/DIRIGENT_AUTH_PASSWORD not set; login will not work")
+			log.Printf("lotsen: WARNING: no users in store and LOTSEN_AUTH_USER/LOTSEN_AUTH_PASSWORD not set; login will not work")
 		}
 	}
 

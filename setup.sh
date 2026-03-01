@@ -56,28 +56,60 @@ validate_domain() {
 }
 
 write_dashboard_env() {
-    local domain="$1"
-    local user="$2"
-    local password="$3"
+    local dashboard_domain="$1"
+    local dashboard_user="$2"
+    local dashboard_password="$3"
+    local auth_user="$4"
+    local auth_password="$5"
+    local jwt_secret="$6"
     local tmp
 
     install -m 700 -d /etc/dirigent
     tmp=$(mktemp)
 
     if [ -f "${ENV_FILE}" ]; then
-        awk '!/^DIRIGENT_DASHBOARD_(DOMAIN|USER|PASSWORD)=/' "${ENV_FILE}" > "${tmp}"
+        awk '!/^(DIRIGENT|LOTSEN)_(DASHBOARD_(DOMAIN|USER|PASSWORD)|AUTH_(USER|PASSWORD)|JWT_SECRET)=/' "${ENV_FILE}" > "${tmp}"
     fi
 
-    if [ -n "${domain}" ]; then
+    if [ -n "${dashboard_domain}" ]; then
         {
-            echo "DIRIGENT_DASHBOARD_DOMAIN=${domain}"
-            echo "DIRIGENT_DASHBOARD_USER=${user}"
-            echo "DIRIGENT_DASHBOARD_PASSWORD=${password}"
+            echo "DIRIGENT_DASHBOARD_DOMAIN=${dashboard_domain}"
+            echo "DIRIGENT_DASHBOARD_USER=${dashboard_user}"
+            echo "DIRIGENT_DASHBOARD_PASSWORD=${dashboard_password}"
+            echo "LOTSEN_DASHBOARD_DOMAIN=${dashboard_domain}"
+            echo "LOTSEN_DASHBOARD_USER=${dashboard_user}"
+            echo "LOTSEN_DASHBOARD_PASSWORD=${dashboard_password}"
         } >> "${tmp}"
     fi
 
+    {
+        echo "DIRIGENT_JWT_SECRET=${jwt_secret}"
+        echo "DIRIGENT_AUTH_USER=${auth_user}"
+        echo "DIRIGENT_AUTH_PASSWORD=${auth_password}"
+        echo "LOTSEN_JWT_SECRET=${jwt_secret}"
+        echo "LOTSEN_AUTH_USER=${auth_user}"
+        echo "LOTSEN_AUTH_PASSWORD=${auth_password}"
+    } >> "${tmp}"
+
     install -m 600 "${tmp}" "${ENV_FILE}"
     rm -f "${tmp}"
+}
+
+read_env_value() {
+    local key="$1"
+    if [ ! -f "${ENV_FILE}" ]; then
+        return 0
+    fi
+    grep "^${key}=" "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true
+}
+
+generate_hex_secret() {
+    local bytes="$1"
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex "${bytes}"
+        return 0
+    fi
+    od -An -N "${bytes}" -tx1 /dev/urandom | tr -d ' \n'
 }
 
 choose_security_profile() {
@@ -389,11 +421,37 @@ fi
 DASHBOARD_DOMAIN="${DIRIGENT_DASHBOARD_DOMAIN:-}"
 DASHBOARD_USER="${DIRIGENT_DASHBOARD_USER:-}"
 DASHBOARD_PASSWORD="${DIRIGENT_DASHBOARD_PASSWORD:-}"
+AUTH_USER="${DIRIGENT_AUTH_USER:-${LOTSEN_AUTH_USER:-}}"
+AUTH_PASSWORD="${DIRIGENT_AUTH_PASSWORD:-${LOTSEN_AUTH_PASSWORD:-}}"
+JWT_SECRET="${DIRIGENT_JWT_SECRET:-${LOTSEN_JWT_SECRET:-}}"
+GENERATED_AUTH_PASSWORD=0
+GENERATED_JWT_SECRET=0
 
 if [ -f "${ENV_FILE}" ]; then
-    EXISTING_DASHBOARD_DOMAIN=$(grep '^DIRIGENT_DASHBOARD_DOMAIN=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
-    EXISTING_DASHBOARD_USER=$(grep '^DIRIGENT_DASHBOARD_USER=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
-    EXISTING_DASHBOARD_PASSWORD=$(grep '^DIRIGENT_DASHBOARD_PASSWORD=' "${ENV_FILE}" | tail -n1 | cut -d'=' -f2- || true)
+    EXISTING_DASHBOARD_DOMAIN=$(read_env_value "DIRIGENT_DASHBOARD_DOMAIN")
+    EXISTING_DASHBOARD_USER=$(read_env_value "DIRIGENT_DASHBOARD_USER")
+    EXISTING_DASHBOARD_PASSWORD=$(read_env_value "DIRIGENT_DASHBOARD_PASSWORD")
+    EXISTING_AUTH_USER=$(read_env_value "DIRIGENT_AUTH_USER")
+    EXISTING_AUTH_PASSWORD=$(read_env_value "DIRIGENT_AUTH_PASSWORD")
+    EXISTING_JWT_SECRET=$(read_env_value "DIRIGENT_JWT_SECRET")
+    if [ -z "${EXISTING_DASHBOARD_DOMAIN}" ]; then
+        EXISTING_DASHBOARD_DOMAIN=$(read_env_value "LOTSEN_DASHBOARD_DOMAIN")
+    fi
+    if [ -z "${EXISTING_DASHBOARD_USER}" ]; then
+        EXISTING_DASHBOARD_USER=$(read_env_value "LOTSEN_DASHBOARD_USER")
+    fi
+    if [ -z "${EXISTING_DASHBOARD_PASSWORD}" ]; then
+        EXISTING_DASHBOARD_PASSWORD=$(read_env_value "LOTSEN_DASHBOARD_PASSWORD")
+    fi
+    if [ -z "${EXISTING_AUTH_USER}" ]; then
+        EXISTING_AUTH_USER=$(read_env_value "LOTSEN_AUTH_USER")
+    fi
+    if [ -z "${EXISTING_AUTH_PASSWORD}" ]; then
+        EXISTING_AUTH_PASSWORD=$(read_env_value "LOTSEN_AUTH_PASSWORD")
+    fi
+    if [ -z "${EXISTING_JWT_SECRET}" ]; then
+        EXISTING_JWT_SECRET=$(read_env_value "LOTSEN_JWT_SECRET")
+    fi
 
     if [ -z "${DASHBOARD_DOMAIN}" ] && [ -n "${EXISTING_DASHBOARD_DOMAIN}" ]; then
         DASHBOARD_DOMAIN="${EXISTING_DASHBOARD_DOMAIN}"
@@ -404,6 +462,27 @@ if [ -f "${ENV_FILE}" ]; then
     if [ -z "${DASHBOARD_PASSWORD}" ] && [ -n "${EXISTING_DASHBOARD_PASSWORD}" ]; then
         DASHBOARD_PASSWORD="${EXISTING_DASHBOARD_PASSWORD}"
     fi
+    if [ -z "${AUTH_USER}" ] && [ -n "${EXISTING_AUTH_USER}" ]; then
+        AUTH_USER="${EXISTING_AUTH_USER}"
+    fi
+    if [ -z "${AUTH_PASSWORD}" ] && [ -n "${EXISTING_AUTH_PASSWORD}" ]; then
+        AUTH_PASSWORD="${EXISTING_AUTH_PASSWORD}"
+    fi
+    if [ -z "${JWT_SECRET}" ] && [ -n "${EXISTING_JWT_SECRET}" ]; then
+        JWT_SECRET="${EXISTING_JWT_SECRET}"
+    fi
+fi
+
+if [ -z "${AUTH_USER}" ]; then
+    AUTH_USER="admin"
+fi
+if [ -z "${AUTH_PASSWORD}" ]; then
+    AUTH_PASSWORD=$(generate_hex_secret 16)
+    GENERATED_AUTH_PASSWORD=1
+fi
+if [ -z "${JWT_SECRET}" ]; then
+    JWT_SECRET=$(generate_hex_secret 32)
+    GENERATED_JWT_SECRET=1
 fi
 
 if [ -t 0 ] && [ "${DIRIGENT_NON_INTERACTIVE:-0}" != "1" ] && [ "${DIRIGENT_UPGRADE:-0}" != "1" ]; then
@@ -476,7 +555,7 @@ if [ -n "${DASHBOARD_DOMAIN}" ] || [ -n "${DASHBOARD_USER}" ] || [ -n "${DASHBOA
 fi
 
 step "Writing shared environment file"
-write_dashboard_env "${DASHBOARD_DOMAIN}" "${DASHBOARD_USER}" "${DASHBOARD_PASSWORD}"
+write_dashboard_env "${DASHBOARD_DOMAIN}" "${DASHBOARD_USER}" "${DASHBOARD_PASSWORD}" "${AUTH_USER}" "${AUTH_PASSWORD}" "${JWT_SECRET}"
 
 configure_firewall "${SECURITY_PROFILE}"
 if [ "${SECURITY_PROFILE}" = "strict" ]; then
@@ -604,6 +683,13 @@ if [ -n "${DASHBOARD_DOMAIN}" ]; then
     echo "              (Basic Auth user: ${DASHBOARD_USER})"
 else
     echo "  Dashboard:  http://${SERVER_IP}:8080"
+fi
+echo "  Dashboard login user: ${AUTH_USER}"
+if [ "${GENERATED_AUTH_PASSWORD}" = "1" ]; then
+    echo "  Dashboard login password: ${AUTH_PASSWORD}"
+fi
+if [ "${GENERATED_JWT_SECRET}" = "1" ]; then
+    echo "  Dashboard auth secret was generated automatically."
 fi
 echo "  API:        http://${SERVER_IP}:8080"
 echo "  Proxy:      http://${SERVER_IP}:80"

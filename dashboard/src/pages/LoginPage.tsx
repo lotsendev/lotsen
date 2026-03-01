@@ -30,16 +30,16 @@ export function LoginPage() {
     : null
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="w-full max-w-sm space-y-8">
+    <div className="chart-grid-overlay flex min-h-screen items-center justify-center bg-background px-4 py-10">
+      <div className="w-full max-w-sm space-y-8 rounded-2xl border border-border/70 bg-card/92 p-6 shadow-sm backdrop-blur sm:p-7">
         <div className="flex flex-col items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary text-primary-foreground">
+          <div className="grid h-10 w-10 place-items-center rounded-xl border border-primary/30 bg-primary/12 text-primary">
             <Rocket className="h-5 w-5" />
           </div>
-          <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight">
+          <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold italic tracking-tight">
             lotsen
           </h1>
-          <p className="text-sm text-muted-foreground">Sign in to continue</p>
+          <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-muted-foreground">Sign in to continue</p>
         </div>
 
         <form

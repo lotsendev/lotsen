@@ -22,7 +22,7 @@ const STATE_TONE: Record<SystemStatusState, string> = {
 const ICON_TONE: Record<SystemStatusState, string> = {
   healthy: 'text-emerald-600 dark:text-emerald-400',
   degraded: 'text-amber-600 dark:text-amber-400',
-  unavailable: 'text-slate-500 dark:text-slate-400',
+  unavailable: 'text-muted-foreground',
 }
 
 const DEGRADED_PRESSURE_THRESHOLD = 80
@@ -136,7 +136,7 @@ function checkIcon(value: CheckValue) {
 function checkIconTone(value: CheckValue) {
   if (value === true) return 'text-emerald-600 dark:text-emerald-400'
   if (value === false) return 'text-rose-600 dark:text-rose-400'
-  return 'text-slate-500 dark:text-slate-400'
+  return 'text-muted-foreground'
 }
 
 function checkLabel(value: CheckValue) {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import { AlertTriangle, ArrowLeft, ChevronDown, ExternalLink, Globe, Hash, Lock, Package, Pencil, RotateCcw, Unlock } from 'lucide-react'
@@ -19,7 +19,6 @@ export function DeploymentDetailPage() {
     queryFn: getDeployments,
     refetchInterval: 30_000,
   })
-  const [debugOpen, setDebugOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
 
   const restartMutation = useMutation({
@@ -127,9 +126,9 @@ export function DeploymentDetailPage() {
             ) : null}
             <div className="flex flex-wrap items-center gap-2">
               {deployment.public ? (
-                <Unlock className="h-3 w-3 shrink-0 text-emerald-600" />
+                <Unlock className="h-3 w-3 shrink-0 text-[#2a7a64]" />
               ) : (
-                <Lock className="h-3 w-3 shrink-0 text-amber-700" />
+                <Lock className="h-3 w-3 shrink-0 text-primary" />
               )}
               <Badge variant={deployment.public ? 'success' : 'warning'}>
                 {deployment.public ? 'Public' : 'Private'}
@@ -174,9 +173,11 @@ export function DeploymentDetailPage() {
       )}
 
       {stats && (
-        <div className="rounded-xl border border-border/60 bg-card p-4">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">Resources</p>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <CollapsibleSection
+          title="Resources"
+          description="CPU and memory telemetry for healthy containers."
+        >
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-md border border-border/60 bg-background/70 p-3">
               <div className="flex items-end justify-between gap-2">
                 <p className="text-xs text-muted-foreground">CPU</p>
@@ -184,7 +185,7 @@ export function DeploymentDetailPage() {
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted/60">
                 <div
-                  className="h-full rounded-full bg-emerald-500 transition-[width] duration-300"
+                  className="h-full rounded-full bg-[#2a7a64] transition-[width] duration-300"
                   style={{ width: `${Math.min(stats.cpuPercent, 100)}%` }}
                 />
               </div>
@@ -198,68 +199,68 @@ export function DeploymentDetailPage() {
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted/60">
                 <div
-                  className="h-full rounded-full bg-sky-500 transition-[width] duration-300"
+                  className="h-full rounded-full bg-[#1a96e0] transition-[width] duration-300"
                   style={{ width: `${Math.min(stats.memoryPercent, 100)}%` }}
                 />
               </div>
               <p className="mt-2 font-mono text-xs text-muted-foreground">{formatPercent(stats.memoryPercent)}</p>
             </div>
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
       {/* Ports and volumes */}
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-border/60 bg-card p-4">
-          <p className="mb-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-            Ports
-          </p>
-          {deployment.ports.length ? (
-            <ul className="space-y-1">
-              {deployment.ports.map(port => (
-                <li
-                  key={port}
-                  className="rounded-md bg-background/70 px-2.5 py-1.5 font-mono text-xs text-muted-foreground"
-                >
-                  {port}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-xs text-muted-foreground/50">None configured</p>
-          )}
+      <CollapsibleSection
+        title="Ports and volumes"
+        description="Runtime bindings for traffic and persisted data."
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-md border border-border/60 bg-background/70 p-3">
+            <p className="mb-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
+              Ports
+            </p>
+            {deployment.ports.length ? (
+              <ul className="space-y-1">
+                {deployment.ports.map(port => (
+                  <li
+                    key={port}
+                    className="rounded-md bg-background/70 px-2.5 py-1.5 font-mono text-xs text-muted-foreground"
+                  >
+                    {port}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground/50">None configured</p>
+            )}
+          </div>
+          <div className="rounded-md border border-border/60 bg-background/70 p-3">
+            <p className="mb-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
+              Volumes
+            </p>
+            {deployment.volumes.length ? (
+              <ul className="space-y-1">
+                {deployment.volumes.map(volume => (
+                  <li
+                    key={volume}
+                    className="rounded-md bg-background/70 px-2.5 py-1.5 font-mono text-xs text-muted-foreground"
+                  >
+                    {volume}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground/50">None configured</p>
+            )}
+          </div>
         </div>
-        <div className="rounded-xl border border-border/60 bg-card p-4">
-          <p className="mb-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-            Volumes
-          </p>
-          {deployment.volumes.length ? (
-            <ul className="space-y-1">
-              {deployment.volumes.map(volume => (
-                <li
-                  key={volume}
-                  className="rounded-md bg-background/70 px-2.5 py-1.5 font-mono text-xs text-muted-foreground"
-                >
-                  {volume}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-xs text-muted-foreground/50">None configured</p>
-          )}
-        </div>
-      </div>
+      </CollapsibleSection>
 
       {/* Environment variables */}
-      <div className="rounded-xl border border-border/60 bg-card p-4">
-        <div className="mb-2.5 flex items-center gap-2">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-            Environment variables
-          </p>
-          {envEntries.length > 0 && (
-            <span className="font-mono text-[11px] text-muted-foreground/40">{envEntries.length}</span>
-          )}
-        </div>
+      <CollapsibleSection
+        title="Environment variables"
+        description={`${envEntries.length} configured value${envEntries.length === 1 ? '' : 's'}.`}
+      >
         {envEntries.length ? (
           <div className="space-y-1">
             {envEntries.map(([key, value]) => (
@@ -275,13 +276,22 @@ export function DeploymentDetailPage() {
         ) : (
           <p className="text-xs text-muted-foreground/50">None configured</p>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* Live logs */}
-      <DeploymentSecurityPanel deployment={deployment} />
+      <CollapsibleSection
+        title="Traffic and security"
+        description="Ingress access mode and runtime protection controls."
+      >
+        <DeploymentSecurityPanel deployment={deployment} />
+      </CollapsibleSection>
 
-      {/* Live logs */}
-      <DeploymentLogsPanel deploymentId={deployment.id} status={deployment.status} error={deployment.error} />
+      <CollapsibleSection
+        title="Live logs"
+        description="Real-time output stream from the active container runtime."
+        defaultOpen={deployment.status === 'failed'}
+      >
+        <DeploymentLogsPanel deploymentId={deployment.id} status={deployment.status} error={deployment.error} />
+      </CollapsibleSection>
 
       {/* Edit dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
@@ -302,27 +312,40 @@ export function DeploymentDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Store snapshot */}
-      <div className="rounded-xl border border-border/60 bg-card p-4">
-        <button
-          type="button"
-          onClick={() => setDebugOpen(prev => !prev)}
-          className="flex w-full items-center justify-between"
-        >
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-            Store snapshot
-          </p>
-          <ChevronDown
-            className={`h-3.5 w-3.5 text-muted-foreground/40 transition-transform duration-200 ${debugOpen ? 'rotate-180' : ''}`}
-          />
-        </button>
-        {debugOpen && (
-          <pre className="mt-3 overflow-x-auto rounded-lg border border-border/40 bg-background/70 p-4 font-mono text-xs leading-5 text-foreground/80">
-            {JSON.stringify(deployment, null, 2)}
-          </pre>
-        )}
-      </div>
+      <CollapsibleSection
+        title="Store snapshot"
+        description="Raw deployment document from the persisted state store."
+      >
+        <pre className="overflow-x-auto rounded-lg border border-border/40 bg-background/70 p-4 font-mono text-xs leading-5 text-foreground/80">
+          {JSON.stringify(deployment, null, 2)}
+        </pre>
+      </CollapsibleSection>
     </div>
+  )
+}
+
+function CollapsibleSection({
+  title,
+  description,
+  defaultOpen = false,
+  children,
+}: {
+  title: string
+  description: string
+  defaultOpen?: boolean
+  children: ReactNode
+}) {
+  return (
+    <details open={defaultOpen} className="group rounded-xl border border-border/60 bg-card p-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">{title}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+        </div>
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/40 transition-transform duration-200 group-open:rotate-180" />
+      </summary>
+      <div className="mt-3">{children}</div>
+    </details>
   )
 }
 

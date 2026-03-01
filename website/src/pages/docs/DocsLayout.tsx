@@ -87,7 +87,7 @@ export default function DocsLayout() {
                       textDecoration: 'none',
                       padding: '6px 10px',
                       borderRadius: '6px',
-                      backgroundColor: isActive ? 'rgba(255,255,255,0.04)' : 'transparent',
+                      backgroundColor: isActive ? 'rgba(26,58,82,0.07)' : 'transparent',
                       borderLeft: isActive
                         ? '2px solid var(--clr-accent)'
                         : '2px solid transparent',

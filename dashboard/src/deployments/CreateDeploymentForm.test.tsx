@@ -45,6 +45,7 @@ describe('CreateDeploymentForm', () => {
       ports: [],
       volumes: [],
       domain: '',
+      public: false,
     })
     const user = userEvent.setup()
     renderWithQuery(<CreateDeploymentForm />)
@@ -122,6 +123,7 @@ describe('CreateDeploymentForm', () => {
       ports: ['8080:80'],
       volumes: ['/data:/app/data'],
       domain: 'example.com',
+      public: false,
     })
     const user = userEvent.setup()
     renderWithQuery(<CreateDeploymentForm />)

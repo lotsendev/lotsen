@@ -84,22 +84,27 @@ func authFromEnv(storePath string) (*auth.UserStore, []byte, error) {
 	}
 
 	// Bootstrap credentials from env on startup.
+	hasUsers, err := userStore.HasUsers()
+	if err != nil {
+		userStore.Close()
+		return nil, nil, fmt.Errorf("check users: %w", err)
+	}
+
 	user := strings.TrimSpace(os.Getenv("LOTSEN_AUTH_USER"))
 	password := strings.TrimSpace(os.Getenv("LOTSEN_AUTH_PASSWORD"))
-	if user != "" && password != "" {
+	if hasUsers {
+		if user != "" || password != "" {
+			log.Printf("lotsen: auth users already exist; ignoring LOTSEN_AUTH_USER/LOTSEN_AUTH_PASSWORD bootstrap env")
+		}
+	} else if user != "" && password != "" {
 		if err := userStore.SetPassword(user, password); err != nil {
 			userStore.Close()
 			return nil, nil, fmt.Errorf("set initial credentials: %w", err)
 		}
+	} else if user != "" || password != "" {
+		log.Printf("lotsen: WARNING: LOTSEN_AUTH_USER and LOTSEN_AUTH_PASSWORD must both be set to bootstrap first login user")
 	} else {
-		has, err := userStore.HasUsers()
-		if err != nil {
-			userStore.Close()
-			return nil, nil, fmt.Errorf("check users: %w", err)
-		}
-		if !has {
-			log.Printf("lotsen: WARNING: no users in store and LOTSEN_AUTH_USER/LOTSEN_AUTH_PASSWORD not set; login will not work")
-		}
+		log.Printf("lotsen: WARNING: no users in store and LOTSEN_AUTH_USER/LOTSEN_AUTH_PASSWORD not set; login will not work")
 	}
 
 	return userStore, []byte(secret), nil

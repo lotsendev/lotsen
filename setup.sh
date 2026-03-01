@@ -426,6 +426,12 @@ AUTH_PASSWORD="${DIRIGENT_AUTH_PASSWORD:-${LOTSEN_AUTH_PASSWORD:-}}"
 JWT_SECRET="${DIRIGENT_JWT_SECRET:-${LOTSEN_JWT_SECRET:-}}"
 GENERATED_AUTH_PASSWORD=0
 GENERATED_JWT_SECRET=0
+EXISTING_DASHBOARD_DOMAIN=""
+EXISTING_DASHBOARD_USER=""
+EXISTING_DASHBOARD_PASSWORD=""
+EXISTING_AUTH_USER=""
+EXISTING_AUTH_PASSWORD=""
+EXISTING_JWT_SECRET=""
 
 if [ -f "${ENV_FILE}" ]; then
     EXISTING_DASHBOARD_DOMAIN=$(read_env_value "DIRIGENT_DASHBOARD_DOMAIN")
@@ -476,13 +482,45 @@ fi
 if [ -z "${AUTH_USER}" ]; then
     AUTH_USER="admin"
 fi
-if [ -z "${AUTH_PASSWORD}" ]; then
-    AUTH_PASSWORD=$(generate_hex_secret 16)
-    GENERATED_AUTH_PASSWORD=1
-fi
 if [ -z "${JWT_SECRET}" ]; then
     JWT_SECRET=$(generate_hex_secret 32)
     GENERATED_JWT_SECRET=1
+fi
+
+if [ -t 0 ] && [ "${DIRIGENT_NON_INTERACTIVE:-0}" != "1" ] && [ "${DIRIGENT_UPGRADE:-0}" != "1" ] && [ -z "${AUTH_PASSWORD}" ]; then
+    echo ""
+    echo "Dashboard /login bootstrap credentials"
+    echo "  These credentials are used for the first dashboard login user."
+
+    read -r -p "Dashboard login username [${AUTH_USER}]: " INPUT_AUTH_USER
+    if [ -n "${INPUT_AUTH_USER}" ]; then
+        AUTH_USER="${INPUT_AUTH_USER}"
+    fi
+
+    while true; do
+        read -r -s -p "Dashboard login password (leave blank to auto-generate): " INPUT_AUTH_PASSWORD
+        echo ""
+        if [ -z "${INPUT_AUTH_PASSWORD}" ]; then
+            AUTH_PASSWORD=$(generate_hex_secret 16)
+            GENERATED_AUTH_PASSWORD=1
+            break
+        fi
+
+        read -r -s -p "Confirm dashboard login password: " INPUT_AUTH_PASSWORD_CONFIRM
+        echo ""
+        if [ "${INPUT_AUTH_PASSWORD}" != "${INPUT_AUTH_PASSWORD_CONFIRM}" ]; then
+            echo "Passwords do not match. Try again."
+            continue
+        fi
+
+        AUTH_PASSWORD="${INPUT_AUTH_PASSWORD}"
+        break
+    done
+fi
+
+if [ -z "${AUTH_PASSWORD}" ]; then
+    AUTH_PASSWORD=$(generate_hex_secret 16)
+    GENERATED_AUTH_PASSWORD=1
 fi
 
 if [ -t 0 ] && [ "${DIRIGENT_NON_INTERACTIVE:-0}" != "1" ] && [ "${DIRIGENT_UPGRADE:-0}" != "1" ]; then

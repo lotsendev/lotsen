@@ -24,6 +24,7 @@ The installer will:
 - Download and install the three Lotsen binaries.
 - Create a Docker bridge network named `lotsen`.
 - Write and enable three systemd units: `lotsen-api`, `lotsen-orchestrator`, and `lotsen-proxy`.
+- Prompt for initial dashboard `/login` credentials in interactive setup.
 - Prompt for optional dashboard domain + Basic Auth setup (works in normal SSH sessions, including piped install commands).
 
 > **Tip:** To pin a specific version, prefix the command with `LOTSEN_VERSION=v0.0.2` before the curl.
@@ -53,6 +54,15 @@ http://<your-vps-ip>:8080
 ```
 
 The orchestrator has no public inbound port.
+
+### First dashboard login user
+
+In interactive mode, `lotsen setup` prompts for the initial dashboard `/login` username and password.
+
+- Leave the password blank to auto-generate a strong password.
+- The generated password is printed once at the end of setup.
+
+`LOTSEN_AUTH_USER` and `LOTSEN_AUTH_PASSWORD` are bootstrap-only values. They are used to create the first user when the user database is empty, and ignored on later starts once users exist.
 
 ### Expose dashboard publicly (HTTPS + Basic Auth)
 

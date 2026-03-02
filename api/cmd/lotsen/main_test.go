@@ -1,105 +1,61 @@
 package main
 
 import (
-	"errors"
 	"path/filepath"
 	"testing"
-
-	"github.com/ercadev/dirigent/auth"
 )
 
-func TestAuthFromEnvBootstrapsFirstUser(t *testing.T) {
-	t.Setenv("LOTSEN_JWT_SECRET", "test-secret")
-	t.Setenv("LOTSEN_AUTH_USER", "admin")
-	t.Setenv("LOTSEN_AUTH_PASSWORD", "bootstrap-pass")
-
+func TestAuthFromEnv_NoSecret(t *testing.T) {
+	t.Setenv("LOTSEN_JWT_SECRET", "")
 	storePath := filepath.Join(t.TempDir(), "deployments.json")
 	userStore, secret, err := authFromEnv(storePath)
 	if err != nil {
 		t.Fatalf("authFromEnv() error = %v", err)
 	}
-	t.Cleanup(func() {
+	if userStore != nil {
+		t.Error("want nil userStore when no JWT secret set")
 		_ = userStore.Close()
-	})
+	}
+	if secret != nil {
+		t.Error("want nil secret when no JWT secret set")
+	}
+}
+
+func TestAuthFromEnv_WithSecret(t *testing.T) {
+	t.Setenv("LOTSEN_JWT_SECRET", "test-secret")
+	storePath := filepath.Join(t.TempDir(), "deployments.json")
+	userStore, secret, err := authFromEnv(storePath)
+	if err != nil {
+		t.Fatalf("authFromEnv() error = %v", err)
+	}
+	if userStore == nil {
+		t.Fatal("want non-nil userStore when JWT secret set")
+	}
+	t.Cleanup(func() { _ = userStore.Close() })
 
 	if string(secret) != "test-secret" {
 		t.Fatalf("secret = %q, want %q", string(secret), "test-secret")
 	}
-
-	if err := userStore.Authenticate("admin", "bootstrap-pass"); err != nil {
-		t.Fatalf("Authenticate() error = %v, want nil", err)
-	}
 }
 
-func TestAuthFromEnvIgnoresBootstrapEnvWhenUsersExist(t *testing.T) {
-	storeDir := t.TempDir()
-	storePath := filepath.Join(storeDir, "deployments.json")
-
-	seedStore, err := auth.NewUserStore(filepath.Join(storeDir, "users.db"))
-	if err != nil {
-		t.Fatalf("NewUserStore() error = %v", err)
-	}
-	if err := seedStore.SetPassword("admin", "existing-pass"); err != nil {
-		t.Fatalf("SetPassword() error = %v", err)
-	}
-	if err := seedStore.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	t.Setenv("LOTSEN_JWT_SECRET", "test-secret")
-	t.Setenv("LOTSEN_AUTH_USER", "admin")
-	t.Setenv("LOTSEN_AUTH_PASSWORD", "new-bootstrap-pass")
-
+func TestAuthFromEnv_NoUsers_LogsNotice(t *testing.T) {
+	// Just verify the function doesn't error when store is empty.
+	t.Setenv("LOTSEN_JWT_SECRET", "some-secret")
+	storePath := filepath.Join(t.TempDir(), "deployments.json")
 	userStore, _, err := authFromEnv(storePath)
 	if err != nil {
 		t.Fatalf("authFromEnv() error = %v", err)
 	}
-	t.Cleanup(func() {
-		_ = userStore.Close()
-	})
-
-	if err := userStore.Authenticate("admin", "existing-pass"); err != nil {
-		t.Fatalf("Authenticate(existing) error = %v, want nil", err)
+	if userStore == nil {
+		t.Fatal("want non-nil userStore")
 	}
+	defer userStore.Close()
 
-	err = userStore.Authenticate("admin", "new-bootstrap-pass")
-	if !errors.Is(err, auth.ErrInvalidCredentials) {
-		t.Fatalf("Authenticate(new bootstrap pass) error = %v, want %v", err, auth.ErrInvalidCredentials)
-	}
-}
-
-func TestAuthFromEnvEnsuresBootstrapUserWhenEnabled(t *testing.T) {
-	storeDir := t.TempDir()
-	storePath := filepath.Join(storeDir, "deployments.json")
-
-	seedStore, err := auth.NewUserStore(filepath.Join(storeDir, "users.db"))
+	has, err := userStore.HasAnyUser()
 	if err != nil {
-		t.Fatalf("NewUserStore() error = %v", err)
+		t.Fatalf("HasAnyUser: %v", err)
 	}
-	if err := seedStore.SetPassword("existing", "existing-pass"); err != nil {
-		t.Fatalf("SetPassword(existing) error = %v", err)
-	}
-	if err := seedStore.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	t.Setenv("LOTSEN_JWT_SECRET", "test-secret")
-	t.Setenv("LOTSEN_AUTH_USER", "admin")
-	t.Setenv("LOTSEN_AUTH_PASSWORD", "admin")
-	t.Setenv("LOTSEN_AUTH_ENSURE_BOOTSTRAP", "1")
-
-	userStore, _, err := authFromEnv(storePath)
-	if err != nil {
-		t.Fatalf("authFromEnv() error = %v", err)
-	}
-	t.Cleanup(func() {
-		_ = userStore.Close()
-	})
-
-	if err := userStore.Authenticate("admin", "admin"); err != nil {
-		t.Fatalf("Authenticate(admin) error = %v, want nil", err)
-	}
-	if err := userStore.Authenticate("existing", "existing-pass"); err != nil {
-		t.Fatalf("Authenticate(existing) error = %v, want nil", err)
+	if has {
+		t.Error("want no users in fresh store")
 	}
 }

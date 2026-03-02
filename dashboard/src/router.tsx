@@ -26,6 +26,7 @@ import {
 } from './components/ui/sidebar'
 import DeploymentList from './pages/DeploymentList'
 import { DeploymentDetailPage } from './pages/DeploymentDetailPage'
+import { JoinPage } from './pages/JoinPage'
 import { LoginPage } from './pages/LoginPage'
 import { LogsPage } from './pages/LogsPage'
 import { RegistriesPage } from './pages/RegistriesPage'
@@ -266,6 +267,15 @@ const loginRoute = createRoute({
   }),
 })
 
+const joinRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/join',
+  component: JoinPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    token: typeof search.token === 'string' ? search.token : undefined,
+  }),
+})
+
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: '_app',
@@ -338,6 +348,7 @@ const registriesRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  joinRoute,
   appRoute.addChildren([
     indexRoute,
     deploymentsRoute,

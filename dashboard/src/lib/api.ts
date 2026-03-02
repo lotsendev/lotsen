@@ -26,14 +26,112 @@ export async function getMe(): Promise<MeResponse> {
   throw new Error('Failed to check auth status')
 }
 
-export async function login(username: string, password: string): Promise<void> {
-  const res = await fetch('/auth/login', {
+export async function getSetupAvailable(): Promise<boolean> {
+  const res = await fetch('/auth/setup-available')
+  if (!res.ok) return false
+  const body = await res.json() as { available: boolean }
+  return body.available
+}
+
+export async function validateInvite(token: string): Promise<{ valid: boolean; reason?: string }> {
+  const res = await fetch(`/auth/invite?token=${encodeURIComponent(token)}`)
+  if (!res.ok) return { valid: false }
+  return res.json()
+}
+
+export async function passkeySetupBegin(username: string): Promise<object> {
+  const res = await fetch('/auth/passkey/setup/begin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username }),
+  })
+  if (!res.ok) throw new Error('Failed to begin setup')
+  const data = await res.json()
+  return (data as { publicKey?: object }).publicKey ?? data
+}
+
+export async function passkeySetupFinish(username: string, response: object): Promise<void> {
+  const res = await fetch(`/auth/passkey/setup/finish?username=${encodeURIComponent(username)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(response),
+  })
+  if (!res.ok) throw new Error('Setup failed')
+}
+
+export async function passkeyInviteBegin(token: string, username: string): Promise<object> {
+  const res = await fetch('/auth/passkey/invite/begin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, username }),
+  })
+  if (!res.ok) throw new Error('Failed to begin invite registration')
+  const data = await res.json()
+  return (data as { publicKey?: object }).publicKey ?? data
+}
+
+export async function passkeyInviteFinish(token: string, username: string, response: object): Promise<void> {
+  const res = await fetch(
+    `/auth/passkey/invite/finish?token=${encodeURIComponent(token)}&username=${encodeURIComponent(username)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(response),
+    },
+  )
+  if (!res.ok) throw new Error('Invite registration failed')
+}
+
+export async function passkeyLoginBegin(username?: string): Promise<object> {
+  const res = await fetch('/auth/passkey/login/begin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: username ?? '' }),
+  })
+  if (!res.ok) throw new Error('Failed to begin login')
+  const data = await res.json()
+  return (data as { publicKey?: object }).publicKey ?? data
+}
+
+export async function passkeyLoginFinish(response: object): Promise<void> {
+  const res = await fetch('/auth/passkey/login/finish', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(response),
   })
   if (res.status === 401) throw new UnauthorizedError()
   if (!res.ok) throw new Error('Login failed')
+}
+
+export type InviteLink = {
+  url: string
+  token: string
+  expiresAt: string
+}
+
+export async function createInvite(): Promise<InviteLink> {
+  const res = await apiFetch('/api/invites', { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to create invite')
+  return res.json()
+}
+
+export type PasskeyInfo = {
+  id: string
+  deviceName: string
+  createdAt: string
+}
+
+export async function listPasskeys(): Promise<PasskeyInfo[]> {
+  const res = await apiFetch('/api/passkeys')
+  if (!res.ok) throw new Error('Failed to fetch passkeys')
+  const body = await res.json() as { passkeys?: PasskeyInfo[] }
+  return body.passkeys ?? []
+}
+
+export async function deletePasskey(id: string): Promise<void> {
+  const res = await apiFetch(`/api/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (res.status === 404) throw new Error('Passkey not found')
+  if (!res.ok) throw new Error('Failed to delete passkey')
 }
 
 export async function logout(): Promise<void> {
@@ -57,24 +155,14 @@ export async function getUsers(): Promise<DashboardUser[]> {
   return body.users ?? []
 }
 
-export async function createUser(username: string, password: string): Promise<void> {
+export async function createUser(username: string): Promise<void> {
   const res = await apiFetch('/api/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username }),
   })
   if (res.status === 409) throw new Error('User already exists')
   if (!res.ok) throw new Error('Failed to create user')
-}
-
-export async function updateUserPassword(username: string, password: string): Promise<void> {
-  const res = await apiFetch(`/api/users/${encodeURIComponent(username)}/password`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
-  })
-  if (res.status === 404) throw new Error('User not found')
-  if (!res.ok) throw new Error('Failed to update user password')
 }
 
 export async function deleteUser(username: string): Promise<void> {

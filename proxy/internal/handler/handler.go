@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ercadev/dirigent/auth"
 	"github.com/ercadev/dirigent/proxy/internal/middleware"
 	"github.com/ercadev/dirigent/proxy/internal/routing"
 	"github.com/ercadev/dirigent/store"
@@ -43,7 +42,6 @@ type Handler struct {
 	waf           *middleware.WAF
 	wafBlocked    atomic.Int64
 	uaBlocked     atomic.Int64
-	authStore     *auth.UserStore
 	jwtSecret     []byte
 }
 
@@ -110,7 +108,6 @@ func (h *Handler) RegisterInternalRoutes(mux *http.ServeMux) {
 
 // RegisterProxyRoutes wires the proxy catch-all route into mux.
 func (h *Handler) RegisterProxyRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /__lotsen/login", h.proxyLogin)
 	mux.HandleFunc("/", h.proxy)
 }
 
@@ -286,7 +283,7 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	if !route.Public && h.jwtSecret != nil {
 		if !h.validProxyToken(r) {
 			outcome = "unauthorized"
-			h.serveLoginPage(rw, r, "")
+			h.serveLoginRedirect(rw, r)
 			return
 		}
 	}
@@ -452,13 +449,6 @@ func (h *Handler) setRoute(w http.ResponseWriter, r *http.Request) {
 func WithIPFilter(filter *middleware.IPFilter) Option {
 	return func(h *Handler) {
 		h.ipFilter = filter
-	}
-}
-
-// WithAuthStore provides the user store used for proxy-level login on private deployments.
-func WithAuthStore(s *auth.UserStore) Option {
-	return func(h *Handler) {
-		h.authStore = s
 	}
 }
 

@@ -45,7 +45,6 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Username string `json:"username"`
-		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -53,13 +52,12 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	username := strings.TrimSpace(body.Username)
-	password := strings.TrimSpace(body.Password)
-	if username == "" || password == "" {
-		http.Error(w, "username and password are required", http.StatusBadRequest)
+	if username == "" {
+		http.Error(w, "username is required", http.StatusBadRequest)
 		return
 	}
 
-	if err := h.authStore.CreateUser(username, password); err != nil {
+	if err := h.authStore.CreateUser(username); err != nil {
 		if errors.Is(err, auth.ErrUserExists) {
 			http.Error(w, "user already exists", http.StatusConflict)
 			return
@@ -70,47 +68,6 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]string{"username": username})
-}
-
-func (h *Handler) updateUserPassword(w http.ResponseWriter, r *http.Request) {
-	if h.authStore == nil {
-		http.Error(w, "auth not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
-
-	username := strings.TrimSpace(r.PathValue("username"))
-	if username == "" {
-		http.Error(w, "username is required", http.StatusBadRequest)
-		return
-	}
-
-	var body struct {
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	password := strings.TrimSpace(body.Password)
-	if password == "" {
-		http.Error(w, "password is required", http.StatusBadRequest)
-		return
-	}
-
-	if err := h.authStore.UpdatePassword(username, password); err != nil {
-		if errors.Is(err, auth.ErrUserNotFound) {
-			http.Error(w, "user not found", http.StatusNotFound)
-			return
-		}
-		log.Printf("users: update password: %v", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {

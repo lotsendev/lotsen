@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,8 +13,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ercadev/dirigent/auth"
 )
 
 const (
@@ -44,6 +48,8 @@ func main() {
 		err = runUpgradeProxy(os.Args[2:])
 	case "doctor":
 		err = runDoctor(os.Args[2:])
+	case "invite":
+		err = runInvite(os.Args[2:])
 	case "-h", "--help", "help":
 		printUsage()
 		return
@@ -65,8 +71,53 @@ func printUsage() {
 	fmt.Println("  lotsen upgrade [flags]")
 	fmt.Println("  lotsen upgrade-proxy [flags]")
 	fmt.Println("  lotsen doctor [flags]")
+	fmt.Println("  lotsen invite [flags]")
 	fmt.Println("")
 	fmt.Println("Run `lotsen <command> --help` for command-specific options.")
+}
+
+// runInvite generates a new invite token directly in the database without
+// requiring a running API server. Useful for lockout recovery.
+func runInvite(args []string) error {
+	fs := flag.NewFlagSet("invite", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	baseURL := fs.String("base-url", "http://localhost:8080", "Base URL of the Lotsen dashboard")
+	dataDir := fs.String("data", defaultDataDir(), "Path to the Lotsen data directory (containing users.db)")
+	ttl := fs.Duration("ttl", 30*time.Minute, "Invite link validity duration")
+
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("%w\n\nUsage: lotsen invite [--base-url <url>] [--data <dir>] [--ttl <duration>]", err)
+	}
+
+	dbPath := filepath.Join(*dataDir, "users.db")
+	store, err := auth.NewUserStore(dbPath)
+	if err != nil {
+		return fmt.Errorf("open user store at %s: %w", dbPath, err)
+	}
+	defer store.Close()
+
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return fmt.Errorf("generate token: %w", err)
+	}
+	token := hex.EncodeToString(tokenBytes)
+
+	expiresAt := time.Now().Add(*ttl)
+	if err := store.CreateInviteToken(token, expiresAt); err != nil {
+		return fmt.Errorf("create invite token: %w", err)
+	}
+
+	url := strings.TrimSuffix(*baseURL, "/") + "/join?token=" + token
+	fmt.Printf("Invite link (valid %s): %s\n", *ttl, url)
+	return nil
+}
+
+func defaultDataDir() string {
+	if p := os.Getenv("LOTSEN_DATA"); p != "" {
+		return filepath.Dir(p)
+	}
+	return "/var/lib/lotsen"
 }
 
 func runSetup(args []string) error {

@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/registry"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -379,7 +381,16 @@ func (d *Docker) pullImage(imageRef string) error {
 	}
 
 	log.Printf("docker: pulling image %s", imageRef)
-	rc, err := d.client.ImagePull(ctx, imageRef, image.PullOptions{})
+	options := image.PullOptions{}
+	registryAuth, err := d.resolveRegistryAuth(imageRef)
+	if err != nil {
+		return fmt.Errorf("docker: resolve registry auth for %s: %w", imageRef, err)
+	}
+	if registryAuth != "" {
+		options.RegistryAuth = registryAuth
+	}
+
+	rc, err := d.client.ImagePull(ctx, imageRef, options)
 	if err != nil {
 		if dockerclient.IsErrConnectionFailed(err) {
 			return fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
@@ -389,6 +400,36 @@ func (d *Docker) pullImage(imageRef string) error {
 	_, _ = io.Copy(io.Discard, rc)
 	rc.Close()
 	return nil
+}
+
+func (d *Docker) resolveRegistryAuth(imageRef string) (string, error) {
+	s, err := store.NewJSONStore(dataPath())
+	if err != nil {
+		log.Printf("docker: registry auth unavailable: %v", err)
+		return "", nil
+	}
+
+	auth, err := s.ResolveRegistryAuth(imageRef)
+	if err != nil {
+		return "", err
+	}
+	if auth == nil {
+		return "", nil
+	}
+
+	payload, err := json.Marshal(registry.AuthConfig{Username: auth.Username, Password: auth.Password})
+	if err != nil {
+		return "", err
+	}
+
+	return base64.URLEncoding.EncodeToString(payload), nil
+}
+
+func dataPath() string {
+	if p := strings.TrimSpace(os.Getenv("LOTSEN_DATA")); p != "" {
+		return p
+	}
+	return "/var/lib/lotsen/deployments.json"
 }
 
 // isLatestTag reports whether imageRef resolves to the mutable :latest tag.

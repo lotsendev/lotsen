@@ -9,7 +9,7 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Gauge, HardDrive, LogOut, Moon, PackageSearch, Radar, Rocket, ScrollText, Sun, UserRound, UserRoundCog } from 'lucide-react'
+import { Gauge, HardDrive, KeyRound, LogOut, Moon, PackageSearch, Radar, Rocket, ScrollText, Sun, UserRound, UserRoundCog } from 'lucide-react'
 import { useEffect } from 'react'
 import { Button } from './components/ui/button'
 import {
@@ -28,6 +28,7 @@ import DeploymentList from './pages/DeploymentList'
 import { DeploymentDetailPage } from './pages/DeploymentDetailPage'
 import { LoginPage } from './pages/LoginPage'
 import { LogsPage } from './pages/LogsPage'
+import { RegistriesPage } from './pages/RegistriesPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SystemStatusPage } from './pages/SystemStatusPage'
 import { TrafficPage } from './pages/TrafficPage'
@@ -62,6 +63,7 @@ function DashboardLayout() {
 
   const isSystemStatusPage = pathname === '/system-status'
   const isHostPage = pathname === '/host' || pathname === '/settings'
+  const isRegistriesPage = pathname === '/registries'
   const isUsersPage = pathname === '/users'
   const isTrafficPage = pathname === '/traffic'
   const isLogsPage = pathname === '/logs'
@@ -76,6 +78,8 @@ function DashboardLayout() {
       ? 'Logs'
       : isHostPage
       ? 'Host'
+      : isRegistriesPage
+      ? 'Registries'
       : isUsersPage
       ? 'Users'
       : isDeploymentDetailPage
@@ -89,6 +93,8 @@ function DashboardLayout() {
       ? 'Inspect core service output and deployment log streams without SSH.'
       : isHostPage
       ? 'Manage host naming, metadata, and runtime upgrades.'
+      : isRegistriesPage
+      ? 'Manage private registry credentials used for deployment image pulls.'
       : isUsersPage
       ? 'Create users, rotate passwords, and revoke dashboard access.'
       : isDeploymentDetailPage
@@ -188,6 +194,14 @@ function DashboardLayout() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname === '/registries'} size="lg" className="rounded-lg">
+                      <Link to="/registries">
+                        <KeyRound className="h-4 w-4 shrink-0" />
+                        <span>Registries</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname === '/host' || pathname === '/settings'} size="lg" className="rounded-lg">
                       <Link to="/host">
                         <HardDrive className="h-4 w-4 shrink-0" />
@@ -219,7 +233,7 @@ function DashboardLayout() {
         <div className="mx-auto w-full max-w-6xl">
           <section className="rounded-2xl border border-border/70 bg-card/92 p-4 shadow-sm backdrop-blur sm:p-5 lg:p-6">
               <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              {isSystemStatusPage || isTrafficPage || isLogsPage ? 'Observability' : isHostPage || isUsersPage ? 'Configuration' : 'Deployments'}
+              {isSystemStatusPage || isTrafficPage || isLogsPage ? 'Observability' : isHostPage || isUsersPage || isRegistriesPage ? 'Configuration' : 'Deployments'}
               </p>
             <div className="mb-4">
               <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight text-foreground">{pageTitle}</h1>
@@ -316,6 +330,12 @@ const usersRoute = createRoute({
   component: UsersPage,
 })
 
+const registriesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/registries',
+  component: RegistriesPage,
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   appRoute.addChildren([
@@ -326,6 +346,7 @@ const routeTree = rootRoute.addChildren([
     trafficRoute,
     logsRoute,
     usersRoute,
+    registriesRoute,
     hostRoute,
     settingsRoute,
   ]),

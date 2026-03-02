@@ -31,6 +31,10 @@ type Store interface {
 	Update(d store.Deployment) (store.Deployment, error)
 	Patch(id string, patch store.Deployment) (store.Deployment, error)
 	Delete(id string) error
+	ListRegistries() ([]store.RegistryEntry, error)
+	CreateRegistry(id, prefix, username, password string) (store.RegistryEntry, error)
+	UpdateRegistry(id, prefix, username, password string) (store.RegistryEntry, error)
+	DeleteRegistry(id string) error
 }
 
 // EventBus is the pub/sub interface required by the API handlers.
@@ -247,6 +251,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/users", protect(http.HandlerFunc(h.createUser)))
 	mux.Handle("PUT /api/users/{username}/password", protect(http.HandlerFunc(h.updateUserPassword)))
 	mux.Handle("DELETE /api/users/{username}", protect(http.HandlerFunc(h.deleteUser)))
+	mux.Handle("GET /api/registries", protect(http.HandlerFunc(h.listRegistries)))
+	mux.Handle("POST /api/registries", protect(http.HandlerFunc(h.createRegistry)))
+	mux.Handle("PUT /api/registries/{id}", protect(http.HandlerFunc(h.updateRegistry)))
+	mux.Handle("DELETE /api/registries/{id}", protect(http.HandlerFunc(h.deleteRegistry)))
 	mux.Handle("GET /api/access-logs", protect(http.HandlerFunc(h.accessLogs)))
 	mux.Handle("GET /api/security-config", protect(http.HandlerFunc(h.securityConfig)))
 	mux.Handle("POST /api/upgrade", protect(http.HandlerFunc(h.startUpgrade)))

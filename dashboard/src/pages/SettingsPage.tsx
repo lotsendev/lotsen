@@ -7,7 +7,14 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { Input } from '../components/ui/input'
-import { getHostProfile, getVersionInfo, getVersionReleases, triggerUpgrade, updateHostProfile, type VersionRelease } from '../lib/api'
+import {
+  getHostProfile,
+  getVersionInfo,
+  getVersionReleases,
+  triggerUpgrade,
+  updateHostProfile,
+  type VersionRelease,
+} from '../lib/api'
 import { UpgradeLogPanel } from '../settings/UpgradeLogPanel'
 import { useUpgradeLogsSSE } from '../settings/useUpgradeLogsSSE'
 import { useVersionCheck } from '../settings/useVersionCheck'

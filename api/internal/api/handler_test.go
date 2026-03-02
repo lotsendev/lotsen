@@ -107,6 +107,9 @@ func (m *memStore) Patch(id string, patch store.Deployment) (store.Deployment, e
 	if patch.Domain != "" {
 		d.Domain = patch.Domain
 	}
+	if patch.PublicSet {
+		d.Public = patch.Public
+	}
 	if patch.BasicAuth != nil {
 		d.BasicAuth = patch.BasicAuth
 	}
@@ -1694,6 +1697,7 @@ func TestPatchDeployment(t *testing.T) {
 		Envs:   map[string]string{"PORT": "80"},
 		Ports:  []string{"80:80"},
 		Status: store.StatusHealthy,
+		Public: true,
 	}
 
 	srv := newTestServer(s)
@@ -1914,6 +1918,7 @@ func TestUpdateDeployment(t *testing.T) {
 		ID:     "d1",
 		Name:   "web",
 		Image:  "nginx:1",
+		Public: true,
 		Status: store.StatusHealthy,
 	}
 
@@ -2306,6 +2311,7 @@ func TestRestartDeployment(t *testing.T) {
 		ID:     "d1",
 		Name:   "web",
 		Image:  "nginx:1",
+		Public: true,
 		Status: store.StatusHealthy,
 	}
 
@@ -2336,6 +2342,9 @@ func TestRestartDeployment(t *testing.T) {
 	}
 	if updated.Status != store.StatusDeploying {
 		t.Errorf("want status deploying, got %s", updated.Status)
+	}
+	if !updated.Public {
+		t.Errorf("want visibility preserved as public after restart")
 	}
 
 	select {

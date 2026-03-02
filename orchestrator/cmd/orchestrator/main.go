@@ -112,7 +112,7 @@ func main() {
 				dockerReachable = false
 				log.Printf("orchestrator: docker unreachable: %v", err)
 			} else {
-				statsCtx, statsCancel := context.WithTimeout(ctx, 5*time.Second)
+				statsCtx, statsCancel := context.WithTimeout(ctx, 12*time.Second)
 				statsByDeployment, statsErr := d.CollectStats(statsCtx)
 				statsCancel()
 				if statsErr != nil {

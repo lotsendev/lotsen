@@ -13,6 +13,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	dockertypes "github.com/docker/docker/api/types"
@@ -210,28 +211,46 @@ func (d *Docker) CollectStats(ctx context.Context) (map[string]ContainerStats, e
 		return nil, fmt.Errorf("docker: list running containers: %w", err)
 	}
 
-	statsByDeployment := make(map[string]ContainerStats, len(containers))
+	type result struct {
+		deploymentID string
+		stats        ContainerStats
+	}
+
+	resultCh := make(chan result, len(containers))
+	var wg sync.WaitGroup
+
 	for _, c := range containers {
 		deploymentID := strings.TrimSpace(c.Labels["lotsen.id"])
 		if deploymentID == "" {
 			continue
 		}
 
-		reader, err := d.client.ContainerStats(ctx, c.ID, false)
-		if err != nil {
-			if dockerclient.IsErrConnectionFailed(err) {
-				return nil, fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
+		wg.Add(1)
+		go func(containerID, depID string) {
+			defer wg.Done()
+
+			reader, err := d.client.ContainerStats(ctx, containerID, false)
+			if err != nil {
+				log.Printf("docker: stats for container %s: %v", containerID, err)
+				return
 			}
-			return nil, fmt.Errorf("docker: stats for container %s: %w", c.ID, err)
-		}
+			stat, decodeErr := decodeContainerStats(reader.Body)
+			_ = reader.Body.Close()
+			if decodeErr != nil {
+				log.Printf("docker: decode stats for container %s: %v", containerID, decodeErr)
+				return
+			}
 
-		stat, decodeErr := decodeContainerStats(reader.Body)
-		_ = reader.Body.Close()
-		if decodeErr != nil {
-			return nil, fmt.Errorf("docker: decode stats for container %s: %w", c.ID, decodeErr)
-		}
+			resultCh <- result{deploymentID: depID, stats: stat}
+		}(c.ID, deploymentID)
+	}
 
-		statsByDeployment[deploymentID] = stat
+	wg.Wait()
+	close(resultCh)
+
+	statsByDeployment := make(map[string]ContainerStats, len(containers))
+	for r := range resultCh {
+		statsByDeployment[r.deploymentID] = r.stats
 	}
 
 	return statsByDeployment, nil

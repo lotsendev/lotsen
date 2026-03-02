@@ -56,13 +56,27 @@ type HeartbeatLoadBalancerBlockedIPState struct {
 }
 
 type heartbeatHostState struct {
-	CPU *heartbeatHostMetric `json:"cpu,omitempty"`
-	RAM *heartbeatHostMetric `json:"ram,omitempty"`
+	CPU      *heartbeatHostMetric   `json:"cpu,omitempty"`
+	RAM      *heartbeatHostMetric   `json:"ram,omitempty"`
+	Metadata *HeartbeatHostMetadata `json:"metadata,omitempty"`
 }
 
 type heartbeatHostMetric struct {
 	UsagePercent float64   `json:"usagePercent"`
 	CheckedAt    time.Time `json:"checkedAt"`
+}
+
+type HeartbeatHostSpecs struct {
+	CPUCores    int    `json:"cpuCores,omitempty"`
+	MemoryBytes uint64 `json:"memoryBytes,omitempty"`
+	DiskBytes   uint64 `json:"diskBytes,omitempty"`
+}
+
+type HeartbeatHostMetadata struct {
+	IPAddress string             `json:"ipAddress,omitempty"`
+	OSName    string             `json:"osName,omitempty"`
+	OSVersion string             `json:"osVersion,omitempty"`
+	Specs     HeartbeatHostSpecs `json:"specs,omitempty"`
 }
 
 type HeartbeatContainerStats struct {
@@ -114,14 +128,14 @@ func (c *Client) NotifyStatus(id string, status store.Status, reason store.Statu
 
 // NotifyHeartbeat calls POST /api/system-status/orchestrator-heartbeat so the
 // API can update orchestrator liveness, Docker connectivity, and host metrics.
-func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bool, loadBalancerTraffic *HeartbeatLoadBalancerTraffic, storeAccessible bool, checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64, containerStats map[string]HeartbeatContainerStats) error {
+func (c *Client) NotifyHeartbeat(dockerReachable bool, loadBalancerResponding bool, loadBalancerTraffic *HeartbeatLoadBalancerTraffic, storeAccessible bool, checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64, hostMetadata *HeartbeatHostMetadata, containerStats map[string]HeartbeatContainerStats) error {
 	if checkedAt.IsZero() {
 		checkedAt = time.Now().UTC()
 	} else {
 		checkedAt = checkedAt.UTC()
 	}
 
-	host := buildHeartbeatHostState(checkedAt, cpuUsagePercent, ramUsagePercent)
+	host := buildHeartbeatHostState(checkedAt, cpuUsagePercent, ramUsagePercent, hostMetadata)
 
 	body, err := json.Marshal(heartbeatRequest{
 		At: checkedAt,
@@ -190,7 +204,7 @@ func cloneHeartbeatLoadBalancerTraffic(in *HeartbeatLoadBalancerTraffic) *Heartb
 	return &out
 }
 
-func buildHeartbeatHostState(checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64) *heartbeatHostState {
+func buildHeartbeatHostState(checkedAt time.Time, cpuUsagePercent *float64, ramUsagePercent *float64, metadata *HeartbeatHostMetadata) *heartbeatHostState {
 	host := &heartbeatHostState{}
 
 	if cpuUsagePercent != nil {
@@ -199,10 +213,28 @@ func buildHeartbeatHostState(checkedAt time.Time, cpuUsagePercent *float64, ramU
 	if ramUsagePercent != nil {
 		host.RAM = &heartbeatHostMetric{UsagePercent: *ramUsagePercent, CheckedAt: checkedAt}
 	}
+	if metadata != nil {
+		host.Metadata = cloneHeartbeatHostMetadata(metadata)
+	}
 
-	if host.CPU == nil && host.RAM == nil {
+	if host.CPU == nil && host.RAM == nil && host.Metadata == nil {
 		return nil
 	}
 
 	return host
+}
+
+func cloneHeartbeatHostMetadata(in *HeartbeatHostMetadata) *HeartbeatHostMetadata {
+	if in == nil {
+		return nil
+	}
+
+	out := *in
+	out.Specs = HeartbeatHostSpecs{
+		CPUCores:    in.Specs.CPUCores,
+		MemoryBytes: in.Specs.MemoryBytes,
+		DiskBytes:   in.Specs.DiskBytes,
+	}
+
+	return &out
 }

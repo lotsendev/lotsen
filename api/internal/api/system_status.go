@@ -87,10 +87,24 @@ type HostMetricSystemStatus struct {
 	LastUpdated  *time.Time        `json:"lastUpdated,omitempty"`
 }
 
+type HostMetadataSpecsSystemStatus struct {
+	CPUCores    int    `json:"cpuCores,omitempty"`
+	MemoryBytes uint64 `json:"memoryBytes,omitempty"`
+	DiskBytes   uint64 `json:"diskBytes,omitempty"`
+}
+
+type HostMetadataSystemStatus struct {
+	IPAddress string                        `json:"ipAddress,omitempty"`
+	OSName    string                        `json:"osName,omitempty"`
+	OSVersion string                        `json:"osVersion,omitempty"`
+	Specs     HostMetadataSpecsSystemStatus `json:"specs,omitempty"`
+}
+
 // HostSystemStatus carries host-level runtime utilization signals.
 type HostSystemStatus struct {
-	CPU HostMetricSystemStatus `json:"cpu"`
-	RAM HostMetricSystemStatus `json:"ram"`
+	CPU      HostMetricSystemStatus    `json:"cpu"`
+	RAM      HostMetricSystemStatus    `json:"ram"`
+	Metadata *HostMetadataSystemStatus `json:"metadata,omitempty"`
 }
 
 // SystemStatusSnapshot is the typed dashboard-facing system-status contract.
@@ -132,6 +146,10 @@ type RAMUtilizationIngestor interface {
 	RecordRAMUtilization(ctx context.Context, usagePercent float64, at time.Time) error
 }
 
+type HostMetadataIngestor interface {
+	RecordHostMetadata(ctx context.Context, metadata HostMetadataSystemStatus) error
+}
+
 type defaultSystemStatusProvider struct {
 	now                func() time.Time
 	staleAfter         time.Duration
@@ -145,6 +163,7 @@ type defaultSystemStatusProvider struct {
 	hostSignalMu       sync.RWMutex
 	cpuSignal          hostMetricSignal
 	ramSignal          hostMetricSignal
+	hostMetadata       hostMetadataSignal
 }
 
 type orchestratorHeartbeatSignal struct {
@@ -170,6 +189,11 @@ type hostMetricSignal struct {
 	lastCheckedUTC time.Time
 	usagePercent   float64
 	hasSignal      bool
+}
+
+type hostMetadataSignal struct {
+	metadata  HostMetadataSystemStatus
+	hasSignal bool
 }
 
 func newDefaultSystemStatusProvider(now func() time.Time, staleAfter time.Duration, apiStoreCheck func(context.Context) bool) SystemStatusProvider {
@@ -202,8 +226,9 @@ func (p *defaultSystemStatusProvider) Snapshot(ctx context.Context) (SystemStatu
 		LoadBalancer: p.loadBalancerStatus(),
 		Docker:       p.dockerStatus(),
 		Host: HostSystemStatus{
-			CPU: p.cpuStatus(),
-			RAM: p.ramStatus(),
+			CPU:      p.cpuStatus(),
+			RAM:      p.ramStatus(),
+			Metadata: p.hostMetadataStatus(),
 		},
 	}, nil
 }
@@ -404,6 +429,17 @@ func (p *defaultSystemStatusProvider) RecordRAMUtilization(_ context.Context, us
 	return nil
 }
 
+func (p *defaultSystemStatusProvider) RecordHostMetadata(_ context.Context, metadata HostMetadataSystemStatus) error {
+	p.hostSignalMu.Lock()
+	p.hostMetadata = hostMetadataSignal{
+		metadata:  cloneHostMetadata(metadata),
+		hasSignal: true,
+	}
+	p.hostSignalMu.Unlock()
+
+	return nil
+}
+
 func (p *defaultSystemStatusProvider) cpuStatus() HostMetricSystemStatus {
 	p.hostSignalMu.RLock()
 	signal := p.cpuSignal
@@ -443,6 +479,32 @@ func (p *defaultSystemStatusProvider) ramStatus() HostMetricSystemStatus {
 		State:        state,
 		UsagePercent: signal.usagePercent,
 		LastUpdated:  &ramCheckedAt,
+	}
+}
+
+func (p *defaultSystemStatusProvider) hostMetadataStatus() *HostMetadataSystemStatus {
+	p.hostSignalMu.RLock()
+	signal := p.hostMetadata
+	p.hostSignalMu.RUnlock()
+
+	if !signal.hasSignal {
+		return nil
+	}
+
+	metadata := cloneHostMetadata(signal.metadata)
+	return &metadata
+}
+
+func cloneHostMetadata(in HostMetadataSystemStatus) HostMetadataSystemStatus {
+	return HostMetadataSystemStatus{
+		IPAddress: in.IPAddress,
+		OSName:    in.OSName,
+		OSVersion: in.OSVersion,
+		Specs: HostMetadataSpecsSystemStatus{
+			CPUCores:    in.Specs.CPUCores,
+			MemoryBytes: in.Specs.MemoryBytes,
+			DiskBytes:   in.Specs.DiskBytes,
+		},
 	}
 }
 

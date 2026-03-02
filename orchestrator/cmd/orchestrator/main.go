@@ -15,6 +15,7 @@ import (
 
 	"github.com/ercadev/dirigent/orchestrator/internal/apiclient"
 	"github.com/ercadev/dirigent/orchestrator/internal/docker"
+	"github.com/ercadev/dirigent/orchestrator/internal/hostinfo"
 	"github.com/ercadev/dirigent/orchestrator/internal/hostmetrics"
 	"github.com/ercadev/dirigent/orchestrator/internal/reconciler"
 	"github.com/ercadev/dirigent/store"
@@ -86,10 +87,21 @@ func main() {
 		select {
 		case <-ticker.C:
 			now := time.Now().UTC()
+			hostInfo := hostinfo.Collect()
 			dockerReachable := true
 			containerStats := map[string]apiclient.HeartbeatContainerStats{}
 			loadBalancerResponding := false
 			var loadBalancerTraffic *apiclient.HeartbeatLoadBalancerTraffic
+			hostMetadata := &apiclient.HeartbeatHostMetadata{
+				IPAddress: hostInfo.IPAddress,
+				OSName:    hostInfo.OSName,
+				OSVersion: hostInfo.OSVersion,
+				Specs: apiclient.HeartbeatHostSpecs{
+					CPUCores:    hostInfo.CPUCores,
+					MemoryBytes: hostInfo.MemoryBytes,
+					DiskBytes:   hostInfo.DiskBytes,
+				},
+			}
 			storeAccessible := true
 			var cpuUsagePercent *float64
 			var ramUsagePercent *float64
@@ -148,7 +160,7 @@ func main() {
 			}
 
 			// Heartbeat is always sent, regardless of Docker state.
-			if err := notifier.NotifyHeartbeat(dockerReachable, loadBalancerResponding, loadBalancerTraffic, storeAccessible, now, cpuUsagePercent, ramUsagePercent, containerStats); err != nil {
+			if err := notifier.NotifyHeartbeat(dockerReachable, loadBalancerResponding, loadBalancerTraffic, storeAccessible, now, cpuUsagePercent, ramUsagePercent, hostMetadata, containerStats); err != nil {
 				log.Printf("orchestrator: notify heartbeat: %v", err)
 			}
 

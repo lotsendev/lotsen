@@ -8,7 +8,8 @@ import {
   useNavigate,
   useRouterState,
 } from '@tanstack/react-router'
-import { Activity, Boxes, FileText, LogOut, Moon, Rocket, Server, Settings, Sun, Users } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Gauge, HardDrive, LogOut, Moon, PackageSearch, Radar, Rocket, ScrollText, Sun, UserRound, UserRoundCog } from 'lucide-react'
 import { useEffect } from 'react'
 import { Button } from './components/ui/button'
 import {
@@ -32,6 +33,7 @@ import { SystemStatusPage } from './pages/SystemStatusPage'
 import { TrafficPage } from './pages/TrafficPage'
 import { UsersPage } from './pages/UsersPage'
 import { useAuth, useLogout } from './auth/useAuth'
+import { getHostProfile } from './lib/api'
 import { useVersionCheck } from './settings/useVersionCheck'
 import { useTheme } from './theme'
 
@@ -42,6 +44,11 @@ function DashboardLayout() {
   const { isAuthenticated, isAuthDisabled, isLoading, username } = useAuth()
   const navigate = useNavigate()
   const logoutMutation = useLogout()
+  const hostProfileQuery = useQuery({
+    queryKey: ['hostProfile'],
+    queryFn: getHostProfile,
+    refetchInterval: 60_000,
+  })
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated && !isAuthDisabled) {
@@ -54,20 +61,21 @@ function DashboardLayout() {
   }
 
   const isSystemStatusPage = pathname === '/system-status'
-  const isSettingsPage = pathname === '/settings'
+  const isHostPage = pathname === '/host' || pathname === '/settings'
   const isUsersPage = pathname === '/users'
   const isTrafficPage = pathname === '/traffic'
   const isLogsPage = pathname === '/logs'
   const isDeploymentPage = pathname.startsWith('/deployments')
   const isDeploymentDetailPage = isDeploymentPage && pathname !== '/deployments'
+  const hostName = hostProfileQuery.data?.displayName?.trim() || 'Unnamed host'
   const pageTitle = isSystemStatusPage
     ? 'System status'
     : isTrafficPage
       ? 'Traffic & security'
       : isLogsPage
       ? 'Logs'
-      : isSettingsPage
-      ? 'Settings'
+      : isHostPage
+      ? 'Host'
       : isUsersPage
       ? 'Users'
       : isDeploymentDetailPage
@@ -79,8 +87,8 @@ function DashboardLayout() {
       ? 'Inspect recent proxy traffic and effective protection settings.'
       : isLogsPage
       ? 'Inspect core service output and deployment log streams without SSH.'
-      : isSettingsPage
-      ? 'Manage product version and in-dashboard upgrades.'
+      : isHostPage
+      ? 'Manage host naming, metadata, and runtime upgrades.'
       : isUsersPage
       ? 'Create users, rotate passwords, and revoke dashboard access.'
       : isDeploymentDetailPage
@@ -120,16 +128,21 @@ function DashboardLayout() {
               )}
             </div>
           </div>
+          <div className="rounded-xl border border-border/70 bg-muted/45 p-3">
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/85">Current host</p>
+            <p className="mt-1 truncate text-sm font-semibold text-foreground">{hostName}</p>
+          </div>
         </SidebarHeader>
         <SidebarContent className="px-4 pb-4 pt-1">
           <nav aria-label="Dashboard sections" className="p-1">
             <SidebarGroup className="p-0">
+              <p className="px-2 pb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">Operate</p>
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname.startsWith('/deployments')} size="lg" className="rounded-lg">
                       <Link to="/deployments">
-                        <Boxes className="h-4 w-4 shrink-0" />
+                        <PackageSearch className="h-4 w-4 shrink-0" />
                         <span>Deployments</span>
                       </Link>
                     </SidebarMenuButton>
@@ -137,7 +150,7 @@ function DashboardLayout() {
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname === '/system-status'} size="lg" className="rounded-lg">
                       <Link to="/system-status">
-                        <Server className="h-4 w-4 shrink-0" />
+                        <Gauge className="h-4 w-4 shrink-0" />
                         <span>System status</span>
                       </Link>
                     </SidebarMenuButton>
@@ -145,7 +158,7 @@ function DashboardLayout() {
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname === '/traffic'} size="lg" className="rounded-lg">
                       <Link to="/traffic">
-                        <Activity className="h-4 w-4 shrink-0" />
+                        <Radar className="h-4 w-4 shrink-0" />
                         <span>Traffic</span>
                       </Link>
                     </SidebarMenuButton>
@@ -153,24 +166,32 @@ function DashboardLayout() {
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname === '/logs'} size="lg" className="rounded-lg">
                       <Link to="/logs">
-                        <FileText className="h-4 w-4 shrink-0" />
+                        <ScrollText className="h-4 w-4 shrink-0" />
                         <span>Logs</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup className="mt-4 p-0">
+              <p className="px-2 pb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">Configure</p>
+              <SidebarGroupContent>
+                <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild isActive={pathname === '/users'} size="lg" className="rounded-lg">
                       <Link to="/users">
-                        <Users className="h-4 w-4 shrink-0" />
+                        <UserRoundCog className="h-4 w-4 shrink-0" />
                         <span>Users</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={pathname === '/settings'} size="lg" className="rounded-lg">
-                      <Link to="/settings">
-                        <Settings className="h-4 w-4 shrink-0" />
-                        <span>Settings</span>
+                    <SidebarMenuButton asChild isActive={pathname === '/host' || pathname === '/settings'} size="lg" className="rounded-lg">
+                      <Link to="/host">
+                        <HardDrive className="h-4 w-4 shrink-0" />
+                        <span>Host</span>
                         {upgradeAvailable && <span aria-label="Upgrade available" className="ml-auto h-2 w-2 rounded-full bg-primary" />}
                       </Link>
                     </SidebarMenuButton>
@@ -179,15 +200,27 @@ function DashboardLayout() {
               </SidebarGroupContent>
             </SidebarGroup>
           </nav>
+
+          <div className="mt-auto px-2 pt-4">
+            <div className="flex items-center gap-2 border-t border-border/70 pt-3">
+              <span className="grid h-6 w-6 place-items-center rounded-md border border-border/70 bg-background/80 text-muted-foreground">
+                <UserRound className="h-3.5 w-3.5" />
+              </span>
+              <div className="min-w-0">
+                <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/80">Signed in</p>
+                <p className="truncate text-xs font-medium text-foreground">{isAuthDisabled ? 'Auth disabled' : username || 'Authenticated user'}</p>
+              </div>
+            </div>
+          </div>
         </SidebarContent>
       </Sidebar>
 
       <SidebarInset>
         <div className="mx-auto w-full max-w-6xl">
           <section className="rounded-2xl border border-border/70 bg-card/92 p-4 shadow-sm backdrop-blur sm:p-5 lg:p-6">
-            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              {isSystemStatusPage || isTrafficPage || isLogsPage ? 'Observability' : isSettingsPage || isUsersPage ? 'Configuration' : 'Deployments'}
-            </p>
+              <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              {isSystemStatusPage || isTrafficPage || isLogsPage ? 'Observability' : isHostPage || isUsersPage ? 'Configuration' : 'Deployments'}
+              </p>
             <div className="mb-4">
               <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight text-foreground">{pageTitle}</h1>
               <p className="mt-1 text-sm text-muted-foreground">{pageDescription}</p>
@@ -263,10 +296,18 @@ const logsRoute = createRoute({
   component: LogsPage,
 })
 
+const hostRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/host',
+  component: SettingsPage,
+})
+
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings',
-  component: SettingsPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/host' })
+  },
 })
 
 const usersRoute = createRoute({
@@ -285,6 +326,7 @@ const routeTree = rootRoute.addChildren([
     trafficRoute,
     logsRoute,
     usersRoute,
+    hostRoute,
     settingsRoute,
   ]),
 ])

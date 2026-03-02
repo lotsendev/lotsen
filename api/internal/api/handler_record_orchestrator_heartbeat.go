@@ -50,6 +50,16 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 				UsagePercent *float64   `json:"usagePercent"`
 				CheckedAt    *time.Time `json:"checkedAt"`
 			} `json:"ram"`
+			Metadata *struct {
+				IPAddress string `json:"ipAddress"`
+				OSName    string `json:"osName"`
+				OSVersion string `json:"osVersion"`
+				Specs     *struct {
+					CPUCores    *int    `json:"cpuCores"`
+					MemoryBytes *uint64 `json:"memoryBytes"`
+					DiskBytes   *uint64 `json:"diskBytes"`
+				} `json:"specs"`
+			} `json:"metadata"`
 		} `json:"host"`
 		ContainerStats *map[string]struct {
 			CPUPercent       *float64 `json:"cpuPercent"`
@@ -116,6 +126,35 @@ func (h *Handler) recordOrchestratorHeartbeat(w http.ResponseWriter, r *http.Req
 	}
 
 	if body.Host != nil {
+		if body.Host.Metadata != nil {
+			if h.hostMetadata == nil {
+				http.Error(w, "system status unavailable", http.StatusServiceUnavailable)
+				return
+			}
+
+			hostMetadata := HostMetadataSystemStatus{
+				IPAddress: body.Host.Metadata.IPAddress,
+				OSName:    body.Host.Metadata.OSName,
+				OSVersion: body.Host.Metadata.OSVersion,
+			}
+			if body.Host.Metadata.Specs != nil {
+				if body.Host.Metadata.Specs.CPUCores != nil {
+					hostMetadata.Specs.CPUCores = *body.Host.Metadata.Specs.CPUCores
+				}
+				if body.Host.Metadata.Specs.MemoryBytes != nil {
+					hostMetadata.Specs.MemoryBytes = *body.Host.Metadata.Specs.MemoryBytes
+				}
+				if body.Host.Metadata.Specs.DiskBytes != nil {
+					hostMetadata.Specs.DiskBytes = *body.Host.Metadata.Specs.DiskBytes
+				}
+			}
+
+			if err := h.hostMetadata.RecordHostMetadata(r.Context(), hostMetadata); err != nil {
+				http.Error(w, "failed to record host metadata", http.StatusInternalServerError)
+				return
+			}
+		}
+
 		if body.Host.CPU != nil && body.Host.CPU.UsagePercent != nil {
 			if h.cpu == nil {
 				http.Error(w, "system status unavailable", http.StatusServiceUnavailable)

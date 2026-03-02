@@ -67,6 +67,7 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		Volumes:   body.Volumes,
 		Domain:    body.Domain,
 		Public:    public,
+		PublicSet: body.Public != nil,
 		BasicAuth: basicAuth,
 		Security:  body.Security,
 	}

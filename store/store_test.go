@@ -396,6 +396,50 @@ func TestJSONStore_Patch_UpdatesSecurityConfig(t *testing.T) {
 	}
 }
 
+func TestJSONStore_Patch_PreservesPublicWhenUnset(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{ID: "d1", Name: "web", Public: true, Status: store.StatusHealthy})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	updated, err := s.Patch("d1", store.Deployment{Status: store.StatusDeploying})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+
+	if !updated.Public {
+		t.Fatalf("want public visibility to be preserved")
+	}
+}
+
+func TestJSONStore_Patch_UpdatesPublicWhenSet(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.Create(store.Deployment{ID: "d1", Name: "web", Public: true, Status: store.StatusHealthy})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	updated, err := s.Patch("d1", store.Deployment{Public: false, PublicSet: true})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+
+	if updated.Public {
+		t.Fatalf("want public visibility to be updated to private")
+	}
+}
+
 func TestJSONStore_Patch_NotFound(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "deployments.json")
 	s, err := store.NewJSONStore(path)

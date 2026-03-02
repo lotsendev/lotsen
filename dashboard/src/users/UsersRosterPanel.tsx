@@ -1,4 +1,4 @@
-import { KeyRound, Search, Trash2, UserRound } from 'lucide-react'
+import { Search, Trash2, UserRound } from 'lucide-react'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -12,7 +12,6 @@ type UsersRosterPanelProps = {
   isLoading: boolean
   isError: boolean
   onRetry: () => void
-  onResetPassword: (username: string) => void
   onDeleteUser: (username: string) => void
 }
 
@@ -24,14 +23,13 @@ export function UsersRosterPanel({
   isLoading,
   isError,
   onRetry,
-  onResetPassword,
   onDeleteUser,
 }: UsersRosterPanelProps) {
   return (
     <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
       <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Access roster</p>
       <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">Manage operators</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Rotate credentials or revoke dashboard access without shell access.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Revoke dashboard access without shell access.</p>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         <article className="rounded-lg border border-border/60 bg-background/70 p-3">
@@ -60,7 +58,7 @@ export function UsersRosterPanel({
         {isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, index) => (
-              <div key={index} className="h-[74px] rounded-lg border border-border/50 bg-background/70" />
+              <div key={index} className="h-[62px] rounded-lg border border-border/50 bg-background/70" />
             ))}
           </div>
         ) : isError ? (
@@ -72,7 +70,7 @@ export function UsersRosterPanel({
           </div>
         ) : users.length === 0 ? (
           <div className="rounded-lg border border-border/50 bg-background/80 p-4 text-sm text-muted-foreground">
-            {totalUsers === 0 ? 'No operators created yet. Add one above to unlock dashboard login.' : 'No operators match this search.'}
+            {totalUsers === 0 ? 'No operators yet. Invite someone using the button above.' : 'No operators match this search.'}
           </div>
         ) : (
           <div className="space-y-2">
@@ -86,14 +84,10 @@ export function UsersRosterPanel({
                     <p className="truncate font-medium text-foreground">{user.username}</p>
                     <Badge variant="secondary">active</Badge>
                   </div>
-                  <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Credential authority: local lotsen store</p>
+                  <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Auth: passkey</p>
                 </div>
 
                 <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
-                  <Button type="button" size="sm" variant="outline" onClick={() => onResetPassword(user.username)}>
-                    <KeyRound className="h-3.5 w-3.5" />
-                    Reset password
-                  </Button>
                   <Button type="button" size="sm" variant="destructive" onClick={() => onDeleteUser(user.username)}>
                     <Trash2 className="h-3.5 w-3.5" />
                     Delete

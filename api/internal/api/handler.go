@@ -16,6 +16,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/go-webauthn/webauthn/webauthn"
+
 	"github.com/ercadev/dirigent/auth"
 	"github.com/ercadev/dirigent/internal/events"
 	"github.com/ercadev/dirigent/internal/upgrade"
@@ -63,13 +65,22 @@ type UpgradeRunner interface {
 	IsRunning() bool
 }
 
-// AuthUserStore authenticates and manages Lotsen users.
+// AuthUserStore manages Lotsen users and passkey credentials.
 type AuthUserStore interface {
-	Authenticate(username, password string) error
+	HasAnyUser() (bool, error)
+	CreateUser(username string) error
 	ListUsers() ([]auth.User, error)
-	CreateUser(username, password string) error
-	UpdatePassword(username, password string) error
 	DeleteUser(username string) error
+
+	GetWebAuthnUser(username string) (*auth.WebAuthnUser, error)
+	SavePasskey(username string, cred *webauthn.Credential, deviceName string) error
+	ListPasskeys(username string) ([]auth.PasskeyInfo, error)
+	DeletePasskey(credID, username string) error
+	UpdatePasskeySignCount(credID []byte, count uint32) error
+
+	CreateInviteToken(token string, expiresAt time.Time) error
+	ValidateInviteToken(token string) error
+	ConsumeInviteToken(token string) error
 }
 
 type HostProfileStore interface {
@@ -129,6 +140,8 @@ type Handler struct {
 	containerStats *ContainerStatsCache
 	authStore      AuthUserStore
 	jwtSecret      []byte
+	webAuthn       *webauthn.WebAuthn
+	challenges     *passkeySessionStore
 	hostProfiles   HostProfileStore
 	hostMetadata   HostMetadataIngestor
 }
@@ -207,6 +220,12 @@ func (h *Handler) SetAuth(userStore AuthUserStore, jwtSecret []byte) {
 	h.jwtSecret = jwtSecret
 }
 
+// SetWebAuthn configures the WebAuthn relying party for passkey authentication.
+func (h *Handler) SetWebAuthn(wa *webauthn.WebAuthn) {
+	h.webAuthn = wa
+	h.challenges = newPasskeySessionStore()
+}
+
 func (h *Handler) SetHostProfileStore(store HostProfileStore) {
 	h.hostProfiles = store
 }
@@ -226,10 +245,23 @@ func buildAPIStoreChecker(s Store) func(context.Context) bool {
 // all /api/* routes require a valid JWT when an authStore is configured.
 // Internal orchestrator endpoints (heartbeat and status update) are exempt.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	// Auth endpoints — always open.
-	mux.HandleFunc("POST /auth/login", h.login)
+	// Auth — always open.
 	mux.HandleFunc("POST /auth/logout", h.logout)
 	mux.HandleFunc("GET /auth/me", h.me)
+
+	// Setup (first-run, open only when no users exist).
+	mux.HandleFunc("GET /auth/setup-available", h.setupAvailable)
+	mux.HandleFunc("POST /auth/passkey/setup/begin", h.passkeySetupBegin)
+	mux.HandleFunc("POST /auth/passkey/setup/finish", h.passkeySetupFinish)
+
+	// Invite-based registration (open, token-gated).
+	mux.HandleFunc("GET /auth/invite", h.validateInvite)
+	mux.HandleFunc("POST /auth/passkey/invite/begin", h.passkeyInviteBegin)
+	mux.HandleFunc("POST /auth/passkey/invite/finish", h.passkeyInviteFinish)
+
+	// Login (open).
+	mux.HandleFunc("POST /auth/passkey/login/begin", h.passkeyLoginBegin)
+	mux.HandleFunc("POST /auth/passkey/login/finish", h.passkeyLoginFinish)
 
 	// Orchestrator-internal endpoints — exempt from JWT so the orchestrator
 	// process can call them without user credentials.
@@ -249,8 +281,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("PUT /api/host", protect(http.HandlerFunc(h.updateHost)))
 	mux.Handle("GET /api/users", protect(http.HandlerFunc(h.listUsers)))
 	mux.Handle("POST /api/users", protect(http.HandlerFunc(h.createUser)))
-	mux.Handle("PUT /api/users/{username}/password", protect(http.HandlerFunc(h.updateUserPassword)))
 	mux.Handle("DELETE /api/users/{username}", protect(http.HandlerFunc(h.deleteUser)))
+	mux.Handle("POST /api/invites", protect(http.HandlerFunc(h.createInvite)))
+	mux.Handle("GET /api/passkeys", protect(http.HandlerFunc(h.listPasskeys)))
+	mux.Handle("DELETE /api/passkeys/{id}", protect(http.HandlerFunc(h.deletePasskey)))
 	mux.Handle("GET /api/registries", protect(http.HandlerFunc(h.listRegistries)))
 	mux.Handle("POST /api/registries", protect(http.HandlerFunc(h.createRegistry)))
 	mux.Handle("PUT /api/registries/{id}", protect(http.HandlerFunc(h.updateRegistry)))

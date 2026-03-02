@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-webauthn/webauthn/webauthn"
+
 	dockerclient "github.com/docker/docker/client"
 
 	"github.com/ercadev/dirigent/auth"
@@ -60,6 +62,35 @@ func main() {
 
 	h := internalapi.NewWithVersion(s, broker, logStreamer, version)
 	h.SetAuth(userStore, jwtSecret)
+
+	// Configure WebAuthn if RP_ID is set.
+	if rpID := strings.TrimSpace(os.Getenv("LOTSEN_RP_ID")); rpID != "" {
+		originsRaw := strings.TrimSpace(os.Getenv("LOTSEN_RP_ORIGINS"))
+		origins := []string{}
+		for _, o := range strings.Split(originsRaw, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				origins = append(origins, o)
+			}
+		}
+		displayName := strings.TrimSpace(os.Getenv("LOTSEN_RP_DISPLAY_NAME"))
+		if displayName == "" {
+			displayName = "Lotsen"
+		}
+
+		wa, err := webauthn.New(&webauthn.Config{
+			RPDisplayName: displayName,
+			RPID:          rpID,
+			RPOrigins:     origins,
+		})
+		if err != nil {
+			log.Fatalf("lotsen: init webauthn: %v", err)
+		}
+		h.SetWebAuthn(wa)
+		log.Printf("lotsen: passkeys enabled (RP ID: %s)", rpID)
+	} else {
+		log.Printf("lotsen: passkeys disabled (set LOTSEN_RP_ID to enable)")
+	}
+
 	hostProfileStore, err := internalapi.NewFileHostProfileStore(hostProfilePath(dataPath()))
 	if err != nil {
 		log.Fatalf("lotsen: open host profile store: %v", err)
@@ -92,39 +123,19 @@ func authFromEnv(storePath string) (*auth.UserStore, []byte, error) {
 		return nil, nil, fmt.Errorf("open user store: %w", err)
 	}
 
-	// Bootstrap credentials from env on startup.
-	hasUsers, err := userStore.HasUsers()
+	// Clean up any expired invite tokens from previous runs.
+	if err := userStore.CleanupExpiredTokens(); err != nil {
+		log.Printf("lotsen: cleanup expired invite tokens: %v", err)
+	}
+
+	hasUsers, err := userStore.HasAnyUser()
 	if err != nil {
 		userStore.Close()
 		return nil, nil, fmt.Errorf("check users: %w", err)
 	}
 
-	user := strings.TrimSpace(os.Getenv("LOTSEN_AUTH_USER"))
-	password := strings.TrimSpace(os.Getenv("LOTSEN_AUTH_PASSWORD"))
-	ensureBootstrap := strings.EqualFold(strings.TrimSpace(os.Getenv("LOTSEN_AUTH_ENSURE_BOOTSTRAP")), "true") || strings.TrimSpace(os.Getenv("LOTSEN_AUTH_ENSURE_BOOTSTRAP")) == "1"
-	if hasUsers {
-		if ensureBootstrap {
-			if user != "" && password != "" {
-				if err := userStore.SetPassword(user, password); err != nil {
-					userStore.Close()
-					return nil, nil, fmt.Errorf("ensure bootstrap credentials: %w", err)
-				}
-				log.Printf("lotsen: ensured bootstrap user %q from env", user)
-			} else if user != "" || password != "" {
-				log.Printf("lotsen: WARNING: LOTSEN_AUTH_USER and LOTSEN_AUTH_PASSWORD must both be set when LOTSEN_AUTH_ENSURE_BOOTSTRAP is enabled")
-			}
-		} else if user != "" || password != "" {
-			log.Printf("lotsen: auth users already exist; ignoring LOTSEN_AUTH_USER/LOTSEN_AUTH_PASSWORD bootstrap env")
-		}
-	} else if user != "" && password != "" {
-		if err := userStore.SetPassword(user, password); err != nil {
-			userStore.Close()
-			return nil, nil, fmt.Errorf("set initial credentials: %w", err)
-		}
-	} else if user != "" || password != "" {
-		log.Printf("lotsen: WARNING: LOTSEN_AUTH_USER and LOTSEN_AUTH_PASSWORD must both be set to bootstrap first login user")
-	} else {
-		log.Printf("lotsen: WARNING: no users in store and LOTSEN_AUTH_USER/LOTSEN_AUTH_PASSWORD not set; login will not work")
+	if !hasUsers {
+		log.Printf("lotsen: no users in store — visit the dashboard to complete first-run setup")
 	}
 
 	return userStore, []byte(secret), nil

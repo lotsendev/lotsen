@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
+
 	"github.com/ercadev/dirigent/auth"
 	"github.com/ercadev/dirigent/internal/api"
 	"github.com/ercadev/dirigent/internal/events"
@@ -19,25 +21,31 @@ import (
 // stubAuthStore is an in-memory AuthUserStore for tests.
 type stubAuthStore struct {
 	mu            sync.RWMutex
-	users         map[string]string
-	authErr       error
+	users         map[string]struct{}
 	listUsersErr  error
 	createUserErr error
-	updatePassErr error
 	deleteUserErr error
+	hasAnyUser    bool
 }
 
-func (s *stubAuthStore) Authenticate(username, password string) error {
+func (s *stubAuthStore) HasAnyUser() (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return len(s.users) > 0 || s.hasAnyUser, nil
+}
 
-	if s.authErr != nil {
-		return s.authErr
+func (s *stubAuthStore) CreateUser(username string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.createUserErr != nil {
+		return s.createUserErr
 	}
-	if s.users[username] == password {
-		return nil
+	if _, exists := s.users[username]; exists {
+		return auth.ErrUserExists
 	}
-	return auth.ErrInvalidCredentials
+	s.users[username] = struct{}{}
+	return nil
 }
 
 func (s *stubAuthStore) ListUsers() ([]auth.User, error) {
@@ -61,36 +69,6 @@ func (s *stubAuthStore) ListUsers() ([]auth.User, error) {
 	return users, nil
 }
 
-func (s *stubAuthStore) CreateUser(username, password string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.createUserErr != nil {
-		return s.createUserErr
-	}
-
-	if _, exists := s.users[username]; exists {
-		return auth.ErrUserExists
-	}
-	s.users[username] = password
-	return nil
-}
-
-func (s *stubAuthStore) UpdatePassword(username, password string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.updatePassErr != nil {
-		return s.updatePassErr
-	}
-
-	if _, exists := s.users[username]; !exists {
-		return auth.ErrUserNotFound
-	}
-	s.users[username] = password
-	return nil
-}
-
 func (s *stubAuthStore) DeleteUser(username string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -98,7 +76,6 @@ func (s *stubAuthStore) DeleteUser(username string) error {
 	if s.deleteUserErr != nil {
 		return s.deleteUserErr
 	}
-
 	if _, exists := s.users[username]; !exists {
 		return auth.ErrUserNotFound
 	}
@@ -106,12 +83,46 @@ func (s *stubAuthStore) DeleteUser(username string) error {
 	return nil
 }
 
+// WebAuthn / passkey stubs (no-op for basic auth tests).
+
+func (s *stubAuthStore) GetWebAuthnUser(_ string) (*auth.WebAuthnUser, error) {
+	return nil, auth.ErrUserNotFound
+}
+
+func (s *stubAuthStore) SavePasskey(_ string, _ *webauthn.Credential, _ string) error {
+	return nil
+}
+
+func (s *stubAuthStore) ListPasskeys(_ string) ([]auth.PasskeyInfo, error) {
+	return nil, nil
+}
+
+func (s *stubAuthStore) DeletePasskey(_, _ string) error {
+	return nil
+}
+
+func (s *stubAuthStore) UpdatePasskeySignCount(_ []byte, _ uint32) error {
+	return nil
+}
+
+func (s *stubAuthStore) CreateInviteToken(_ string, _ time.Time) error {
+	return nil
+}
+
+func (s *stubAuthStore) ValidateInviteToken(_ string) error {
+	return errors.New("not found")
+}
+
+func (s *stubAuthStore) ConsumeInviteToken(_ string) error {
+	return nil
+}
+
 var testJWTSecret = []byte("test-secret-key")
 
-func newStubAuthStore(username, password string) *stubAuthStore {
-	users := map[string]string{}
-	if username != "" {
-		users[username] = password
+func newStubAuthStore(usernames ...string) *stubAuthStore {
+	users := make(map[string]struct{}, len(usernames))
+	for _, u := range usernames {
+		users[u] = struct{}{}
 	}
 	return &stubAuthStore{users: users}
 }
@@ -124,84 +135,8 @@ func newAuthTestServer(store api.Store, authStore api.AuthUserStore) *httptest.S
 	return httptest.NewServer(mux)
 }
 
-func TestLogin_ValidCredentials(t *testing.T) {
-	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser", "correctpass"))
-	defer srv.Close()
-
-	body, _ := json.Marshal(map[string]string{"username": "testuser", "password": "correctpass"})
-	resp, err := http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("POST /auth/login: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("want 200, got %d", resp.StatusCode)
-	}
-
-	var found bool
-	for _, c := range resp.Cookies() {
-		if c.Name == "lotsen_token" && c.Value != "" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("want lotsen_token cookie in response")
-	}
-}
-
-func TestLogin_InvalidCredentials(t *testing.T) {
-	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser", "correct"))
-	defer srv.Close()
-
-	body, _ := json.Marshal(map[string]string{"username": "testuser", "password": "wrong"})
-	resp, err := http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("POST /auth/login: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("want 401, got %d", resp.StatusCode)
-	}
-}
-
-func TestLogin_MissingFields(t *testing.T) {
-	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser", "pass"))
-	defer srv.Close()
-
-	body, _ := json.Marshal(map[string]string{"username": "testuser"})
-	resp, err := http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("POST /auth/login: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("want 400, got %d", resp.StatusCode)
-	}
-}
-
-func TestLogin_StoreError(t *testing.T) {
-	store := newStubAuthStore("testuser", "pass")
-	store.authErr = errors.New("db error")
-	srv := newAuthTestServer(newMemStore(), store)
-	defer srv.Close()
-
-	body, _ := json.Marshal(map[string]string{"username": "testuser", "password": "pass"})
-	resp, err := http.Post(srv.URL+"/auth/login", "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("POST /auth/login: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("want 500, got %d", resp.StatusCode)
-	}
-}
-
 func TestLogout_ClearsCookie(t *testing.T) {
-	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser", "pass"))
+	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser"))
 	defer srv.Close()
 
 	resp, err := http.Post(srv.URL+"/auth/logout", "application/json", nil)
@@ -226,7 +161,7 @@ func TestLogout_ClearsCookie(t *testing.T) {
 }
 
 func TestMe_ValidToken(t *testing.T) {
-	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser", "pass"))
+	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser"))
 	defer srv.Close()
 
 	token, err := auth.CreateToken(testJWTSecret, "testuser", 24*365*time.Hour)
@@ -248,7 +183,7 @@ func TestMe_ValidToken(t *testing.T) {
 }
 
 func TestMe_NoToken(t *testing.T) {
-	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser", "pass"))
+	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser"))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/auth/me")
@@ -263,7 +198,7 @@ func TestMe_NoToken(t *testing.T) {
 }
 
 func TestProtectedRoute_RequiresToken(t *testing.T) {
-	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser", "pass"))
+	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser"))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/api/deployments")
@@ -278,7 +213,7 @@ func TestProtectedRoute_RequiresToken(t *testing.T) {
 }
 
 func TestProtectedRoute_AllowsWithToken(t *testing.T) {
-	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser", "pass"))
+	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser"))
 	defer srv.Close()
 
 	token, err := auth.CreateToken(testJWTSecret, "testuser", 24*365*time.Hour)
@@ -300,7 +235,6 @@ func TestProtectedRoute_AllowsWithToken(t *testing.T) {
 }
 
 func TestProtectedRoute_OpenWhenNoAuthConfigured(t *testing.T) {
-	// When auth is not configured, all routes are open.
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
@@ -315,15 +249,53 @@ func TestProtectedRoute_OpenWhenNoAuthConfigured(t *testing.T) {
 	}
 }
 
-func TestUsers_List(t *testing.T) {
-	store := newStubAuthStore("admin", "pass")
-	if err := store.CreateUser("alice", "alice-pass"); err != nil {
-		t.Fatalf("CreateUser alice: %v", err)
-	}
-	if err := store.CreateUser("bob", "bob-pass"); err != nil {
-		t.Fatalf("CreateUser bob: %v", err)
-	}
+func TestSetupAvailable_NoUsers(t *testing.T) {
+	srv := newAuthTestServer(newMemStore(), newStubAuthStore())
+	defer srv.Close()
 
+	resp, err := http.Get(srv.URL + "/auth/setup-available")
+	if err != nil {
+		t.Fatalf("GET /auth/setup-available: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+	var body struct {
+		Available bool `json:"available"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !body.Available {
+		t.Error("want available=true when no users exist")
+	}
+}
+
+func TestSetupAvailable_HasUsers(t *testing.T) {
+	srv := newAuthTestServer(newMemStore(), newStubAuthStore("admin"))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/auth/setup-available")
+	if err != nil {
+		t.Fatalf("GET /auth/setup-available: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var body struct {
+		Available bool `json:"available"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Available {
+		t.Error("want available=false when users exist")
+	}
+}
+
+func TestUsers_List(t *testing.T) {
+	store := newStubAuthStore("admin", "alice", "bob")
 	srv := newAuthTestServer(newMemStore(), store)
 	defer srv.Close()
 
@@ -356,13 +328,10 @@ func TestUsers_List(t *testing.T) {
 	if len(body.Users) != 3 {
 		t.Fatalf("want 3 users, got %d", len(body.Users))
 	}
-	if body.Users[0].Username != "admin" || body.Users[1].Username != "alice" || body.Users[2].Username != "bob" {
-		t.Fatalf("unexpected usernames: %#v", body.Users)
-	}
 }
 
 func TestUsers_CreateAndDelete(t *testing.T) {
-	store := newStubAuthStore("admin", "pass")
+	store := newStubAuthStore("admin")
 	srv := newAuthTestServer(newMemStore(), store)
 	defer srv.Close()
 
@@ -371,7 +340,7 @@ func TestUsers_CreateAndDelete(t *testing.T) {
 		t.Fatalf("CreateToken: %v", err)
 	}
 
-	createBody, _ := json.Marshal(map[string]string{"username": "new-user", "password": "new-pass"})
+	createBody, _ := json.Marshal(map[string]string{"username": "new-user"})
 	createReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/users", bytes.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.AddCookie(&http.Cookie{Name: "lotsen_token", Value: token})
@@ -385,10 +354,6 @@ func TestUsers_CreateAndDelete(t *testing.T) {
 		t.Fatalf("want 201, got %d", createResp.StatusCode)
 	}
 
-	if err := store.Authenticate("new-user", "new-pass"); err != nil {
-		t.Fatalf("Authenticate(new-user): %v", err)
-	}
-
 	deleteReq, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/users/new-user", nil)
 	deleteReq.AddCookie(&http.Cookie{Name: "lotsen_token", Value: token})
 	deleteResp, err := http.DefaultClient.Do(deleteReq)
@@ -400,19 +365,10 @@ func TestUsers_CreateAndDelete(t *testing.T) {
 	if deleteResp.StatusCode != http.StatusNoContent {
 		t.Fatalf("want 204, got %d", deleteResp.StatusCode)
 	}
-
-	err = store.Authenticate("new-user", "new-pass")
-	if !errors.Is(err, auth.ErrInvalidCredentials) {
-		t.Fatalf("want ErrInvalidCredentials, got %v", err)
-	}
 }
 
 func TestUsers_CreateDuplicateConflict(t *testing.T) {
-	store := newStubAuthStore("admin", "pass")
-	if err := store.CreateUser("alice", "pass"); err != nil {
-		t.Fatalf("CreateUser alice: %v", err)
-	}
-
+	store := newStubAuthStore("admin", "alice")
 	srv := newAuthTestServer(newMemStore(), store)
 	defer srv.Close()
 
@@ -421,7 +377,7 @@ func TestUsers_CreateDuplicateConflict(t *testing.T) {
 		t.Fatalf("CreateToken: %v", err)
 	}
 
-	body, _ := json.Marshal(map[string]string{"username": "alice", "password": "new-pass"})
+	body, _ := json.Marshal(map[string]string{"username": "alice"})
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/users", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: "lotsen_token", Value: token})
@@ -436,66 +392,8 @@ func TestUsers_CreateDuplicateConflict(t *testing.T) {
 	}
 }
 
-func TestUsers_UpdatePassword(t *testing.T) {
-	store := newStubAuthStore("admin", "pass")
-	if err := store.CreateUser("alice", "old-pass"); err != nil {
-		t.Fatalf("CreateUser alice: %v", err)
-	}
-
-	srv := newAuthTestServer(newMemStore(), store)
-	defer srv.Close()
-
-	token, err := auth.CreateToken(testJWTSecret, "admin", 24*time.Hour)
-	if err != nil {
-		t.Fatalf("CreateToken: %v", err)
-	}
-
-	body, _ := json.Marshal(map[string]string{"password": "new-pass"})
-	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/users/alice/password", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "lotsen_token", Value: token})
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("PUT /api/users/alice/password: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("want 204, got %d", resp.StatusCode)
-	}
-
-	if err := store.Authenticate("alice", "new-pass"); err != nil {
-		t.Fatalf("Authenticate(alice,new-pass): %v", err)
-	}
-}
-
-func TestUsers_UpdatePassword_UserNotFound(t *testing.T) {
-	store := newStubAuthStore("admin", "pass")
-	srv := newAuthTestServer(newMemStore(), store)
-	defer srv.Close()
-
-	token, err := auth.CreateToken(testJWTSecret, "admin", 24*time.Hour)
-	if err != nil {
-		t.Fatalf("CreateToken: %v", err)
-	}
-
-	body, _ := json.Marshal(map[string]string{"password": "new-pass"})
-	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/users/missing/password", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "lotsen_token", Value: token})
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("PUT /api/users/missing/password: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("want 404, got %d", resp.StatusCode)
-	}
-}
-
 func TestUsers_List_StoreError(t *testing.T) {
-	store := newStubAuthStore("admin", "pass")
+	store := newStubAuthStore("admin")
 	store.listUsersErr = errors.New("db down")
 	srv := newAuthTestServer(newMemStore(), store)
 	defer srv.Close()
@@ -519,7 +417,7 @@ func TestUsers_List_StoreError(t *testing.T) {
 }
 
 func TestUsers_Create_StoreError(t *testing.T) {
-	store := newStubAuthStore("admin", "pass")
+	store := newStubAuthStore("admin")
 	store.createUserErr = errors.New("db down")
 	srv := newAuthTestServer(newMemStore(), store)
 	defer srv.Close()
@@ -529,7 +427,7 @@ func TestUsers_Create_StoreError(t *testing.T) {
 		t.Fatalf("CreateToken: %v", err)
 	}
 
-	body, _ := json.Marshal(map[string]string{"username": "alice", "password": "pass"})
+	body, _ := json.Marshal(map[string]string{"username": "alice"})
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/users", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: "lotsen_token", Value: token})
@@ -544,40 +442,8 @@ func TestUsers_Create_StoreError(t *testing.T) {
 	}
 }
 
-func TestUsers_UpdatePassword_StoreError(t *testing.T) {
-	store := newStubAuthStore("admin", "pass")
-	if err := store.CreateUser("alice", "old-pass"); err != nil {
-		t.Fatalf("CreateUser: %v", err)
-	}
-	store.updatePassErr = errors.New("db down")
-	srv := newAuthTestServer(newMemStore(), store)
-	defer srv.Close()
-
-	token, err := auth.CreateToken(testJWTSecret, "admin", 24*time.Hour)
-	if err != nil {
-		t.Fatalf("CreateToken: %v", err)
-	}
-
-	body, _ := json.Marshal(map[string]string{"password": "new-pass"})
-	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/users/alice/password", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "lotsen_token", Value: token})
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("PUT /api/users/alice/password: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("want 500, got %d", resp.StatusCode)
-	}
-}
-
 func TestUsers_Delete_StoreError(t *testing.T) {
-	store := newStubAuthStore("admin", "pass")
-	if err := store.CreateUser("alice", "pass"); err != nil {
-		t.Fatalf("CreateUser: %v", err)
-	}
+	store := newStubAuthStore("admin", "alice")
 	store.deleteUserErr = errors.New("db down")
 	srv := newAuthTestServer(newMemStore(), store)
 	defer srv.Close()

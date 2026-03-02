@@ -307,7 +307,7 @@ func TestDocker_CollectStats_CollectsRunningManagedContainers(t *testing.T) {
 	}
 }
 
-func TestDocker_CollectStats_ReturnsErrorOnStatsFailure(t *testing.T) {
+func TestDocker_CollectStats_SkipsContainerOnStatsFailure(t *testing.T) {
 	mock := &mockClient{
 		listContainers: []dockertypes.Container{
 			{ID: "c1", Labels: map[string]string{"lotsen.id": "d1"}, State: "running"},
@@ -316,9 +316,12 @@ func TestDocker_CollectStats_ReturnsErrorOnStatsFailure(t *testing.T) {
 	}
 
 	d := docker.New(mock)
-	_, err := d.CollectStats(context.Background())
-	if err == nil {
-		t.Fatal("want error, got nil")
+	stats, err := d.CollectStats(context.Background())
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+	if len(stats) != 0 {
+		t.Fatalf("want no stats, got %d entries", len(stats))
 	}
 }
 

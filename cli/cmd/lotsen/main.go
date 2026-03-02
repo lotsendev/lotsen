@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -38,6 +40,8 @@ func main() {
 		err = runSetup(os.Args[2:])
 	case "upgrade":
 		err = runUpgrade(os.Args[2:])
+	case "upgrade-proxy":
+		err = runUpgradeProxy(os.Args[2:])
 	case "doctor":
 		err = runDoctor(os.Args[2:])
 	case "-h", "--help", "help":
@@ -59,6 +63,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  lotsen setup [flags]")
 	fmt.Println("  lotsen upgrade [flags]")
+	fmt.Println("  lotsen upgrade-proxy [flags]")
 	fmt.Println("  lotsen doctor [flags]")
 	fmt.Println("")
 	fmt.Println("Run `lotsen <command> --help` for command-specific options.")
@@ -194,6 +199,20 @@ func runUpgrade(args []string) error {
 	currentVersion, targetVersion := determineUpgradeVersions(*target, fetchLocalVersionSnapshot)
 	fmt.Printf("--> Upgrading Lotsen from %s to %s\n", currentVersion, targetVersion)
 
+	// --- Pre-upgrade prediction ---
+	localProxyHash, localErr := sha256File("/usr/local/bin/lotsen-proxy")
+	remoteProxyHash, remoteErr := fetchRemoteHash(*target, "lotsen-proxy")
+
+	switch {
+	case localErr != nil || remoteErr != nil || remoteProxyHash == "":
+		fmt.Println("--> Proxy downtime: unknown (could not determine if binary changes)")
+	case localProxyHash == remoteProxyHash:
+		fmt.Println("--> Proxy downtime: NO (binary unchanged, restart will be skipped)")
+	default:
+		fmt.Println("--> Proxy downtime: YES (binary changed, brief restart required)")
+	}
+	// --- end prediction ---
+
 	effectiveNonInteractive := *nonInteractive || !stdinIsTTY()
 	if !effectiveNonInteractive && !*yes {
 		confirmed, err := promptYesNo("Proceed with upgrade? [Y/n]: ", true)
@@ -205,10 +224,10 @@ func runUpgrade(args []string) error {
 		}
 	}
 
-	env := append(os.Environ(),
-		"LOTSEN_VERSION="+*target,
-		"LOTSEN_UPGRADE=1",
-	)
+	env := append(os.Environ(), "LOTSEN_VERSION="+*target, "LOTSEN_UPGRADE=1")
+	if localErr == nil {
+		env = append(env, "LOTSEN_PROXY_PRE_HASH="+localProxyHash)
+	}
 	if effectiveNonInteractive {
 		env = append(env, "LOTSEN_NON_INTERACTIVE=1")
 	}
@@ -219,6 +238,35 @@ func runUpgrade(args []string) error {
 	url := releaseScriptURL(*target, "setup.sh")
 	fmt.Printf("--> Running upgrade from %s\n", url)
 	return runRemoteScript(url, env)
+}
+
+func runUpgradeProxy(args []string) error {
+	fs := flag.NewFlagSet("upgrade-proxy", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	preHash := fs.String("pre-hash", "", "SHA-256 of proxy binary before upgrade")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("%w\n\nUsage: lotsen upgrade-proxy [--pre-hash <sha256>]", err)
+	}
+
+	currentHash, err := sha256File("/usr/local/bin/lotsen-proxy")
+	if err != nil {
+		return fmt.Errorf("hash proxy binary: %w", err)
+	}
+
+	if !proxyRestartNeeded(*preHash, currentHash) {
+		fmt.Println("--> lotsen-proxy binary unchanged — skipping restart")
+		return nil
+	}
+
+	fmt.Println("--> lotsen-proxy binary changed — restarting service")
+	cmd := exec.Command("systemctl", "restart", "lotsen-proxy")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("restart lotsen-proxy: %w", err)
+	}
+	fmt.Println("--> lotsen-proxy restarted successfully")
+	return nil
 }
 
 func determineUpgradeVersions(target string, lookup versionLookup) (string, string) {
@@ -270,6 +318,55 @@ func fetchLocalVersionSnapshot() (versionSnapshot, error) {
 	}
 
 	return snapshot, nil
+}
+
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// fetchRemoteHash downloads sha256sums.txt from the target release and returns
+// the listed hash for the named binary. Returns ("", nil) if not found.
+func fetchRemoteHash(version, binaryName string) (string, error) {
+	url := releaseScriptURL(version, "sha256sums.txt")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("fetch checksums: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", nil // older release without checksums file
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetch checksums status: %d", resp.StatusCode)
+	}
+	return parseChecksumEntry(resp.Body, binaryName)
+}
+
+// parseChecksumEntry reads sha256sums.txt lines (<hash>  <name>) and returns
+// the hash for the named binary. Returns ("", nil) if not present.
+func parseChecksumEntry(r io.Reader, name string) (string, error) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 && fields[1] == name {
+			return fields[0], nil
+		}
+	}
+	return "", scanner.Err()
+}
+
+func proxyRestartNeeded(preHash, currentHash string) bool {
+	return preHash == "" || currentHash != preHash
 }
 
 func runDoctor(args []string) error {

@@ -35,14 +35,14 @@ jobs:
         working-directory: orchestrator
         run: go test ./...
 
-      - uses: golangci/golangci-lint-action@v7
+      - uses: golangci/golangci-lint-action@v6
         with:
-          version: v2.10.1
+          version: v1.64.8
           working-directory: api
 
-      - uses: golangci/golangci-lint-action@v7
+      - uses: golangci/golangci-lint-action@v6
         with:
-          version: v2.10.1
+          version: v1.64.8
           working-directory: orchestrator
 
   react:

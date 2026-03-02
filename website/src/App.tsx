@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Landing from '@/pages/Landing'
+import Deck from '@/pages/Deck'
 import DocsLayout from '@/pages/docs/DocsLayout'
 import GettingStarted from '@/pages/docs/GettingStarted'
 import DeploymentConfiguration from '@/pages/docs/DeploymentConfiguration'
@@ -11,6 +12,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/deck" element={<Deck />} />
         <Route path="/docs" element={<DocsLayout />}>
           <Route index element={<Navigate to="getting-started" replace />} />
           <Route path="getting-started" element={<GettingStarted />} />

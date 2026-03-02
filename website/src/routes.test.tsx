@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, Navigate } from 'react-router-dom'
 import Landing from '@/pages/Landing'
+import Deck from '@/pages/Deck'
 import DocsLayout from '@/pages/docs/DocsLayout'
 import GettingStarted from '@/pages/docs/GettingStarted'
 import DeploymentConfiguration from '@/pages/docs/DeploymentConfiguration'
@@ -12,6 +13,7 @@ function TestApp({ initialPath }: { initialPath: string }) {
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/deck" element={<Deck />} />
         <Route path="/docs" element={<DocsLayout />}>
           <Route index element={<Navigate to="getting-started" replace />} />
           <Route path="getting-started" element={<GettingStarted />} />
@@ -36,6 +38,13 @@ describe('Routes', () => {
     render(<TestApp initialPath="/docs/getting-started" />)
     expect(
       screen.getByRole('heading', { name: /getting started/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the pitch deck page at /deck', () => {
+    render(<TestApp initialPath="/deck" />)
+    expect(
+      screen.getByRole('heading', { name: /docker orchestration for teams that do not need kubernetes complexity/i }),
     ).toBeInTheDocument()
   })
 

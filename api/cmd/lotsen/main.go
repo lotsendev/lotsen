@@ -60,6 +60,11 @@ func main() {
 
 	h := internalapi.NewWithVersion(s, broker, logStreamer, version)
 	h.SetAuth(userStore, jwtSecret)
+	hostProfileStore, err := internalapi.NewFileHostProfileStore(hostProfilePath(dataPath()))
+	if err != nil {
+		log.Fatalf("lotsen: open host profile store: %v", err)
+	}
+	h.SetHostProfileStore(hostProfileStore)
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
@@ -69,6 +74,10 @@ func main() {
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("lotsen: %v", err)
 	}
+}
+
+func hostProfilePath(storePath string) string {
+	return filepath.Join(filepath.Dir(storePath), "host_profile.json")
 }
 
 func authFromEnv(storePath string) (*auth.UserStore, []byte, error) {

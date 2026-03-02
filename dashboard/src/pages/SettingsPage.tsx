@@ -6,7 +6,8 @@ import remarkGfm from 'remark-gfm'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
-import { getVersionInfo, getVersionReleases, triggerUpgrade, type VersionRelease } from '../lib/api'
+import { Input } from '../components/ui/input'
+import { getHostProfile, getVersionInfo, getVersionReleases, triggerUpgrade, updateHostProfile, type VersionRelease } from '../lib/api'
 import { UpgradeLogPanel } from '../settings/UpgradeLogPanel'
 import { useUpgradeLogsSSE } from '../settings/useUpgradeLogsSSE'
 import { useVersionCheck } from '../settings/useVersionCheck'
@@ -46,6 +47,21 @@ function formatDate(value?: string) {
   return parsed.toLocaleString()
 }
 
+function formatBytes(value?: number) {
+  if (!value || value <= 0) return 'Unavailable'
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = value
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+
+  const precision = unitIndex < 2 ? 0 : 1
+  return `${size.toFixed(precision)} ${units[unitIndex]}`
+}
+
 function parseSemver(raw?: string): [number, number, number] | null {
   if (!raw) return null
   const match = raw.trim().match(/^v?(\d+)\.(\d+)\.(\d+)$/)
@@ -82,6 +98,27 @@ function getUpgradePath(currentVersion: string, latestVersion: string | undefine
     .sort((a, b) => compareSemver(b.version, a.version))
 }
 
+function FieldTile({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <article className="rounded-lg border border-border/55 bg-background/70 px-3 py-2.5">
+      <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <p className={mono ? 'mt-1 font-mono text-sm text-foreground' : 'mt-1 text-sm text-foreground'}>{value}</p>
+    </article>
+  )
+}
+
+function RunwayStat({ label, value, status }: { label: string; value: string; status?: ReactNode }) {
+  return (
+    <article className="rounded-lg border border-border/55 bg-background/70 p-3">
+      <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <div className="mt-1.5 flex items-center gap-2">
+        <p className="font-mono text-sm text-foreground">{value}</p>
+        {status}
+      </div>
+    </article>
+  )
+}
+
 export function SettingsPage() {
   const queryClient = useQueryClient()
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -92,9 +129,24 @@ export function SettingsPage() {
   const [reconnectReady, setReconnectReady] = useState(false)
   const [targetVersion, setTargetVersion] = useState<string | null>(null)
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
+  const [hostNameDraft, setHostNameDraft] = useState('')
+  const [hostUpdateError, setHostUpdateError] = useState<string | null>(null)
   const [attemptId, setAttemptId] = useState(0)
 
   const { currentVersion, latestVersion, publishedAt, releaseNotes, upgradeAvailable, cachedAt, isLoading, isError } = useVersionCheck()
+  const hostProfileQuery = useQuery({
+    queryKey: ['hostProfile'],
+    queryFn: getHostProfile,
+  })
+  const hostMetadata = hostProfileQuery.data?.metadata
+  const hasHostMetadata = Boolean(
+    hostMetadata?.ipAddress ||
+      hostMetadata?.osName ||
+      hostMetadata?.osVersion ||
+      hostMetadata?.specs?.cpuCores ||
+      hostMetadata?.specs?.memoryBytes ||
+      hostMetadata?.specs?.diskBytes
+  )
   const { data: releases = [], isLoading: releasesLoading } = useQuery({
     queryKey: ['version-releases'],
     queryFn: () => getVersionReleases(30),
@@ -192,17 +244,32 @@ export function SettingsPage() {
     },
   })
 
+  useEffect(() => {
+    setHostNameDraft(hostProfileQuery.data?.displayName ?? '')
+  }, [hostProfileQuery.data?.displayName])
+
+  const hostNameUpdate = useMutation({
+    mutationFn: updateHostProfile,
+    onSuccess: profile => {
+      queryClient.setQueryData(['hostProfile'], profile)
+      setHostUpdateError(null)
+    },
+    onError: error => {
+      setHostUpdateError(error instanceof Error ? error.message : 'Failed to update host name')
+    },
+  })
+
   const activeTarget = selectedUpgradeTarget ?? (upgradeAvailable ? latestVersion ?? null : null)
   const canStartUpgrade = upgradeAvailable && Boolean(activeTarget) && !isUpgradeRunning && !startUpgrade.isPending
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-4">
       {isLoading && <p className="text-sm text-muted-foreground">Checking version information...</p>}
 
       {isError && <p className="text-sm text-destructive">Unable to fetch version information right now.</p>}
 
       {reconnectReady && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#2a7a64]/30 bg-[#2a7a64]/10 px-4 py-3 text-sm text-[#1f5f4f] dark:border-[#2a7a64]/40 dark:bg-[#2a7a64]/20 dark:text-[#93d0bc]">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#2a7a64]/30 bg-[#2a7a64]/10 px-4 py-3 text-sm text-[#1f5f4f] dark:border-[#2a7a64]/40 dark:bg-[#2a7a64]/20 dark:text-[#93d0bc]">
           <p>Upgrade complete - reload to connect to the updated runtime.</p>
           <Button type="button" size="sm" onClick={() => window.location.reload()}>
             <RefreshCw className="h-4 w-4" />
@@ -212,7 +279,7 @@ export function SettingsPage() {
       )}
 
       {upgradeError && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
+        <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <p className="text-sm font-medium">Upgrade failed</p>
@@ -222,39 +289,70 @@ export function SettingsPage() {
       )}
 
       <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Running now</p>
-        <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">Installed release details</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Current runtime identity and local cache timing.</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Host dossier</p>
+            <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">Identity and runtime facts</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Set the host label and confirm machine facts before making runtime changes.</p>
+          </div>
+          <Badge variant="outline" className="rounded-md border-border/70 bg-background/70 px-2.5 py-1 font-mono text-[11px]">
+            {hostProfileQuery.data?.displayName?.trim() || 'Unnamed host'}
+          </Badge>
+        </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <article className="rounded-lg border border-border/60 bg-background/70 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Installed version</p>
-            <p className="mt-1 font-mono text-sm text-foreground">{currentVersion}</p>
-          </article>
-          <article className="rounded-lg border border-border/60 bg-background/70 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Latest discovered</p>
-            <div className="mt-1 flex items-center gap-2">
-              <p className="font-mono text-sm text-foreground">{latestVersion ?? 'Unavailable'}</p>
-              {upgradeAvailable ? <Badge variant="info">behind</Badge> : <Badge variant="secondary">current</Badge>}
-            </div>
-          </article>
-          <article className="rounded-lg border border-border/60 bg-background/70 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Latest published</p>
-            <p className="mt-1 text-sm text-foreground">{formatDate(publishedAt)}</p>
-          </article>
-          <article className="rounded-lg border border-border/60 bg-background/70 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Version cache refreshed</p>
-            <p className="mt-1 text-sm text-foreground">{formatDate(cachedAt)}</p>
-          </article>
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)]">
+          <section className="rounded-lg border border-border/55 bg-background/70 p-4">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Host identity</p>
+            <p className="mt-1 text-sm text-muted-foreground">Name shown in navigation and logs.</p>
+
+            <form
+              className="mt-3 flex flex-col gap-2 sm:flex-row"
+              onSubmit={event => {
+                event.preventDefault()
+                hostNameUpdate.mutate(hostNameDraft)
+              }}
+            >
+              <Input
+                value={hostNameDraft}
+                onChange={event => setHostNameDraft(event.target.value)}
+                placeholder="e.g. prod-eu-1"
+                maxLength={64}
+                className="sm:max-w-sm"
+                aria-label="Host display name"
+              />
+              <Button type="submit" disabled={hostNameUpdate.isPending || hostProfileQuery.isLoading}>
+                Save host name
+              </Button>
+            </form>
+
+            {hostUpdateError && <p className="mt-2 text-sm text-destructive">{hostUpdateError}</p>}
+          </section>
+
+          <section className="rounded-lg border border-border/55 bg-background/70 p-4">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Machine runtime facts</p>
+            <p className="mt-1 text-sm text-muted-foreground">Snapshot from the active host process.</p>
+
+            {hasHostMetadata ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <FieldTile label="IP address" value={hostMetadata?.ipAddress || 'Unavailable'} mono />
+                <FieldTile label="Operating system" value={[hostMetadata?.osName, hostMetadata?.osVersion].filter(Boolean).join(' ') || 'Unavailable'} />
+                <FieldTile label="CPU" value={hostMetadata?.specs?.cpuCores ? `${hostMetadata.specs.cpuCores} cores` : 'Unavailable'} />
+                <FieldTile label="Memory" value={formatBytes(hostMetadata?.specs?.memoryBytes)} mono />
+                <FieldTile label="Disk" value={formatBytes(hostMetadata?.specs?.diskBytes)} mono />
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-muted-foreground">Metadata unavailable.</p>
+            )}
+          </section>
         </div>
       </section>
 
       <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Upgrade path</p>
-            <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">Available versions</h2>
-            <p className="mt-1 text-sm text-muted-foreground">All releases between installed and latest with direct upgrade actions.</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Release runway</p>
+            <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">Installed and discovered versions</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Check runtime state and jump directly to the newest valid target.</p>
           </div>
           {latestVersion && upgradeAvailable && upgradePath.length > 0 && (
             <Button
@@ -268,6 +366,30 @@ export function SettingsPage() {
               {startUpgrade.isPending || isUpgradeRunning ? 'Upgrading...' : `Upgrade to ${latestVersion}`}
             </Button>
           )}
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <RunwayStat label="Installed version" value={currentVersion} />
+          <RunwayStat
+            label="Latest discovered"
+            value={latestVersion ?? 'Unavailable'}
+            status={upgradeAvailable ? <Badge variant="info">behind</Badge> : <Badge variant="secondary">current</Badge>}
+          />
+          <RunwayStat label="Latest published" value={formatDate(publishedAt)} />
+          <RunwayStat label="Cache refreshed" value={formatDate(cachedAt)} />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border/60 bg-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Upgrade sequence</p>
+            <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">Available versions</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Runway ledger of releases between installed and latest.</p>
+          </div>
+          <Badge variant="outline" className="rounded-md border-border/70 bg-background/70 px-2.5 py-1 font-mono text-[11px]">
+            {upgradePath.length} hop{upgradePath.length === 1 ? '' : 's'}
+          </Badge>
         </div>
 
         {releasesLoading ? (
@@ -284,39 +406,47 @@ export function SettingsPage() {
               const canUpgradeToRelease = upgradeAvailable && !isCurrent && !isUpgradeRunning && !startUpgrade.isPending
 
               return (
-                <article key={release.version} className="rounded-lg border border-border/60 bg-background/70 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-mono text-sm font-medium text-foreground">{release.version}</p>
-                      {isCurrent && <Badge variant="secondary">installed</Badge>}
-                      {isLatest && <Badge variant="info">latest</Badge>}
-                      <span className="text-xs text-muted-foreground">Published {formatDate(release.publishedAt)}</span>
+                <article key={release.version} className="rounded-lg border border-border/55 bg-background/70 p-3">
+                  <div className="flex gap-3">
+                    <div className="mt-1 flex shrink-0 flex-col items-center">
+                      <span className="h-2.5 w-2.5 rounded-full bg-border" />
+                      {!isLatest && <span className="mt-1 h-full w-px bg-border/70" />}
                     </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={!canUpgradeToRelease}
-                      onClick={() => {
-                        setSelectedUpgradeTarget(release.version)
-                        setConfirmOpen(true)
-                      }}
-                    >
-                      Upgrade to {release.version}
-                    </Button>
-                  </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-mono text-sm font-medium text-foreground">{release.version}</p>
+                          {isCurrent && <Badge variant="secondary">installed</Badge>}
+                          {isLatest && <Badge variant="info">latest</Badge>}
+                          <span className="text-xs text-muted-foreground">Published {formatDate(release.publishedAt)}</span>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={!canUpgradeToRelease}
+                          onClick={() => {
+                            setSelectedUpgradeTarget(release.version)
+                            setConfirmOpen(true)
+                          }}
+                        >
+                          Upgrade to {release.version}
+                        </Button>
+                      </div>
 
-                  <details className="mt-3 rounded-md border border-border/60 bg-background p-3">
-                    <summary className="cursor-pointer text-xs font-medium uppercase tracking-[0.13em] text-muted-foreground">Release notes</summary>
-                    <div className="mt-3 text-sm text-foreground">
-                      {release.releaseNotes?.trim() ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                          {release.releaseNotes}
-                        </ReactMarkdown>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No release notes available.</p>
-                      )}
+                      <details className="mt-3 rounded-md border border-border/60 bg-background p-3">
+                        <summary className="cursor-pointer text-xs font-medium uppercase tracking-[0.13em] text-muted-foreground">Release notes</summary>
+                        <div className="mt-3 text-sm text-foreground">
+                          {release.releaseNotes?.trim() ? (
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                              {release.releaseNotes}
+                            </ReactMarkdown>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">No release notes available.</p>
+                          )}
+                        </div>
+                      </details>
                     </div>
-                  </details>
+                  </div>
                 </article>
               )
             })}

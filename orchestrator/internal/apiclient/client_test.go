@@ -29,6 +29,16 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 			MemoryPercent:    50,
 		},
 	}
+	hostMetadata := &HeartbeatHostMetadata{
+		IPAddress: "10.0.0.5",
+		OSName:    "Ubuntu",
+		OSVersion: "24.04",
+		Specs: HeartbeatHostSpecs{
+			CPUCores:    4,
+			MemoryBytes: 8589934592,
+			DiskBytes:   68719476736,
+		},
+	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -70,6 +80,16 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 					UsagePercent float64   `json:"usagePercent"`
 					CheckedAt    time.Time `json:"checkedAt"`
 				} `json:"ram"`
+				Metadata *struct {
+					IPAddress string `json:"ipAddress"`
+					OSName    string `json:"osName"`
+					OSVersion string `json:"osVersion"`
+					Specs     struct {
+						CPUCores    int    `json:"cpuCores"`
+						MemoryBytes uint64 `json:"memoryBytes"`
+						DiskBytes   uint64 `json:"diskBytes"`
+					} `json:"specs"`
+				} `json:"metadata"`
 			} `json:"host"`
 			ContainerStats map[string]struct {
 				CPUPercent       float64 `json:"cpuPercent"`
@@ -109,8 +129,8 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 		if len(body.LoadBalancer.Traffic.BlockedIPs) != 1 || body.LoadBalancer.Traffic.BlockedIPs[0].IP != "203.0.113.7" {
 			t.Fatal("want blocked ip payload")
 		}
-		if body.Host == nil || body.Host.CPU == nil || body.Host.RAM == nil {
-			t.Fatal("want host cpu and ram metrics in heartbeat")
+		if body.Host == nil || body.Host.CPU == nil || body.Host.RAM == nil || body.Host.Metadata == nil {
+			t.Fatal("want host metrics and metadata in heartbeat")
 		}
 		if body.Host.CPU.UsagePercent != cpu {
 			t.Fatalf("want cpu usage %v, got %v", cpu, body.Host.CPU.UsagePercent)
@@ -124,6 +144,12 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 		if !body.Host.RAM.CheckedAt.Equal(checkedAt) {
 			t.Fatalf("want ram checkedAt %s, got %s", checkedAt, body.Host.RAM.CheckedAt)
 		}
+		if body.Host.Metadata.IPAddress != hostMetadata.IPAddress {
+			t.Fatalf("want ip %q, got %q", hostMetadata.IPAddress, body.Host.Metadata.IPAddress)
+		}
+		if body.Host.Metadata.Specs.CPUCores != hostMetadata.Specs.CPUCores {
+			t.Fatalf("want cpu cores %d, got %d", hostMetadata.Specs.CPUCores, body.Host.Metadata.Specs.CPUCores)
+		}
 		if len(body.ContainerStats) != 1 {
 			t.Fatalf("want 1 container stats entry, got %d", len(body.ContainerStats))
 		}
@@ -136,7 +162,7 @@ func TestClient_NotifyHeartbeat(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(false, false, traffic, false, checkedAt, &cpu, &ram, containerStats); err != nil {
+	if err := client.NotifyHeartbeat(false, false, traffic, false, checkedAt, &cpu, &ram, hostMetadata, containerStats); err != nil {
 		t.Fatalf("NotifyHeartbeat: %v", err)
 	}
 }
@@ -164,7 +190,7 @@ func TestClient_NotifyHeartbeat_WithoutHostMetrics(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(false, true, nil, true, checkedAt, nil, nil, nil); err != nil {
+	if err := client.NotifyHeartbeat(false, true, nil, true, checkedAt, nil, nil, nil, nil); err != nil {
 		t.Fatalf("NotifyHeartbeat: %v", err)
 	}
 }
@@ -176,7 +202,7 @@ func TestClient_NotifyHeartbeat_UnexpectedResponse(t *testing.T) {
 	defer srv.Close()
 
 	client := New(srv.URL)
-	if err := client.NotifyHeartbeat(true, true, nil, true, time.Time{}, nil, nil, nil); err == nil {
+	if err := client.NotifyHeartbeat(true, true, nil, true, time.Time{}, nil, nil, nil, nil); err == nil {
 		t.Fatal("want error for non-204 heartbeat response")
 	}
 }

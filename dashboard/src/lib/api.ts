@@ -214,9 +214,28 @@ export type HostMetricSystemStatus = {
   lastUpdated?: string
 }
 
+export type HostSpecs = {
+  cpuCores?: number
+  memoryBytes?: number
+  diskBytes?: number
+}
+
+export type HostMetadata = {
+  ipAddress?: string
+  osName?: string
+  osVersion?: string
+  specs?: HostSpecs
+}
+
 export type HostSystemStatus = {
   cpu: HostMetricSystemStatus
   ram: HostMetricSystemStatus
+  metadata?: HostMetadata
+}
+
+export type HostProfile = {
+  displayName: string
+  metadata?: HostMetadata
 }
 
 export type SystemStatusSnapshot = {
@@ -351,6 +370,22 @@ export async function restartDeployment(id: string): Promise<Deployment> {
 export async function getSystemStatus(): Promise<SystemStatusSnapshot> {
   const res = await apiFetch('/api/system-status')
   if (!res.ok) throw new Error('Failed to fetch system status')
+  return res.json()
+}
+
+export async function getHostProfile(): Promise<HostProfile> {
+  const res = await apiFetch('/api/host')
+  if (!res.ok) throw new Error('Failed to fetch host profile')
+  return res.json()
+}
+
+export async function updateHostProfile(displayName: string): Promise<HostProfile> {
+  const res = await apiFetch('/api/host', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ displayName }),
+  })
+  if (!res.ok) throw new Error('Failed to update host profile')
   return res.json()
 }
 

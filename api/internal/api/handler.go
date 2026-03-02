@@ -68,6 +68,11 @@ type AuthUserStore interface {
 	DeleteUser(username string) error
 }
 
+type HostProfileStore interface {
+	Get() (HostProfile, error)
+	UpdateDisplayName(displayName string) (HostProfile, error)
+}
+
 type basicAuthUserRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -120,6 +125,8 @@ type Handler struct {
 	containerStats *ContainerStatsCache
 	authStore      AuthUserStore
 	jwtSecret      []byte
+	hostProfiles   HostProfileStore
+	hostMetadata   HostMetadataIngestor
 }
 
 const defaultOrchestratorStaleAfter = 30 * time.Second
@@ -166,6 +173,7 @@ func NewWithDependencies(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 	loadBalancerIngestor, _ := statusSource.(LoadBalancerHealthIngestor)
 	cpuIngestor, _ := statusSource.(CPUUtilizationIngestor)
 	ramIngestor, _ := statusSource.(RAMUtilizationIngestor)
+	hostMetadataIngestor, _ := statusSource.(HostMetadataIngestor)
 
 	return &Handler{
 		store:          s,
@@ -184,6 +192,7 @@ func NewWithDependencies(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 		versions:       versions,
 		upgrade:        upgrader,
 		containerStats: NewContainerStatsCache(),
+		hostMetadata:   hostMetadataIngestor,
 	}
 }
 
@@ -192,6 +201,10 @@ func NewWithDependencies(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 func (h *Handler) SetAuth(userStore AuthUserStore, jwtSecret []byte) {
 	h.authStore = userStore
 	h.jwtSecret = jwtSecret
+}
+
+func (h *Handler) SetHostProfileStore(store HostProfileStore) {
+	h.hostProfiles = store
 }
 
 func buildAPIStoreChecker(s Store) func(context.Context) bool {
@@ -228,6 +241,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/load-balancer/access-logs", protect(http.HandlerFunc(h.loadBalancerAccessLogs)))
 	mux.Handle("GET /api/version", protect(http.HandlerFunc(h.getVersion)))
 	mux.Handle("GET /api/version/releases", protect(http.HandlerFunc(h.getVersionReleases)))
+	mux.Handle("GET /api/host", protect(http.HandlerFunc(h.getHost)))
+	mux.Handle("PUT /api/host", protect(http.HandlerFunc(h.updateHost)))
 	mux.Handle("GET /api/users", protect(http.HandlerFunc(h.listUsers)))
 	mux.Handle("POST /api/users", protect(http.HandlerFunc(h.createUser)))
 	mux.Handle("PUT /api/users/{username}/password", protect(http.HandlerFunc(h.updateUserPassword)))

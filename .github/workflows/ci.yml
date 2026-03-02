@@ -35,12 +35,12 @@ jobs:
         working-directory: orchestrator
         run: go test ./...
 
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.10.1
           working-directory: api
 
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.10.1
           working-directory: orchestrator

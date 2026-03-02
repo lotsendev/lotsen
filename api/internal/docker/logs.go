@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -14,7 +13,7 @@ import (
 
 // Client is the Docker API surface required by the log streamer.
 type Client interface {
-	ContainerList(ctx context.Context, options container.ListOptions) ([]dockertypes.Container, error)
+	ContainerList(ctx context.Context, options container.ListOptions) ([]container.Summary, error)
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 }
 
@@ -104,7 +103,7 @@ func (s *LogStreamer) RecentLogs(ctx context.Context, deploymentID string, tail 
 	return lines, nil
 }
 
-func (s *LogStreamer) latestContainer(ctx context.Context, deploymentID string) (*dockertypes.Container, error) {
+func (s *LogStreamer) latestContainer(ctx context.Context, deploymentID string) (*container.Summary, error) {
 	f := filters.NewArgs(
 		filters.Arg("label", "lotsen.managed=true"),
 		filters.Arg("label", "lotsen.id="+deploymentID),

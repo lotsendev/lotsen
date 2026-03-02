@@ -6,12 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 )
 
 type mockClient struct {
-	containers []dockertypes.Container
+	containers []container.Summary
 	listErr    error
 	logsErr    error
 
@@ -20,7 +19,7 @@ type mockClient struct {
 	logsOptions   container.LogsOptions
 }
 
-func (m *mockClient) ContainerList(_ context.Context, options container.ListOptions) ([]dockertypes.Container, error) {
+func (m *mockClient) ContainerList(_ context.Context, options container.ListOptions) ([]container.Summary, error) {
 	m.listOptions = options
 	if m.listErr != nil {
 		return nil, m.listErr
@@ -39,7 +38,7 @@ func (m *mockClient) ContainerLogs(_ context.Context, containerID string, option
 
 func TestStreamLogs_UsesNewestContainerIncludingStopped(t *testing.T) {
 	m := &mockClient{
-		containers: []dockertypes.Container{
+		containers: []container.Summary{
 			{ID: "old", Created: 100},
 			{ID: "new", Created: 200},
 		},
@@ -87,7 +86,7 @@ func TestStreamLogs_NoContainers(t *testing.T) {
 
 func TestRecentLogs_UsesNewestContainerWithoutFollow(t *testing.T) {
 	m := &mockClient{
-		containers: []dockertypes.Container{
+		containers: []container.Summary{
 			{ID: "old", Created: 100},
 			{ID: "new", Created: 200},
 		},

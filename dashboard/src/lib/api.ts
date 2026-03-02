@@ -44,6 +44,12 @@ export type DashboardUser = {
   username: string
 }
 
+export type RegistryCredential = {
+  id: string
+  prefix: string
+  username: string
+}
+
 export async function getUsers(): Promise<DashboardUser[]> {
   const res = await apiFetch('/api/users')
   if (!res.ok) throw new Error('Failed to fetch users')
@@ -75,6 +81,47 @@ export async function deleteUser(username: string): Promise<void> {
   const res = await apiFetch(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' })
   if (res.status === 404) throw new Error('User not found')
   if (!res.ok) throw new Error('Failed to delete user')
+}
+
+export async function getRegistries(): Promise<RegistryCredential[]> {
+  const res = await apiFetch('/api/registries')
+  if (!res.ok) throw new Error('Failed to fetch registries')
+  const body = await res.json() as { registries?: RegistryCredential[] }
+  return body.registries ?? []
+}
+
+export async function createRegistry(prefix: string, username: string, password: string): Promise<RegistryCredential> {
+  const res = await apiFetch('/api/registries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefix, username, password }),
+  })
+  if (res.status === 409) throw new Error('Registry prefix already exists')
+  if (!res.ok) throw new Error('Failed to create registry')
+  return res.json()
+}
+
+export async function updateRegistry(id: string, prefix: string, username: string, password?: string): Promise<RegistryCredential> {
+  const payload: { prefix: string; username: string; password?: string } = { prefix, username }
+  if (password) {
+    payload.password = password
+  }
+
+  const res = await apiFetch(`/api/registries/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (res.status === 404) throw new Error('Registry not found')
+  if (res.status === 409) throw new Error('Registry prefix already exists')
+  if (!res.ok) throw new Error('Failed to update registry')
+  return res.json()
+}
+
+export async function deleteRegistry(id: string): Promise<void> {
+  const res = await apiFetch(`/api/registries/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (res.status === 404) throw new Error('Registry not found')
+  if (!res.ok) throw new Error('Failed to delete registry')
 }
 
 export type DeploymentStatus = 'idle' | 'deploying' | 'healthy' | 'failed'

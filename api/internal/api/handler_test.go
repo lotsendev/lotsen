@@ -26,10 +26,11 @@ import (
 type memStore struct {
 	mu          sync.RWMutex
 	deployments map[string]store.Deployment
+	registries  map[string]store.RegistryEntry
 }
 
 func newMemStore() *memStore {
-	return &memStore{deployments: make(map[string]store.Deployment)}
+	return &memStore{deployments: make(map[string]store.Deployment), registries: make(map[string]store.RegistryEntry)}
 }
 
 func (m *memStore) List() ([]store.Deployment, error) {
@@ -120,6 +121,55 @@ func (m *memStore) Patch(id string, patch store.Deployment) (store.Deployment, e
 	}
 	m.deployments[id] = d
 	return d, nil
+}
+
+func (m *memStore) ListRegistries() ([]store.RegistryEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]store.RegistryEntry, 0, len(m.registries))
+	for _, r := range m.registries {
+		result = append(result, r)
+	}
+	return result, nil
+}
+
+func (m *memStore) CreateRegistry(id, prefix, username, _ string) (store.RegistryEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, existing := range m.registries {
+		if existing.Prefix == prefix {
+			return store.RegistryEntry{}, store.ErrDuplicateRegistryPrefix
+		}
+	}
+	entry := store.RegistryEntry{ID: id, Prefix: prefix, Username: username}
+	m.registries[id] = entry
+	return entry, nil
+}
+
+func (m *memStore) UpdateRegistry(id, prefix, username, _ string) (store.RegistryEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.registries[id]; !ok {
+		return store.RegistryEntry{}, store.ErrRegistryNotFound
+	}
+	for rid, existing := range m.registries {
+		if rid != id && existing.Prefix == prefix {
+			return store.RegistryEntry{}, store.ErrDuplicateRegistryPrefix
+		}
+	}
+	entry := store.RegistryEntry{ID: id, Prefix: prefix, Username: username}
+	m.registries[id] = entry
+	return entry, nil
+}
+
+func (m *memStore) DeleteRegistry(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.registries[id]; !ok {
+		return store.ErrRegistryNotFound
+	}
+	delete(m.registries, id)
+	return nil
 }
 
 // failUpdateStore wraps memStore but always fails on Update.
@@ -1251,6 +1301,16 @@ func (e *errStore) Patch(_ string, _ store.Deployment) (store.Deployment, error)
 	return store.Deployment{}, errors.New("disk full")
 }
 func (e *errStore) Delete(_ string) error { return errors.New("disk full") }
+func (e *errStore) ListRegistries() ([]store.RegistryEntry, error) {
+	return nil, errors.New("disk full")
+}
+func (e *errStore) CreateRegistry(_, _, _, _ string) (store.RegistryEntry, error) {
+	return store.RegistryEntry{}, errors.New("disk full")
+}
+func (e *errStore) UpdateRegistry(_, _, _, _ string) (store.RegistryEntry, error) {
+	return store.RegistryEntry{}, errors.New("disk full")
+}
+func (e *errStore) DeleteRegistry(_ string) error { return errors.New("disk full") }
 
 func TestDeleteDeployment_StoreError(t *testing.T) {
 	srv := newTestServer(&errStore{})
@@ -3026,5 +3086,91 @@ func TestPatchDeployment_UpdatesSecurityConfig(t *testing.T) {
 	}
 	if updated.Security.WAFMode != "detection" {
 		t.Fatalf("want default waf mode detection on patch, got %q", updated.Security.WAFMode)
+	}
+}
+
+func TestRegistries_CRUD(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body := []byte(`{"prefix":"ghcr.io/myorg","username":"alice","password":"secret-token"}`)
+	createReq, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/registries", bytes.NewReader(body))
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		t.Fatalf("POST /api/registries: %v", err)
+	}
+	defer createResp.Body.Close()
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("want 201, got %d", createResp.StatusCode)
+	}
+
+	var created store.RegistryEntry
+	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if created.ID == "" {
+		t.Fatal("want created id")
+	}
+
+	listResp, err := http.Get(srv.URL + "/api/registries")
+	if err != nil {
+		t.Fatalf("GET /api/registries: %v", err)
+	}
+	defer listResp.Body.Close()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", listResp.StatusCode)
+	}
+	var listed struct {
+		Registries []store.RegistryEntry `json:"registries"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if len(listed.Registries) != 1 {
+		t.Fatalf("want 1 registry, got %d", len(listed.Registries))
+	}
+
+	updateBody := []byte(`{"prefix":"ghcr.io/myorg/platform","username":"bob"}`)
+	updateReq, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/registries/"+created.ID, bytes.NewReader(updateBody))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateResp, err := http.DefaultClient.Do(updateReq)
+	if err != nil {
+		t.Fatalf("PUT /api/registries/{id}: %v", err)
+	}
+	defer updateResp.Body.Close()
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", updateResp.StatusCode)
+	}
+
+	deleteReq, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/registries/"+created.ID, nil)
+	deleteResp, err := http.DefaultClient.Do(deleteReq)
+	if err != nil {
+		t.Fatalf("DELETE /api/registries/{id}: %v", err)
+	}
+	defer deleteResp.Body.Close()
+	if deleteResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", deleteResp.StatusCode)
+	}
+}
+
+func TestCreateRegistry_DuplicatePrefixReturnsConflict(t *testing.T) {
+	s := newMemStore()
+	_, _ = s.CreateRegistry("r1", "ghcr.io/myorg", "alice", "secret")
+
+	srv := newTestServer(s)
+	defer srv.Close()
+
+	body := []byte(`{"prefix":"ghcr.io/myorg","username":"bob","password":"another"}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/registries", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/registries: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("want 409, got %d", resp.StatusCode)
 	}
 }

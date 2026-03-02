@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ercadev/dirigent/store"
@@ -444,5 +445,106 @@ func TestJSONStore_Patch_StatusClearsError(t *testing.T) {
 	}
 	if updated.Error != "" {
 		t.Fatalf("want error cleared, got %q", updated.Error)
+	}
+}
+
+func TestJSONStore_RegistryCRUD(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	created, err := s.CreateRegistry("r1", "ghcr.io/myorg", "alice", "s3cret")
+	if err != nil {
+		t.Fatalf("create registry: %v", err)
+	}
+	if created.ID != "r1" || created.Prefix != "ghcr.io/myorg" || created.Username != "alice" {
+		t.Fatalf("unexpected create response: %#v", created)
+	}
+
+	list, err := s.ListRegistries()
+	if err != nil {
+		t.Fatalf("list registries: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("want 1 registry, got %d", len(list))
+	}
+
+	updated, err := s.UpdateRegistry("r1", "ghcr.io/myorg/team", "bob", "")
+	if err != nil {
+		t.Fatalf("update registry: %v", err)
+	}
+	if updated.Prefix != "ghcr.io/myorg/team" || updated.Username != "bob" {
+		t.Fatalf("unexpected update response: %#v", updated)
+	}
+
+	if err := s.DeleteRegistry("r1"); err != nil {
+		t.Fatalf("delete registry: %v", err)
+	}
+
+	list, err = s.ListRegistries()
+	if err != nil {
+		t.Fatalf("list registries after delete: %v", err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("want empty registries after delete, got %d", len(list))
+	}
+}
+
+func TestJSONStore_RegistrySecretNotStoredPlaintext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	if _, err := s.CreateRegistry("r1", "registry.example.com", "alice", "very-secret-token"); err != nil {
+		t.Fatalf("create registry: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read raw store: %v", err)
+	}
+
+	if strings.Contains(string(raw), "very-secret-token") {
+		t.Fatal("registry secret was stored in plaintext")
+	}
+}
+
+func TestJSONStore_ResolveRegistryAuth_LongestPrefixWins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.CreateRegistry("r1", "ghcr.io", "general", "general-token")
+	if err != nil {
+		t.Fatalf("create registry r1: %v", err)
+	}
+	_, err = s.CreateRegistry("r2", "ghcr.io/myorg", "org", "org-token")
+	if err != nil {
+		t.Fatalf("create registry r2: %v", err)
+	}
+
+	auth, err := s.ResolveRegistryAuth("ghcr.io/myorg/app:1.0.0")
+	if err != nil {
+		t.Fatalf("resolve registry auth: %v", err)
+	}
+	if auth == nil {
+		t.Fatal("want auth for matching image")
+	}
+	if auth.Username != "org" || auth.Password != "org-token" {
+		t.Fatalf("want org credentials, got %#v", auth)
+	}
+
+	auth, err = s.ResolveRegistryAuth("docker.io/library/nginx:latest")
+	if err != nil {
+		t.Fatalf("resolve non-matching auth: %v", err)
+	}
+	if auth != nil {
+		t.Fatalf("want nil for public image, got %#v", auth)
 	}
 }

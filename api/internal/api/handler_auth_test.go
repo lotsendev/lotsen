@@ -135,6 +135,15 @@ func newAuthTestServer(store api.Store, authStore api.AuthUserStore) *httptest.S
 	return httptest.NewServer(mux)
 }
 
+func newAuthTestServerWithCookieDomain(store api.Store, authStore api.AuthUserStore, domain string) *httptest.Server {
+	mux := http.NewServeMux()
+	h := api.New(store, events.NewBroker(), noopDockerLogs{})
+	h.SetAuth(authStore, testJWTSecret)
+	h.SetAuthCookieDomain(domain)
+	h.RegisterRoutes(mux)
+	return httptest.NewServer(mux)
+}
+
 func TestLogout_ClearsCookie(t *testing.T) {
 	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser"))
 	defer srv.Close()
@@ -157,6 +166,30 @@ func TestLogout_ClearsCookie(t *testing.T) {
 	}
 	if !found {
 		t.Error("want lotsen_token cookie cleared (MaxAge<0)")
+	}
+}
+
+func TestLogout_ClearsCookieWithConfiguredDomain(t *testing.T) {
+	srv := newAuthTestServerWithCookieDomain(newMemStore(), newStubAuthStore("testuser"), "example.com")
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/auth/logout", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /auth/logout: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var found bool
+	for _, c := range resp.Cookies() {
+		if c.Name == "lotsen_token" {
+			found = true
+			if c.Domain != "example.com" {
+				t.Fatalf("want cookie domain example.com, got %q", c.Domain)
+			}
+		}
+	}
+	if !found {
+		t.Error("want lotsen_token cookie in response")
 	}
 }
 

@@ -537,7 +537,44 @@ func TestProxy_DashboardDomainBypassesJWTGate(t *testing.T) {
 	}
 }
 
-func TestProxy_NonDashboardDomainReturnsUnauthorizedWithoutJWT(t *testing.T) {
+func TestProxy_NonDashboardDomainRedirectsToDashboardLoginWithoutJWT(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("app.example.com", backend.Listener.Addr().String(), false, nil, nil)
+
+	proxy := newProxyServerWithDashboardAuthAndOptions(tbl, &handler.DashboardAuth{
+		Domain: "dashboard.example.com",
+	}, handler.WithJWTSecret([]byte("secret")), handler.WithAuthCookieDomain("example.com"))
+	defer proxy.Close()
+
+	noRedirectClient := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	req.Host = "app.example.com"
+
+	resp, err := noRedirectClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("want 302, got %d", resp.StatusCode)
+	}
+	if location := resp.Header.Get("Location"); location != "https://dashboard.example.com/login?redirect=http%3A%2F%2Fapp.example.com%2F" {
+		t.Fatalf("want dashboard login redirect, got %q", location)
+	}
+}
+
+func TestProxy_NonDashboardDomainReturnsUnauthorizedWithoutJWTWhenSharedCookieDisabled(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

@@ -212,3 +212,35 @@ func TestHardeningProfileFromEnv_RejectsInvalidValue(t *testing.T) {
 		t.Fatal("want validation error for invalid profile")
 	}
 }
+
+func TestAuthCookieDomainFromEnv_Empty(t *testing.T) {
+	t.Setenv("LOTSEN_AUTH_COOKIE_DOMAIN", "")
+
+	domain, err := authCookieDomainFromEnv()
+	if err != nil {
+		t.Fatalf("authCookieDomainFromEnv: %v", err)
+	}
+	if domain != "" {
+		t.Fatalf("want empty domain, got %q", domain)
+	}
+}
+
+func TestAuthCookieDomainFromEnv_NormalizesLeadingDot(t *testing.T) {
+	t.Setenv("LOTSEN_AUTH_COOKIE_DOMAIN", ".D0001.Erca.Dev")
+
+	domain, err := authCookieDomainFromEnv()
+	if err != nil {
+		t.Fatalf("authCookieDomainFromEnv: %v", err)
+	}
+	if domain != "d0001.erca.dev" {
+		t.Fatalf("want d0001.erca.dev, got %q", domain)
+	}
+}
+
+func TestAuthCookieDomainFromEnv_RejectsInvalid(t *testing.T) {
+	t.Setenv("LOTSEN_AUTH_COOKIE_DOMAIN", "localhost")
+
+	if _, err := authCookieDomainFromEnv(); err == nil {
+		t.Fatal("want validation error for invalid cookie domain")
+	}
+}

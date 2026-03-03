@@ -32,17 +32,18 @@ type RoutingTable interface {
 // registered for the request's Host header, and exposes a small control API
 // so the orchestrator can trigger upstream swaps during zero-downtime redeploys.
 type Handler struct {
-	table         RoutingTable
-	dashboardAuth *DashboardAuth
-	hardening     HardeningProfile
-	scanner       *scannerLimiter
-	accessLogs    AccessLogger
-	ipFilter      *middleware.IPFilter
-	uaFilter      *middleware.UAFilter
-	waf           *middleware.WAF
-	wafBlocked    atomic.Int64
-	uaBlocked     atomic.Int64
-	jwtSecret     []byte
+	table            RoutingTable
+	dashboardAuth    *DashboardAuth
+	authCookieDomain string
+	hardening        HardeningProfile
+	scanner          *scannerLimiter
+	accessLogs       AccessLogger
+	ipFilter         *middleware.IPFilter
+	uaFilter         *middleware.UAFilter
+	waf              *middleware.WAF
+	wafBlocked       atomic.Int64
+	uaBlocked        atomic.Int64
+	jwtSecret        []byte
 }
 
 // HardeningProfile controls request filtering and anti-scan behavior.
@@ -288,7 +289,7 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	if requireProxyToken {
 		if !h.validProxyToken(r) {
 			outcome = "unauthorized"
-			if h.dashboardAuth != nil && host != h.dashboardAuth.Domain {
+			if h.dashboardAuth == nil || h.authCookieDomain == "" {
 				http.Error(rw, "unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -477,6 +478,12 @@ func WithUAFilter(filter *middleware.UAFilter) Option {
 func WithWAF(waf *middleware.WAF) Option {
 	return func(h *Handler) {
 		h.waf = waf
+	}
+}
+
+func WithAuthCookieDomain(domain string) Option {
+	return func(h *Handler) {
+		h.authCookieDomain = normalizeDomain(domain)
 	}
 }
 

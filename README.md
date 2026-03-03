@@ -64,6 +64,8 @@ The dashboard is served by `lotsen-api` on `:8080` by default. If you set `DIRIG
 
 `DIRIGENT_AUTH_USER`/`DIRIGENT_AUTH_PASSWORD` (`LOTSEN_` aliases also supported) are bootstrap-only: they seed the first dashboard user when `users.db` is empty and are ignored after users already exist.
 
+Set `DIRIGENT_AUTH_COOKIE_DOMAIN` (or `LOTSEN_AUTH_COOKIE_DOMAIN`) to enable shared dashboard/deployment auth on subdomains of the same parent domain (for example `d0001.erca.dev`).
+
 ## Features
 
 - One-script installer, up and running fast

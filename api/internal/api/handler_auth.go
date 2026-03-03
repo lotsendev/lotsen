@@ -15,15 +15,7 @@ const (
 
 // logout handles POST /auth/logout by clearing the session cookie.
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     apiTokenCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   r.TLS != nil,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   -1,
-	})
+	http.SetCookie(w, h.newSessionCookie(r, "", -1))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -80,14 +72,22 @@ func (h *Handler) issueSessionCookie(w http.ResponseWriter, r *http.Request, use
 		return false
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, h.newSessionCookie(r, token, int(apiTokenExpiry.Seconds())))
+	return true
+}
+
+func (h *Handler) newSessionCookie(r *http.Request, value string, maxAge int) *http.Cookie {
+	c := &http.Cookie{
 		Name:     apiTokenCookieName,
-		Value:    token,
+		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteStrictMode,
-		MaxAge:   int(apiTokenExpiry.Seconds()),
-	})
-	return true
+		MaxAge:   maxAge,
+	}
+	if h.authCookieDomain != "" {
+		c.Domain = h.authCookieDomain
+	}
+	return c
 }

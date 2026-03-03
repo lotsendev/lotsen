@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Fingerprint, Rocket } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -16,6 +16,22 @@ export function LoginPage() {
   const { isLoading, isAuthenticated, isAuthDisabled } = useAuth()
   const [username, setUsername] = useState('')
 
+  const completeAuthRedirect = useCallback(() => {
+    const fallback = '/deployments'
+    const target = sanitizeRedirectTarget(redirect)
+    if (!target) {
+      navigate({ to: fallback })
+      return
+    }
+
+    if (target.startsWith('/')) {
+      navigate({ to: target as never })
+      return
+    }
+
+    window.location.assign(target)
+  }, [navigate, redirect])
+
   const setupQuery = useQuery({
     queryKey: ['auth', 'setup-available'],
     queryFn: getSetupAvailable,
@@ -27,16 +43,16 @@ export function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && (isAuthenticated || isAuthDisabled)) {
-      navigate({ to: (redirect as never) ?? '/deployments' })
+      completeAuthRedirect()
     }
-  }, [isLoading, isAuthenticated, isAuthDisabled, redirect, navigate])
+  }, [isLoading, isAuthenticated, isAuthDisabled, completeAuthRedirect])
 
   const loginMutation = usePasskeyLogin(() => {
-    navigate({ to: (redirect as never) ?? '/deployments' })
+    completeAuthRedirect()
   })
 
   const registerMutation = usePasskeyRegister(() => {
-    navigate({ to: (redirect as never) ?? '/deployments' })
+    completeAuthRedirect()
   })
 
   const pending = loginMutation.isPending || registerMutation.isPending
@@ -119,4 +135,34 @@ export function LoginPage() {
       </div>
     </div>
   )
+}
+
+function sanitizeRedirectTarget(redirect?: string): string | undefined {
+  const raw = redirect?.trim()
+  if (!raw) return undefined
+  if (raw.startsWith('/')) return raw
+
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return undefined
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return undefined
+  }
+
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+
+  const currentHost = window.location.hostname.toLowerCase()
+  const allowedSuffix = currentHost.split('.').slice(1).join('.')
+  const targetHost = parsed.hostname.toLowerCase()
+  if (!allowedSuffix || (targetHost !== currentHost && !targetHost.endsWith(`.${allowedSuffix}`))) {
+    return undefined
+  }
+
+  return parsed.toString()
 }

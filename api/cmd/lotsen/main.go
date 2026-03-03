@@ -62,6 +62,14 @@ func main() {
 
 	h := internalapi.NewWithVersion(s, broker, logStreamer, version)
 	h.SetAuth(userStore, jwtSecret)
+	authCookieDomain, err := authCookieDomainFromEnv()
+	if err != nil {
+		log.Fatalf("lotsen: %v", err)
+	}
+	h.SetAuthCookieDomain(authCookieDomain)
+	if authCookieDomain != "" {
+		log.Printf("lotsen: auth cookie domain set to %s", authCookieDomain)
+	}
 
 	// Configure WebAuthn if RP_ID is set.
 	if rpID := strings.TrimSpace(os.Getenv("LOTSEN_RP_ID")); rpID != "" {
@@ -139,4 +147,43 @@ func authFromEnv(storePath string) (*auth.UserStore, []byte, error) {
 	}
 
 	return userStore, []byte(secret), nil
+}
+
+func authCookieDomainFromEnv() (string, error) {
+	raw := strings.TrimSpace(strings.TrimPrefix(os.Getenv("LOTSEN_AUTH_COOKIE_DOMAIN"), "."))
+	if raw == "" {
+		return "", nil
+	}
+	domain := normalizeDomain(raw)
+	if !isValidCookieDomain(domain) {
+		return "", fmt.Errorf("LOTSEN_AUTH_COOKIE_DOMAIN must be a valid domain")
+	}
+	return domain, nil
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	domain = strings.TrimSuffix(domain, ".")
+	return strings.ToLower(domain)
+}
+
+func isValidCookieDomain(domain string) bool {
+	if domain == "" || strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") {
+		return false
+	}
+	labels := strings.Split(domain, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
+		if label == "" || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return false
+		}
+		for _, r := range label {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }

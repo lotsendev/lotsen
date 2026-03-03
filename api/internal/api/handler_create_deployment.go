@@ -26,6 +26,10 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "domain is reserved for dashboard", http.StatusConflict)
 		return
 	}
+	if !body.Public && !h.privateDomainAllowed(body.Domain) {
+		http.Error(w, "private deployments must use a domain within LOTSEN_AUTH_COOKIE_DOMAIN", http.StatusBadRequest)
+		return
+	}
 
 	basicAuth, err := sanitizeAndHashBasicAuth(body.BasicAuth)
 	if err != nil {

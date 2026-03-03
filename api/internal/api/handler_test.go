@@ -244,6 +244,14 @@ func newTestServerWithDockerLogs(s api.Store, dl api.DockerLogs) *httptest.Serve
 	return httptest.NewServer(mux)
 }
 
+func newTestServerWithAuthCookieDomain(s api.Store, domain string) *httptest.Server {
+	mux := http.NewServeMux()
+	h := api.New(s, events.NewBroker(), noopDockerLogs{})
+	h.SetAuthCookieDomain(domain)
+	h.RegisterRoutes(mux)
+	return httptest.NewServer(mux)
+}
+
 type statusProviderStub struct {
 	snapshot api.SystemStatusSnapshot
 	err      error
@@ -1194,6 +1202,27 @@ func TestCreateDeployment_DashboardDomainConflict(t *testing.T) {
 	}
 }
 
+func TestCreateDeployment_PrivateDomainMustMatchAuthCookieDomain(t *testing.T) {
+	srv := newTestServerWithAuthCookieDomain(newMemStore(), "example.com")
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"name":   "web",
+		"image":  "nginx:latest",
+		"domain": "other.dev",
+		"public": false,
+	})
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
 func TestCreateDeployment_InvalidBody(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
@@ -1912,6 +1941,35 @@ func TestPatchDeployment_DashboardDomainConflict(t *testing.T) {
 	}
 }
 
+func TestPatchDeployment_CannotEnablePrivateOutsideAuthCookieDomain(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{
+		ID:     "d1",
+		Name:   "web",
+		Image:  "nginx:1",
+		Domain: "app.other.dev",
+		Public: true,
+		Status: store.StatusHealthy,
+	}
+
+	srv := newTestServerWithAuthCookieDomain(s, "example.com")
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{"public": false})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/d1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
 func TestUpdateDeployment(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{
@@ -2054,6 +2112,46 @@ func TestUpdateDeployment_PublicOnly_UpdatesVisibility(t *testing.T) {
 	}
 	if updated.Status != store.StatusHealthy {
 		t.Errorf("want status healthy, got %s", updated.Status)
+	}
+}
+
+func TestUpdateDeployment_PrivateDomainMustMatchAuthCookieDomain(t *testing.T) {
+	s := newMemStore()
+	s.deployments["d1"] = store.Deployment{
+		ID:      "d1",
+		Name:    "web",
+		Image:   "nginx:1",
+		Domain:  "app.example.com",
+		Public:  true,
+		Status:  store.StatusHealthy,
+		Envs:    map[string]string{},
+		Ports:   []string{"32768:80"},
+		Volumes: []string{},
+	}
+
+	srv := newTestServerWithAuthCookieDomain(s, "example.com")
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"name":    "web",
+		"image":   "nginx:1",
+		"domain":  "app.other.dev",
+		"public":  false,
+		"envs":    map[string]string{},
+		"ports":   []string{"80"},
+		"volumes": []string{},
+	})
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/d1: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
 	}
 }
 

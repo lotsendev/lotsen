@@ -560,6 +560,17 @@ func conflictsWithDashboardDomain(domain string) bool {
 	return normalizeDomain(domain) == dashboardDomain
 }
 
+func (h *Handler) privateDomainAllowed(domain string) bool {
+	if h.authCookieDomain == "" {
+		return true
+	}
+	domain = normalizeDomain(domain)
+	if domain == "" {
+		return false
+	}
+	return domain == h.authCookieDomain || strings.HasSuffix(domain, "."+h.authCookieDomain)
+}
+
 func normalizeDomain(domain string) string {
 	domain = strings.TrimSpace(domain)
 	domain = strings.TrimSuffix(domain, ".")

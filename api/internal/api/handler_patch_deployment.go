@@ -40,6 +40,19 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	effectiveDomain := existing.Domain
+	if body.Domain != "" {
+		effectiveDomain = body.Domain
+	}
+	effectivePublic := existing.Public
+	if body.Public != nil {
+		effectivePublic = *body.Public
+	}
+	if !effectivePublic && !h.privateDomainAllowed(effectiveDomain) {
+		http.Error(w, "private deployments must use a domain within LOTSEN_AUTH_COOKIE_DOMAIN", http.StatusBadRequest)
+		return
+	}
+
 	if body.Ports != nil {
 		allDeployments, err := h.store.List()
 		if err != nil {

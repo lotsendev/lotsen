@@ -280,7 +280,12 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !route.Public && h.jwtSecret != nil {
+	requireProxyToken := !route.Public && h.jwtSecret != nil
+	if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
+		requireProxyToken = false
+	}
+
+	if requireProxyToken {
 		if !h.validProxyToken(r) {
 			outcome = "unauthorized"
 			h.serveLoginRedirect(rw, r)

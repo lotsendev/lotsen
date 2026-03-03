@@ -537,7 +537,7 @@ func TestProxy_DashboardDomainBypassesJWTGate(t *testing.T) {
 	}
 }
 
-func TestProxy_NonDashboardDomainRedirectsToLoginWithoutJWT(t *testing.T) {
+func TestProxy_NonDashboardDomainReturnsUnauthorizedWithoutJWT(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -551,26 +551,17 @@ func TestProxy_NonDashboardDomainRedirectsToLoginWithoutJWT(t *testing.T) {
 	}, handler.WithJWTSecret([]byte("secret")))
 	defer proxy.Close()
 
-	noRedirectClient := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
 	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
 	req.Host = "app.example.com"
 
-	resp, err := noRedirectClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /: %v", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusFound {
-		t.Fatalf("want 302, got %d", resp.StatusCode)
-	}
-	if location := resp.Header.Get("Location"); location != "/login?redirect=/" {
-		t.Fatalf("want redirect to /login?redirect=/, got %q", location)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", resp.StatusCode)
 	}
 }
 

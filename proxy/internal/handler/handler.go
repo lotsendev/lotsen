@@ -288,6 +288,10 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	if requireProxyToken {
 		if !h.validProxyToken(r) {
 			outcome = "unauthorized"
+			if h.dashboardAuth != nil && host != h.dashboardAuth.Domain {
+				http.Error(rw, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 			h.serveLoginRedirect(rw, r)
 			return
 		}

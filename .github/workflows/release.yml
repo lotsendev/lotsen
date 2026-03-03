@@ -45,16 +45,19 @@ jobs:
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
+          install-mode: goinstall
           working-directory: api
 
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
+          install-mode: goinstall
           working-directory: orchestrator
 
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
+          install-mode: goinstall
           working-directory: proxy
 
   ci-react:

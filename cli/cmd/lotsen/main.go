@@ -132,6 +132,7 @@ func runSetup(args []string) error {
 	version := fs.String("version", "latest", "Lotsen version to install")
 	dashboardExpose := fs.Bool("dashboard-expose", false, "Expose dashboard via proxy")
 	dashboardDomain := fs.String("dashboard-domain", "", "Dashboard domain")
+	authCookieDomain := fs.String("auth-cookie-domain", "", "Shared cookie domain for dashboard/private deployment SSO")
 	dashboardUser := fs.String("dashboard-user", "", "(deprecated) Dashboard basic auth username")
 	dashboardPasswordStdin := fs.Bool("dashboard-password-stdin", false, "(deprecated) Read dashboard password from stdin")
 
@@ -209,6 +210,9 @@ func runSetup(args []string) error {
 			"LOTSEN_DASHBOARD_DOMAIN="+strings.TrimSpace(*dashboardDomain),
 		)
 	}
+	if strings.TrimSpace(*authCookieDomain) != "" {
+		env = append(env, "LOTSEN_AUTH_COOKIE_DOMAIN="+strings.TrimSpace(*authCookieDomain))
+	}
 
 	url := releaseScriptURL(*version, "setup.sh")
 	fmt.Printf("--> Running setup from %s\n", url)
@@ -230,6 +234,7 @@ func setupUsage(parseErr error) error {
 	fmt.Fprintln(b, "  --version <value>         Version to install (default: latest)")
 	fmt.Fprintln(b, "  --dashboard-expose        Configure dashboard domain exposure")
 	fmt.Fprintln(b, "  --dashboard-domain <fqdn> Dashboard domain")
+	fmt.Fprintln(b, "  --auth-cookie-domain <fqdn> Shared cookie domain for SSO across dashboard/private deployments")
 	fmt.Fprintln(b, "  --dashboard-user <name>   (deprecated) Ignored")
 	fmt.Fprintln(b, "  --dashboard-password-stdin (deprecated) Ignored")
 	return errors.New(strings.TrimSpace(b.String()))

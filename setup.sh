@@ -60,6 +60,7 @@ write_dashboard_env() {
     local auth_user="$2"
     local auth_password="$3"
     local jwt_secret="$4"
+    local auth_cookie_domain="$5"
     local rp_origin=""
     local tmp
 
@@ -67,7 +68,7 @@ write_dashboard_env() {
     tmp=$(mktemp)
 
     if [ -f "${ENV_FILE}" ]; then
-        awk '!/^(DIRIGENT|LOTSEN)_(DASHBOARD_(DOMAIN|USER|PASSWORD)|AUTH_(USER|PASSWORD)|JWT_SECRET|RP_ID|RP_ORIGINS)=/' "${ENV_FILE}" > "${tmp}"
+        awk '!/^(DIRIGENT|LOTSEN)_(DASHBOARD_(DOMAIN|USER|PASSWORD)|AUTH_(USER|PASSWORD|COOKIE_DOMAIN)|JWT_SECRET|RP_ID|RP_ORIGINS)=/' "${ENV_FILE}" > "${tmp}"
     fi
 
     if [ -n "${dashboard_domain}" ]; then
@@ -90,6 +91,13 @@ write_dashboard_env() {
         echo "LOTSEN_AUTH_USER=${auth_user}"
         echo "LOTSEN_AUTH_PASSWORD=${auth_password}"
     } >> "${tmp}"
+
+    if [ -n "${auth_cookie_domain}" ]; then
+        {
+            echo "DIRIGENT_AUTH_COOKIE_DOMAIN=${auth_cookie_domain}"
+            echo "LOTSEN_AUTH_COOKIE_DOMAIN=${auth_cookie_domain}"
+        } >> "${tmp}"
+    fi
 
     install -m 600 "${tmp}" "${ENV_FILE}"
     rm -f "${tmp}"
@@ -430,18 +438,21 @@ DASHBOARD_DOMAIN="${DIRIGENT_DASHBOARD_DOMAIN:-}"
 AUTH_USER="${DIRIGENT_AUTH_USER:-${LOTSEN_AUTH_USER:-}}"
 AUTH_PASSWORD="${DIRIGENT_AUTH_PASSWORD:-${LOTSEN_AUTH_PASSWORD:-}}"
 JWT_SECRET="${DIRIGENT_JWT_SECRET:-${LOTSEN_JWT_SECRET:-}}"
+AUTH_COOKIE_DOMAIN="${DIRIGENT_AUTH_COOKIE_DOMAIN:-${LOTSEN_AUTH_COOKIE_DOMAIN:-}}"
 GENERATED_AUTH_PASSWORD=0
 GENERATED_JWT_SECRET=0
 EXISTING_DASHBOARD_DOMAIN=""
 EXISTING_AUTH_USER=""
 EXISTING_AUTH_PASSWORD=""
 EXISTING_JWT_SECRET=""
+EXISTING_AUTH_COOKIE_DOMAIN=""
 
 if [ -f "${ENV_FILE}" ]; then
     EXISTING_DASHBOARD_DOMAIN=$(read_env_value "DIRIGENT_DASHBOARD_DOMAIN")
     EXISTING_AUTH_USER=$(read_env_value "DIRIGENT_AUTH_USER")
     EXISTING_AUTH_PASSWORD=$(read_env_value "DIRIGENT_AUTH_PASSWORD")
     EXISTING_JWT_SECRET=$(read_env_value "DIRIGENT_JWT_SECRET")
+    EXISTING_AUTH_COOKIE_DOMAIN=$(read_env_value "DIRIGENT_AUTH_COOKIE_DOMAIN")
     if [ -z "${EXISTING_DASHBOARD_DOMAIN}" ]; then
         EXISTING_DASHBOARD_DOMAIN=$(read_env_value "LOTSEN_DASHBOARD_DOMAIN")
     fi
@@ -453,6 +464,9 @@ if [ -f "${ENV_FILE}" ]; then
     fi
     if [ -z "${EXISTING_JWT_SECRET}" ]; then
         EXISTING_JWT_SECRET=$(read_env_value "LOTSEN_JWT_SECRET")
+    fi
+    if [ -z "${EXISTING_AUTH_COOKIE_DOMAIN}" ]; then
+        EXISTING_AUTH_COOKIE_DOMAIN=$(read_env_value "LOTSEN_AUTH_COOKIE_DOMAIN")
     fi
 
     if [ -z "${DASHBOARD_DOMAIN}" ] && [ -n "${EXISTING_DASHBOARD_DOMAIN}" ]; then
@@ -466,6 +480,9 @@ if [ -f "${ENV_FILE}" ]; then
     fi
     if [ -z "${JWT_SECRET}" ] && [ -n "${EXISTING_JWT_SECRET}" ]; then
         JWT_SECRET="${EXISTING_JWT_SECRET}"
+    fi
+    if [ -z "${AUTH_COOKIE_DOMAIN}" ] && [ -n "${EXISTING_AUTH_COOKIE_DOMAIN}" ]; then
+        AUTH_COOKIE_DOMAIN="${EXISTING_AUTH_COOKIE_DOMAIN}"
     fi
 fi
 
@@ -547,7 +564,7 @@ if [ -n "${DASHBOARD_DOMAIN}" ]; then
 fi
 
 step "Writing shared environment file"
-write_dashboard_env "${DASHBOARD_DOMAIN}" "${AUTH_USER}" "${AUTH_PASSWORD}" "${JWT_SECRET}"
+write_dashboard_env "${DASHBOARD_DOMAIN}" "${AUTH_USER}" "${AUTH_PASSWORD}" "${JWT_SECRET}" "${AUTH_COOKIE_DOMAIN}"
 
 configure_firewall "${SECURITY_PROFILE}"
 if [ "${SECURITY_PROFILE}" = "strict" ]; then

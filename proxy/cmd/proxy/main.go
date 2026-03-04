@@ -52,6 +52,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("proxy: %v", err)
 	}
+	authCookieDomain, err := authCookieDomainFromEnv()
+	if err != nil {
+		log.Fatalf("proxy: %v", err)
+	}
 	hardeningProfile, err := hardeningProfileFromEnv()
 	if err != nil {
 		log.Fatalf("proxy: %v", err)
@@ -106,6 +110,7 @@ func main() {
 		handler.WithUAFilter(uaFilter),
 		handler.WithWAF(waf),
 		handler.WithJWTSecret(jwtSecret),
+		handler.WithAuthCookieDomain(authCookieDomain),
 	)
 
 	hostPolicy := hostPolicyFromTable(table)
@@ -327,6 +332,39 @@ func authFromEnv() ([]byte, error) {
 		return nil, nil
 	}
 	return []byte(secret), nil
+}
+
+func authCookieDomainFromEnv() (string, error) {
+	raw := strings.TrimSpace(strings.TrimPrefix(os.Getenv("LOTSEN_AUTH_COOKIE_DOMAIN"), "."))
+	if raw == "" {
+		return "", nil
+	}
+	domain := normalizeDomain(raw)
+	if !isValidCookieDomain(domain) {
+		return "", fmt.Errorf("LOTSEN_AUTH_COOKIE_DOMAIN must be a valid domain")
+	}
+	return domain, nil
+}
+
+func isValidCookieDomain(domain string) bool {
+	if domain == "" || strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") {
+		return false
+	}
+	labels := strings.Split(domain, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
+		if label == "" || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return false
+		}
+		for _, r := range label {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func parseCSVList(raw string) []string {

@@ -122,28 +122,29 @@ type patchDeploymentRequest struct {
 
 // Handler holds the dependencies for the API layer.
 type Handler struct {
-	store          Store
-	events         EventBus
-	dockerLogs     DockerLogs
-	statusEvents   *systemStatusBroker
-	accessLogDir   string
-	statusSource   SystemStatusProvider
-	heartbeats     OrchestratorHeartbeatIngestor
-	docker         DockerConnectivityIngestor
-	loadBalancer   LoadBalancerHealthIngestor
-	proxyClient    *http.Client
-	proxyBaseURL   string
-	cpu            CPUUtilizationIngestor
-	ram            RAMUtilizationIngestor
-	versions       VersionInfoProvider
-	upgrade        UpgradeRunner
-	containerStats *ContainerStatsCache
-	authStore      AuthUserStore
-	jwtSecret      []byte
-	webAuthn       *webauthn.WebAuthn
-	challenges     *passkeySessionStore
-	hostProfiles   HostProfileStore
-	hostMetadata   HostMetadataIngestor
+	store            Store
+	events           EventBus
+	dockerLogs       DockerLogs
+	statusEvents     *systemStatusBroker
+	accessLogDir     string
+	statusSource     SystemStatusProvider
+	heartbeats       OrchestratorHeartbeatIngestor
+	docker           DockerConnectivityIngestor
+	loadBalancer     LoadBalancerHealthIngestor
+	proxyClient      *http.Client
+	proxyBaseURL     string
+	cpu              CPUUtilizationIngestor
+	ram              RAMUtilizationIngestor
+	versions         VersionInfoProvider
+	upgrade          UpgradeRunner
+	containerStats   *ContainerStatsCache
+	authStore        AuthUserStore
+	jwtSecret        []byte
+	authCookieDomain string
+	webAuthn         *webauthn.WebAuthn
+	challenges       *passkeySessionStore
+	hostProfiles     HostProfileStore
+	hostMetadata     HostMetadataIngestor
 }
 
 const defaultOrchestratorStaleAfter = 30 * time.Second
@@ -218,6 +219,10 @@ func NewWithDependencies(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 func (h *Handler) SetAuth(userStore AuthUserStore, jwtSecret []byte) {
 	h.authStore = userStore
 	h.jwtSecret = jwtSecret
+}
+
+func (h *Handler) SetAuthCookieDomain(domain string) {
+	h.authCookieDomain = normalizeDomain(strings.TrimPrefix(strings.TrimSpace(domain), "."))
 }
 
 // SetWebAuthn configures the WebAuthn relying party for passkey authentication.
@@ -553,6 +558,17 @@ func conflictsWithDashboardDomain(domain string) bool {
 		return false
 	}
 	return normalizeDomain(domain) == dashboardDomain
+}
+
+func (h *Handler) privateDomainAllowed(domain string) bool {
+	if h.authCookieDomain == "" {
+		return true
+	}
+	domain = normalizeDomain(domain)
+	if domain == "" {
+		return false
+	}
+	return domain == h.authCookieDomain || strings.HasSuffix(domain, "."+h.authCookieDomain)
 }
 
 func normalizeDomain(domain string) string {

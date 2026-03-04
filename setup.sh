@@ -61,19 +61,25 @@ write_dashboard_env() {
     local auth_password="$3"
     local jwt_secret="$4"
     local auth_cookie_domain="$5"
+    local rp_origin=""
     local tmp
 
     install -m 700 -d /etc/dirigent
     tmp=$(mktemp)
 
     if [ -f "${ENV_FILE}" ]; then
-        awk '!/^(DIRIGENT|LOTSEN)_(DASHBOARD_(DOMAIN|USER|PASSWORD)|AUTH_(USER|PASSWORD|COOKIE_DOMAIN)|JWT_SECRET)=/' "${ENV_FILE}" > "${tmp}"
+        awk '!/^(DIRIGENT|LOTSEN)_(DASHBOARD_(DOMAIN|USER|PASSWORD)|AUTH_(USER|PASSWORD|COOKIE_DOMAIN)|JWT_SECRET|RP_ID|RP_ORIGINS)=/' "${ENV_FILE}" > "${tmp}"
     fi
 
     if [ -n "${dashboard_domain}" ]; then
+        rp_origin="https://${dashboard_domain}"
         {
             echo "DIRIGENT_DASHBOARD_DOMAIN=${dashboard_domain}"
             echo "LOTSEN_DASHBOARD_DOMAIN=${dashboard_domain}"
+            echo "DIRIGENT_RP_ID=${dashboard_domain}"
+            echo "DIRIGENT_RP_ORIGINS=${rp_origin}"
+            echo "LOTSEN_RP_ID=${dashboard_domain}"
+            echo "LOTSEN_RP_ORIGINS=${rp_origin}"
         } >> "${tmp}"
     fi
 

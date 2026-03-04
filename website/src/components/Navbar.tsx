@@ -66,6 +66,27 @@ export function Navbar() {
 
         <nav style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Link
+            to="/deck"
+            style={{
+              fontSize: '14px',
+              color: 'var(--clr-muted)',
+              textDecoration: 'none',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              transition: 'color 0.15s, background-color 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'var(--clr-text)'
+              e.currentTarget.style.backgroundColor = 'var(--clr-surface-2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'var(--clr-muted)'
+              e.currentTarget.style.backgroundColor = 'transparent'
+            }}
+          >
+            Deck
+          </Link>
+          <Link
             to="/docs/getting-started"
             style={{
               fontSize: '14px',

@@ -29,6 +29,7 @@ Then `lotsen setup` will:
 - Offer security profiles in guided mode (`strict` is recommended)
 - Configure proxy hardening profiles (`standard` by default, `strict` recommended for internet-facing hosts)
 - Prompt for initial dashboard `/login` credentials in interactive setup (blank password auto-generates one)
+- Configure passkey relying-party settings automatically when `DIRIGENT_DASHBOARD_DOMAIN` is set
 
 Re-running the installer performs an in-place upgrade.
 

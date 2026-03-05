@@ -46,6 +46,7 @@ type mockClient struct {
 	removed          []string
 	renamed          []string
 	onStop           func(id string)
+	onList           func()
 }
 
 func (m *mockClient) Ping(_ context.Context) (dockertypes.Ping, error) {
@@ -74,6 +75,9 @@ func (m *mockClient) ContainerStart(_ context.Context, _ string, _ container.Sta
 }
 
 func (m *mockClient) ContainerList(_ context.Context, _ container.ListOptions) ([]dockertypes.Container, error) {
+	if m.onList != nil {
+		m.onList()
+	}
 	return m.listContainers, m.listErr
 }
 
@@ -472,6 +476,37 @@ func TestDocker_StartAndReplace_OverlappingExplicitHostPort_FallsBackToStopThenS
 	}
 	if len(mock.removed) != 1 || mock.removed[0] != "old-c1" {
 		t.Fatalf("want old-c1 removed first, got %v", mock.removed)
+	}
+}
+
+func TestDocker_StartAndReplace_DifferentProtocolSameHostPort_DoesNotFallback(t *testing.T) {
+	var listedBeforeStop atomic.Bool
+
+	mock := &mockClient{
+		containerCreate:  container.CreateResponse{ID: "new-c1"},
+		inspectContainer: inspectWithPort("53/udp", "53"),
+		listContainers:   []dockertypes.Container{{ID: "new-c1", State: "running"}},
+		onList: func() {
+			listedBeforeStop.Store(true)
+		},
+		onStop: func(_ string) {
+			if !listedBeforeStop.Load() {
+				t.Fatal("old container was stopped before new container readiness check")
+			}
+		},
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	dep.Ports = []string{"53:53/tcp"}
+
+	ports, err := d.StartAndReplace(context.Background(), dep, "old-c1")
+	if err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+
+	if len(ports) != 1 || ports[0] != "53:53" {
+		t.Fatalf("want runtime ports [53:53], got %v", ports)
 	}
 }
 

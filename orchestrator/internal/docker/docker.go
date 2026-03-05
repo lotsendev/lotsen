@@ -555,18 +555,18 @@ func (d *Docker) shouldStopBeforeStart(ctx context.Context, oldContainerID strin
 	}
 
 	current := make(map[string]struct{}, len(inspect.NetworkSettings.Ports))
-	for _, bindings := range inspect.NetworkSettings.Ports {
+	for port, bindings := range inspect.NetworkSettings.Ports {
 		for _, b := range bindings {
 			if b.HostPort == "" {
 				continue
 			}
-			current[b.HostPort] = struct{}{}
+			current[b.HostPort+"/"+port.Proto()] = struct{}{}
 			break
 		}
 	}
 
-	for _, hostPort := range desired {
-		if _, overlap := current[hostPort]; overlap {
+	for _, hostPortProto := range desired {
+		if _, overlap := current[hostPortProto]; overlap {
 			return true, nil
 		}
 	}
@@ -585,7 +585,7 @@ func desiredExplicitHostPorts(ports []string) ([]string, error) {
 	}
 
 	result := make([]string, 0, len(bindings))
-	for _, b := range bindings {
+	for port, b := range bindings {
 		if len(b) == 0 {
 			continue
 		}
@@ -593,7 +593,7 @@ func desiredExplicitHostPorts(ports []string) ([]string, error) {
 		if hostPort == "" || hostPort == "0" {
 			continue
 		}
-		result = append(result, hostPort)
+		result = append(result, hostPort+"/"+port.Proto())
 	}
 	return result, nil
 }

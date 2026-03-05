@@ -2853,6 +2853,15 @@ func portHostPart(t *testing.T, binding string) int {
 	return n
 }
 
+func hasPortBinding(bindings []string, expected string) bool {
+	for _, binding := range bindings {
+		if binding == expected {
+			return true
+		}
+	}
+	return false
+}
+
 func TestCreateDeployment_AutoAssignsHostPort(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
@@ -2886,7 +2895,7 @@ func TestCreateDeployment_AutoAssignsHostPort(t *testing.T) {
 	}
 }
 
-func TestCreateDeployment_StripsUserHostPort(t *testing.T) {
+func TestCreateDeployment_PreservesExplicitHostPort(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
@@ -2913,9 +2922,123 @@ func TestCreateDeployment_StripsUserHostPort(t *testing.T) {
 	if len(created.Ports) != 1 {
 		t.Fatalf("want 1 port binding, got %d", len(created.Ports))
 	}
-	hp := portHostPart(t, created.Ports[0])
-	if hp == 8080 {
-		t.Errorf("user-specified host port 8080 was not stripped; got binding %s", created.Ports[0])
+	if created.Ports[0] != "8080:80" {
+		t.Errorf("want binding 8080:80, got %s", created.Ports[0])
+	}
+}
+
+func TestCreateDeployment_MixedMappingsPreserveExplicitAndAutoAssignContainerOnly(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"name":  "dns",
+		"image": "pihole/pihole:latest",
+		"ports": []string{"53:53/udp", "80"},
+	})
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("want 201, got %d", resp.StatusCode)
+	}
+
+	var created store.Deployment
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(created.Ports) != 2 {
+		t.Fatalf("want 2 port bindings, got %d", len(created.Ports))
+	}
+	if !hasPortBinding(created.Ports, "53:53/udp") {
+		t.Fatalf("want explicit 53:53/udp to be preserved, got %v", created.Ports)
+	}
+
+	autoBinding := ""
+	for _, binding := range created.Ports {
+		if strings.HasSuffix(binding, ":80") {
+			autoBinding = binding
+			break
+		}
+	}
+	if autoBinding == "" {
+		t.Fatalf("want an auto-assigned binding for container port 80, got %v", created.Ports)
+	}
+	autoHostPort := portHostPart(t, autoBinding)
+	if autoHostPort < 32768 || autoHostPort > 60999 {
+		t.Fatalf("host port %d not in auto-assigned range [32768, 60999]", autoHostPort)
+	}
+}
+
+func TestCreateDeployment_ExplicitHostPortConflictReturns409(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	firstBody, _ := json.Marshal(map[string]any{
+		"name":  "dns-a",
+		"image": "nginx:latest",
+		"ports": []string{"53:53/udp"},
+	})
+	firstResp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(firstBody))
+	if err != nil {
+		t.Fatalf("POST first deployment: %v", err)
+	}
+	defer firstResp.Body.Close()
+	if firstResp.StatusCode != http.StatusCreated {
+		t.Fatalf("want first create 201, got %d", firstResp.StatusCode)
+	}
+
+	secondBody, _ := json.Marshal(map[string]any{
+		"name":  "dns-b",
+		"image": "nginx:latest",
+		"ports": []string{"53:53/udp"},
+	})
+	secondResp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(secondBody))
+	if err != nil {
+		t.Fatalf("POST second deployment: %v", err)
+	}
+	defer secondResp.Body.Close()
+
+	if secondResp.StatusCode != http.StatusConflict {
+		t.Fatalf("want 409, got %d", secondResp.StatusCode)
+	}
+	bodyBytes, err := io.ReadAll(secondResp.Body)
+	if err != nil {
+		t.Fatalf("read conflict body: %v", err)
+	}
+	if !strings.Contains(string(bodyBytes), "host port 53/udp is already in use") {
+		t.Fatalf("unexpected conflict body: %q", string(bodyBytes))
+	}
+}
+
+func TestCreateDeployment_ProtocolAwareHostPortConflicts(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	post := func(name string, ports []string) int {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{
+			"name":  name,
+			"image": "nginx:latest",
+			"ports": ports,
+		})
+		resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST /api/deployments (%s): %v", name, err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if got := post("dns-tcp", []string{"53:53/tcp"}); got != http.StatusCreated {
+		t.Fatalf("want tcp deployment create 201, got %d", got)
+	}
+	if got := post("dns-udp", []string{"53:53/udp"}); got != http.StatusCreated {
+		t.Fatalf("want udp deployment create 201, got %d", got)
 	}
 }
 
@@ -3008,6 +3131,100 @@ func TestUpdateDeployment_HostPortStableOnRedeploy(t *testing.T) {
 	updatedHostPort := portHostPart(t, updated.Ports[0])
 	if updatedHostPort != originalHostPort {
 		t.Errorf("host port changed from %d to %d — should be stable", originalHostPort, updatedHostPort)
+	}
+}
+
+func TestUpdateDeployment_PreservesExplicitHostPort(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	createBody, _ := json.Marshal(map[string]any{
+		"name":  "dns",
+		"image": "pihole/pihole:latest",
+		"ports": []string{"53:53/udp"},
+	})
+	createResp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(createBody))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer createResp.Body.Close()
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("want create 201, got %d", createResp.StatusCode)
+	}
+
+	var created store.Deployment
+	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	updateBody, _ := json.Marshal(map[string]any{
+		"name":  "dns",
+		"image": "pihole/pihole:latest",
+		"ports": []string{"53:53/udp"},
+	})
+	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/"+created.ID, bytes.NewReader(updateBody))
+	req.Header.Set("Content-Type", "application/json")
+	updateResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/%s: %v", created.ID, err)
+	}
+	defer updateResp.Body.Close()
+
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("want update 200, got %d", updateResp.StatusCode)
+	}
+
+	var updated store.Deployment
+	if err := json.NewDecoder(updateResp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode update response: %v", err)
+	}
+	if len(updated.Ports) != 1 || updated.Ports[0] != "53:53/udp" {
+		t.Fatalf("want preserved explicit binding [53:53/udp], got %v", updated.Ports)
+	}
+}
+
+func TestPatchDeployment_ExplicitHostPortConflictReturns409(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	create := func(name string, ports []string) store.Deployment {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{
+			"name":  name,
+			"image": "nginx:latest",
+			"ports": ports,
+		})
+		resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST /api/deployments (%s): %v", name, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("POST (%s): want 201, got %d", name, resp.StatusCode)
+		}
+		var created store.Deployment
+		if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+			t.Fatalf("decode create response (%s): %v", name, err)
+		}
+		return created
+	}
+
+	create("dns-a", []string{"53:53/udp"})
+	second := create("dns-b", []string{"80"})
+
+	patchBody, _ := json.Marshal(map[string]any{
+		"ports": []string{"53:53/udp"},
+	})
+	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/api/deployments/"+second.ID, bytes.NewReader(patchBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/deployments/%s: %v", second.ID, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("want 409, got %d", resp.StatusCode)
 	}
 }
 

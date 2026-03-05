@@ -57,9 +57,17 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	assignedPorts, err := assignHostPorts(allDeployments, "", nil, normalizeContainerPorts(body.Ports))
+	assignedPorts, err := assignHostPorts(allDeployments, "", nil, body.Ports)
 	if err != nil {
-		http.Error(w, "no host ports available", http.StatusServiceUnavailable)
+		var conflictErr hostPortConflictError
+		switch {
+		case errors.As(err, &conflictErr):
+			http.Error(w, conflictErr.Error(), http.StatusConflict)
+		case errors.Is(err, errNoHostPortsAvailable):
+			http.Error(w, "no host ports available", http.StatusServiceUnavailable)
+		default:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
 		return
 	}
 

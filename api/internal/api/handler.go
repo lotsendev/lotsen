@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -364,129 +365,219 @@ const (
 	wafModeEnforce   = "enforcement"
 )
 
-// containerPortOnly strips any user-supplied host port prefix and protocol suffix
-// from a port spec, returning only the container port number.
-// "8080:80" → "80", "80/tcp" → "80", "80" → "80".
-func containerPortOnly(spec string) string {
-	if idx := strings.LastIndex(spec, ":"); idx != -1 {
-		spec = spec[idx+1:]
-	}
-	if idx := strings.Index(spec, "/"); idx != -1 {
-		spec = spec[:idx]
-	}
-	return strings.TrimSpace(spec)
+var errNoHostPortsAvailable = errors.New("no host ports available")
+
+type hostPortConflictError struct {
+	HostPort int
+	Protocol string
 }
 
-// normalizeContainerPorts strips host port prefixes from every entry and
-// deduplicates the result, preserving order.
-func normalizeContainerPorts(specs []string) []string {
-	seen := make(map[string]struct{}, len(specs))
-	out := make([]string, 0, len(specs))
-	for _, s := range specs {
-		cp := containerPortOnly(s)
-		if cp == "" {
-			continue
-		}
-		if _, dup := seen[cp]; dup {
-			continue
-		}
-		seen[cp] = struct{}{}
-		out = append(out, cp)
-	}
-	return out
+func (e hostPortConflictError) Error() string {
+	return fmt.Sprintf("host port %d/%s is already in use", e.HostPort, e.Protocol)
 }
 
-// hostPortFromBinding extracts the host port number from a "hostPort:containerPort"
-// binding string. Returns 0 if the binding is not in that format.
-func hostPortFromBinding(binding string) int {
-	idx := strings.Index(binding, ":")
-	if idx == -1 {
-		return 0
+type portSpec struct {
+	HostPort      int
+	ContainerPort int
+	Protocol      string
+}
+
+func (p portSpec) withHostPort(hostPort int) portSpec {
+	p.HostPort = hostPort
+	return p
+}
+
+func (p portSpec) containerKey() string {
+	return fmt.Sprintf("%d/%s", p.ContainerPort, p.Protocol)
+}
+
+func (p portSpec) hostProtocolKey() string {
+	if p.HostPort <= 0 {
+		return ""
 	}
-	n, err := strconv.Atoi(binding[:idx])
+	return fmt.Sprintf("%d/%s", p.HostPort, p.Protocol)
+}
+
+func (p portSpec) binding() string {
+	binding := fmt.Sprintf("%d:%d", p.HostPort, p.ContainerPort)
+	if p.Protocol != "tcp" {
+		binding += "/" + p.Protocol
+	}
+	return binding
+}
+
+func parsePortSpecs(specs []string) ([]portSpec, error) {
+	parsed := make([]portSpec, 0, len(specs))
+	seenContainer := make(map[string]struct{}, len(specs))
+	seenBinding := make(map[string]struct{}, len(specs))
+
+	for _, raw := range specs {
+		p, err := parsePortSpec(raw)
+		if err != nil {
+			return nil, err
+		}
+
+		if p.HostPort > 0 {
+			key := p.hostProtocolKey() + ":" + p.containerKey()
+			if _, dup := seenBinding[key]; dup {
+				continue
+			}
+			seenBinding[key] = struct{}{}
+			parsed = append(parsed, p)
+			continue
+		}
+
+		key := p.containerKey()
+		if _, dup := seenContainer[key]; dup {
+			continue
+		}
+		seenContainer[key] = struct{}{}
+		parsed = append(parsed, p)
+	}
+
+	return parsed, nil
+}
+
+func parsePortSpec(raw string) (portSpec, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return portSpec{}, fmt.Errorf("invalid port mapping: value is empty")
+	}
+
+	mainPart, protocol, hasProtocol := strings.Cut(raw, "/")
+	if hasProtocol {
+		protocol = strings.ToLower(strings.TrimSpace(protocol))
+		if protocol != "tcp" && protocol != "udp" {
+			return portSpec{}, fmt.Errorf("invalid port mapping %q: protocol must be tcp or udp", raw)
+		}
+	} else {
+		protocol = "tcp"
+	}
+
+	parts := strings.Split(mainPart, ":")
+	if len(parts) > 2 {
+		return portSpec{}, fmt.Errorf("invalid port mapping %q", raw)
+	}
+
+	containerPart := strings.TrimSpace(parts[len(parts)-1])
+	containerPort, err := parseValidPortNumber(containerPart)
 	if err != nil {
-		return 0
+		return portSpec{}, fmt.Errorf("invalid port mapping %q: %w", raw, err)
 	}
-	return n
+
+	p := portSpec{ContainerPort: containerPort, Protocol: protocol}
+	if len(parts) == 1 {
+		return p, nil
+	}
+
+	hostPart := strings.TrimSpace(parts[0])
+	hostPort, err := parseValidPortNumber(hostPart)
+	if err != nil {
+		return portSpec{}, fmt.Errorf("invalid port mapping %q: %w", raw, err)
+	}
+	p.HostPort = hostPort
+
+	return p, nil
 }
 
-// containerPortFromBinding extracts the container port from a "hostPort:containerPort"
-// binding string. Returns the full string if there is no colon.
-func containerPortFromBinding(binding string) string {
-	idx := strings.Index(binding, ":")
-	if idx == -1 {
-		return binding
+func parseValidPortNumber(value string) (int, error) {
+	port, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return 0, fmt.Errorf("port must be numeric")
 	}
-	return binding[idx+1:]
+	if port < 1 || port > 65535 {
+		return 0, fmt.Errorf("port must be between 1 and 65535")
+	}
+	return port, nil
 }
 
-// assignHostPorts returns stable, conflict-free "hostPort:containerPort" bindings
-// for the given container ports.
+// assignHostPorts returns stable, conflict-free host bindings for requested
+// port specs.
 //
 //   - allDeployments: current store snapshot used to find occupied host ports.
 //   - skipID: deployment being created/updated — its existing host ports are NOT
 //     counted as occupied so they can be reused (stability).
 //   - currentBindings: the Ports slice of the deployment being updated, used to
 //     carry over existing host-port assignments for unchanged container ports.
-func assignHostPorts(allDeployments []store.Deployment, skipID string, currentBindings []string, containerPorts []string) ([]string, error) {
-	if len(containerPorts) == 0 {
+func assignHostPorts(allDeployments []store.Deployment, skipID string, currentBindings []string, requestedPorts []string) ([]string, error) {
+	if len(requestedPorts) == 0 {
 		return []string{}, nil
 	}
 
-	// Collect host ports in use by other deployments.
-	usedHostPorts := make(map[int]struct{})
+	requested, err := parsePortSpecs(requestedPorts)
+	if err != nil {
+		return nil, err
+	}
+
+	usedHostPorts := make(map[string]struct{})
 	for _, d := range allDeployments {
 		if d.ID == skipID {
 			continue
 		}
 		for _, p := range d.Ports {
-			if hp := hostPortFromBinding(p); hp > 0 {
-				usedHostPorts[hp] = struct{}{}
+			spec, err := parsePortSpec(p)
+			if err != nil {
+				continue
+			}
+			if key := spec.hostProtocolKey(); key != "" {
+				usedHostPorts[key] = struct{}{}
 			}
 		}
 	}
 
-	// Build a map of containerPort → existing host port for the deployment being
-	// updated so we can reuse the same host port (stable across redeployments).
 	existing := make(map[string]int, len(currentBindings))
 	for _, p := range currentBindings {
-		hp := hostPortFromBinding(p)
-		cp := containerPortFromBinding(p)
-		if hp > 0 && cp != "" {
-			existing[cp] = hp
+		spec, err := parsePortSpec(p)
+		if err != nil {
+			continue
+		}
+		if spec.HostPort > 0 {
+			existing[spec.containerKey()] = spec.HostPort
 		}
 	}
 
-	result := make([]string, 0, len(containerPorts))
-	for _, cp := range containerPorts {
-		// Reuse the existing host port for this container port when it is still free.
-		if hp, ok := existing[cp]; ok {
-			if _, inUse := usedHostPorts[hp]; !inUse {
-				result = append(result, fmt.Sprintf("%d:%s", hp, cp))
-				usedHostPorts[hp] = struct{}{} // prevent double-allocation within batch
+	result := make([]string, 0, len(requested))
+	for _, requestedPort := range requested {
+		if requestedPort.HostPort > 0 {
+			key := requestedPort.hostProtocolKey()
+			if _, inUse := usedHostPorts[key]; inUse {
+				return nil, hostPortConflictError{HostPort: requestedPort.HostPort, Protocol: requestedPort.Protocol}
+			}
+			usedHostPorts[key] = struct{}{}
+			result = append(result, requestedPort.binding())
+			continue
+		}
+
+		if hp, ok := existing[requestedPort.containerKey()]; ok {
+			port := requestedPort.withHostPort(hp)
+			key := port.hostProtocolKey()
+			if _, inUse := usedHostPorts[key]; !inUse {
+				usedHostPorts[key] = struct{}{}
+				result = append(result, port.binding())
 				continue
 			}
 		}
 
-		// Assign a new free host port from the reserved range.
-		hp, err := allocateHostPort(usedHostPorts)
+		hostPort, err := allocateHostPort(usedHostPorts, requestedPort.Protocol)
 		if err != nil {
 			return nil, err
 		}
-		usedHostPorts[hp] = struct{}{}
-		result = append(result, fmt.Sprintf("%d:%s", hp, cp))
+		port := requestedPort.withHostPort(hostPort)
+		usedHostPorts[port.hostProtocolKey()] = struct{}{}
+		result = append(result, port.binding())
 	}
 
 	return result, nil
 }
 
-func allocateHostPort(used map[int]struct{}) (int, error) {
+func allocateHostPort(used map[string]struct{}, protocol string) (int, error) {
 	for port := hostPortRangeMin; port <= hostPortRangeMax; port++ {
-		if _, inUse := used[port]; !inUse {
+		key := fmt.Sprintf("%d/%s", port, protocol)
+		if _, inUse := used[key]; !inUse {
 			return port, nil
 		}
 	}
-	return 0, fmt.Errorf("no free host port available in range %d–%d", hostPortRangeMin, hostPortRangeMax)
+	return 0, errNoHostPortsAvailable
 }
 
 func updateRequiresRedeploy(existing store.Deployment, body deploymentRequest) bool {

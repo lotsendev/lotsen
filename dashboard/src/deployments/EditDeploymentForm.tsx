@@ -109,12 +109,12 @@ export default function EditDeploymentForm({ deployment, onClose, className, hid
 
         <DynamicSection<PortRow>
           title="Port mappings"
-          description="Specify the container port to expose. A host port is automatically assigned."
+          description="Use container-only ports (for example 80) for auto host assignment, or explicit mappings like 53:53 and 53:53/udp."
           addLabel="Add port mapping" removeLabel="Remove port mapping"
           rows={portRows.rows} onAdd={portRows.add} onRemove={portRows.remove}
           errorFor={row => errors.ports[row.id]}
           renderRow={row => (
-            <Input type="text" placeholder="Container port" value={row.port}
+            <Input type="text" placeholder="80 or 53:53/udp" value={row.port}
               onChange={e => portRows.update(row.id, { port: e.target.value })}
               aria-invalid={Boolean(errors.ports[row.id])} />
           )}

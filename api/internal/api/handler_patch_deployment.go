@@ -59,9 +59,17 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to list deployments", http.StatusInternalServerError)
 			return
 		}
-		assignedPorts, err := assignHostPorts(allDeployments, id, existing.Ports, normalizeContainerPorts(body.Ports))
+		assignedPorts, err := assignHostPorts(allDeployments, id, existing.Ports, body.Ports)
 		if err != nil {
-			http.Error(w, "no host ports available", http.StatusServiceUnavailable)
+			var conflictErr hostPortConflictError
+			switch {
+			case errors.As(err, &conflictErr):
+				http.Error(w, conflictErr.Error(), http.StatusConflict)
+			case errors.Is(err, errNoHostPortsAvailable):
+				http.Error(w, "no host ports available", http.StatusServiceUnavailable)
+			default:
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			}
 			return
 		}
 		body.Ports = assignedPorts

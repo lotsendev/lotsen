@@ -70,6 +70,10 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if err := validateProxyPortSelection(body.Domain, body.ProxyPort, assignedPorts); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	d := store.Deployment{
 		ID:        id,
@@ -77,6 +81,7 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		Image:     body.Image,
 		Envs:      body.Envs,
 		Ports:     assignedPorts,
+		ProxyPort: body.ProxyPort,
 		Volumes:   body.Volumes,
 		Domain:    body.Domain,
 		Public:    body.Public,

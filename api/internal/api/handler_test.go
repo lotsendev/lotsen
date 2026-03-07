@@ -1223,6 +1223,51 @@ func TestCreateDeployment_PrivateDomainMustMatchAuthCookieDomain(t *testing.T) {
 	}
 }
 
+func TestCreateDeployment_DomainRequiresProxyPort(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"name":    "web",
+		"image":   "nginx:latest",
+		"ports":   []string{"80"},
+		"volumes": []string{},
+		"domain":  "app.example.com",
+	})
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestCreateDeployment_DomainRejectsUDPProxyPort(t *testing.T) {
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body, _ := json.Marshal(map[string]any{
+		"name":       "dns",
+		"image":      "pihole/pihole:latest",
+		"ports":      []string{"53:53/udp", "80"},
+		"proxy_port": 53,
+		"volumes":    []string{},
+		"domain":     "dns.example.com",
+	})
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
 func TestCreateDeployment_InvalidBody(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
@@ -1863,11 +1908,13 @@ func TestPatchDeployment_EmitsDeployingEvent(t *testing.T) {
 func TestPatchDeployment_DomainOnly_DoesNotRedeploy(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{
-		ID:     "d1",
-		Name:   "web",
-		Image:  "nginx:1",
-		Domain: "old.example.com",
-		Status: store.StatusHealthy,
+		ID:        "d1",
+		Name:      "web",
+		Image:     "nginx:1",
+		Ports:     []string{"32768:80"},
+		ProxyPort: 80,
+		Domain:    "old.example.com",
+		Status:    store.StatusHealthy,
 	}
 
 	broker := events.NewBroker()
@@ -2019,27 +2066,29 @@ func TestUpdateDeployment(t *testing.T) {
 func TestUpdateDeployment_NoChanges_SkipsStoreUpdate(t *testing.T) {
 	base := newMemStore()
 	base.deployments["d1"] = store.Deployment{
-		ID:      "d1",
-		Name:    "web",
-		Image:   "nginx:1",
-		Envs:    map[string]string{"PORT": "80"},
-		Ports:   []string{"32768:80"},
-		Volumes: []string{"/data:/data"},
-		Domain:  "app.example.com",
-		Public:  false,
-		Status:  store.StatusHealthy,
+		ID:        "d1",
+		Name:      "web",
+		Image:     "nginx:1",
+		Envs:      map[string]string{"PORT": "80"},
+		Ports:     []string{"32768:80"},
+		ProxyPort: 80,
+		Volumes:   []string{"/data:/data"},
+		Domain:    "app.example.com",
+		Public:    false,
+		Status:    store.StatusHealthy,
 	}
 
 	srv := newTestServer(&failUpdateStore{memStore: base})
 	defer srv.Close()
 
 	body, _ := json.Marshal(map[string]any{
-		"name":    "web",
-		"image":   "nginx:1",
-		"envs":    map[string]string{"PORT": "80"},
-		"ports":   []string{"80"},
-		"volumes": []string{"/data:/data"},
-		"domain":  "app.example.com",
+		"name":       "web",
+		"image":      "nginx:1",
+		"envs":       map[string]string{"PORT": "80"},
+		"ports":      []string{"80"},
+		"proxy_port": 80,
+		"volumes":    []string{"/data:/data"},
+		"domain":     "app.example.com",
 	})
 	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -2066,28 +2115,30 @@ func TestUpdateDeployment_NoChanges_SkipsStoreUpdate(t *testing.T) {
 func TestUpdateDeployment_PublicOnly_UpdatesVisibility(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{
-		ID:      "d1",
-		Name:    "web",
-		Image:   "nginx:1",
-		Envs:    map[string]string{"PORT": "80"},
-		Ports:   []string{"32768:80"},
-		Volumes: []string{"/data:/data"},
-		Domain:  "app.example.com",
-		Public:  false,
-		Status:  store.StatusHealthy,
+		ID:        "d1",
+		Name:      "web",
+		Image:     "nginx:1",
+		Envs:      map[string]string{"PORT": "80"},
+		Ports:     []string{"32768:80"},
+		ProxyPort: 80,
+		Volumes:   []string{"/data:/data"},
+		Domain:    "app.example.com",
+		Public:    false,
+		Status:    store.StatusHealthy,
 	}
 
 	srv := newTestServer(s)
 	defer srv.Close()
 
 	body, _ := json.Marshal(map[string]any{
-		"name":    "web",
-		"image":   "nginx:1",
-		"envs":    map[string]string{"PORT": "80"},
-		"ports":   []string{"80"},
-		"volumes": []string{"/data:/data"},
-		"domain":  "app.example.com",
-		"public":  true,
+		"name":       "web",
+		"image":      "nginx:1",
+		"envs":       map[string]string{"PORT": "80"},
+		"ports":      []string{"80"},
+		"proxy_port": 80,
+		"volumes":    []string{"/data:/data"},
+		"domain":     "app.example.com",
+		"public":     true,
 	})
 	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -2118,28 +2169,30 @@ func TestUpdateDeployment_PublicOnly_UpdatesVisibility(t *testing.T) {
 func TestUpdateDeployment_PrivateDomainMustMatchAuthCookieDomain(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{
-		ID:      "d1",
-		Name:    "web",
-		Image:   "nginx:1",
-		Domain:  "app.example.com",
-		Public:  true,
-		Status:  store.StatusHealthy,
-		Envs:    map[string]string{},
-		Ports:   []string{"32768:80"},
-		Volumes: []string{},
+		ID:        "d1",
+		Name:      "web",
+		Image:     "nginx:1",
+		Domain:    "app.example.com",
+		ProxyPort: 80,
+		Public:    true,
+		Status:    store.StatusHealthy,
+		Envs:      map[string]string{},
+		Ports:     []string{"32768:80"},
+		Volumes:   []string{},
 	}
 
 	srv := newTestServerWithAuthCookieDomain(s, "example.com")
 	defer srv.Close()
 
 	body, _ := json.Marshal(map[string]any{
-		"name":    "web",
-		"image":   "nginx:1",
-		"domain":  "app.other.dev",
-		"public":  false,
-		"envs":    map[string]string{},
-		"ports":   []string{"80"},
-		"volumes": []string{},
+		"name":       "web",
+		"image":      "nginx:1",
+		"domain":     "app.other.dev",
+		"proxy_port": 80,
+		"public":     false,
+		"envs":       map[string]string{},
+		"ports":      []string{"80"},
+		"volumes":    []string{},
 	})
 	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -2310,14 +2363,15 @@ func TestUpdateDeployment_Lifecycle(t *testing.T) {
 func TestUpdateDeployment_DomainOnly_DoesNotRedeploy(t *testing.T) {
 	s := newMemStore()
 	s.deployments["d1"] = store.Deployment{
-		ID:      "d1",
-		Name:    "web",
-		Image:   "nginx:1",
-		Envs:    map[string]string{"PORT": "80"},
-		Ports:   []string{"80:80"},
-		Volumes: []string{"/data:/data"},
-		Domain:  "old.example.com",
-		Status:  store.StatusHealthy,
+		ID:        "d1",
+		Name:      "web",
+		Image:     "nginx:1",
+		Envs:      map[string]string{"PORT": "80"},
+		Ports:     []string{"80:80"},
+		ProxyPort: 80,
+		Volumes:   []string{"/data:/data"},
+		Domain:    "old.example.com",
+		Status:    store.StatusHealthy,
 	}
 
 	broker := events.NewBroker()
@@ -2331,12 +2385,13 @@ func TestUpdateDeployment_DomainOnly_DoesNotRedeploy(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	body, _ := json.Marshal(map[string]any{
-		"name":    "web",
-		"image":   "nginx:1",
-		"envs":    map[string]string{"PORT": "80"},
-		"ports":   []string{"80:80"},
-		"volumes": []string{"/data:/data"},
-		"domain":  "new.example.com",
+		"name":       "web",
+		"image":      "nginx:1",
+		"envs":       map[string]string{"PORT": "80"},
+		"ports":      []string{"80:80"},
+		"proxy_port": 80,
+		"volumes":    []string{"/data:/data"},
+		"domain":     "new.example.com",
 	})
 	req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/deployments/d1", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -3295,7 +3350,7 @@ func TestCreateDeployment_HashesBasicAuthPasswords(t *testing.T) {
 	srv := newTestServer(s)
 	defer srv.Close()
 
-	body := []byte(`{"name":"web","image":"nginx:latest","envs":{},"ports":["80"],"volumes":[],"domain":"app.example.com","basic_auth":{"users":[{"username":"admin","password":"secret"}]}}`)
+	body := []byte(`{"name":"web","image":"nginx:latest","envs":{},"ports":["80"],"proxy_port":80,"volumes":[],"domain":"app.example.com","basic_auth":{"users":[{"username":"admin","password":"secret"}]}}`)
 	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /api/deployments: %v", err)
@@ -3325,7 +3380,7 @@ func TestCreateDeployment_RejectsEmptyBasicAuthUsername(t *testing.T) {
 	srv := newTestServer(newMemStore())
 	defer srv.Close()
 
-	body := []byte(`{"name":"web","image":"nginx:latest","envs":{},"ports":["80"],"volumes":[],"domain":"app.example.com","basic_auth":{"users":[{"username":"","password":"secret"}]}}`)
+	body := []byte(`{"name":"web","image":"nginx:latest","envs":{},"ports":["80"],"proxy_port":80,"volumes":[],"domain":"app.example.com","basic_auth":{"users":[{"username":"","password":"secret"}]}}`)
 	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /api/deployments: %v", err)
@@ -3342,7 +3397,7 @@ func TestCreateDeployment_PersistsSecurityConfig(t *testing.T) {
 	srv := newTestServer(s)
 	defer srv.Close()
 
-	body := []byte(`{"name":"web","image":"nginx:latest","envs":{},"ports":["80"],"volumes":[],"domain":"app.example.com","security":{"waf_enabled":true,"ip_denylist":["10.0.0.0/8"],"ip_allowlist":["203.0.113.0/24"],"custom_rules":["SecRule REQUEST_URI \"@contains blocked\" \"id:10001,phase:1,deny,status:403\""]}}`)
+	body := []byte(`{"name":"web","image":"nginx:latest","envs":{},"ports":["80"],"proxy_port":80,"volumes":[],"domain":"app.example.com","security":{"waf_enabled":true,"ip_denylist":["10.0.0.0/8"],"ip_allowlist":["203.0.113.0/24"],"custom_rules":["SecRule REQUEST_URI \"@contains blocked\" \"id:10001,phase:1,deny,status:403\""]}}`)
 	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST /api/deployments: %v", err)

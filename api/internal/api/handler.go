@@ -103,6 +103,7 @@ type deploymentRequest struct {
 	Image     string                `json:"image"`
 	Envs      map[string]string     `json:"envs"`
 	Ports     []string              `json:"ports"`
+	ProxyPort int                   `json:"proxy_port"`
 	Volumes   []string              `json:"volumes"`
 	Domain    string                `json:"domain"`
 	Public    bool                  `json:"public"`
@@ -114,6 +115,7 @@ type patchDeploymentRequest struct {
 	Image     string                `json:"image"`
 	Envs      map[string]string     `json:"envs"`
 	Ports     []string              `json:"ports"`
+	ProxyPort *int                  `json:"proxy_port"`
 	Volumes   []string              `json:"volumes"`
 	Domain    string                `json:"domain"`
 	Public    *bool                 `json:"public"`
@@ -584,6 +586,7 @@ func updateRequiresRedeploy(existing store.Deployment, body deploymentRequest) b
 	return existing.Image != body.Image ||
 		!equalStringMap(existing.Envs, body.Envs) ||
 		!slices.Equal(existing.Ports, body.Ports) ||
+		existing.ProxyPort != body.ProxyPort ||
 		!slices.Equal(existing.Volumes, body.Volumes) ||
 		!equalBasicAuthConfig(existing.BasicAuth, body.BasicAuth)
 }
@@ -596,6 +599,9 @@ func patchRequiresRedeploy(existing store.Deployment, body patchDeploymentReques
 		return true
 	}
 	if body.Ports != nil && !slices.Equal(existing.Ports, body.Ports) {
+		return true
+	}
+	if body.ProxyPort != nil && existing.ProxyPort != *body.ProxyPort {
 		return true
 	}
 	if body.Volumes != nil && !slices.Equal(existing.Volumes, body.Volumes) {
@@ -756,9 +762,35 @@ func updateRequestMatchesExisting(existing store.Deployment, body deploymentRequ
 		existing.Image == body.Image &&
 		equalStringMap(existing.Envs, body.Envs) &&
 		slices.Equal(existing.Ports, body.Ports) &&
+		existing.ProxyPort == body.ProxyPort &&
 		slices.Equal(existing.Volumes, body.Volumes) &&
 		existing.Domain == body.Domain &&
 		existing.Public == body.Public &&
 		equalStoredBasicAuthConfig(existing.BasicAuth, basicAuth) &&
 		equalSecurityConfig(existing.Security, body.Security)
+}
+
+func validateProxyPortSelection(domain string, proxyPort int, ports []string) error {
+	if normalizeDomain(domain) == "" {
+		if proxyPort != 0 {
+			return fmt.Errorf("proxy port requires domain")
+		}
+		return nil
+	}
+
+	if proxyPort <= 0 {
+		return fmt.Errorf("proxy port is required when domain is set")
+	}
+
+	for _, raw := range ports {
+		spec, err := parsePortSpec(raw)
+		if err != nil {
+			continue
+		}
+		if spec.ContainerPort == proxyPort && spec.Protocol == "tcp" {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("proxy port must match a tcp container port in ports")
 }

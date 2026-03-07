@@ -131,6 +131,26 @@ func TestPoller_SkipsDeploymentWithoutPorts(t *testing.T) {
 	}
 }
 
+func TestPoller_SkipsDeploymentWithOnlyUDPPorts(t *testing.T) {
+	ms := &memStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Domain: "dns.example.com", Ports: []string{"53:53/udp"}},
+		},
+	}
+	tbl := newSpyTable()
+	p := poller.New(ms, tbl, time.Minute)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go p.Run(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	if _, ok := tbl.get("dns.example.com"); ok {
+		t.Error("want no route for udp-only deployment, but route was registered")
+	}
+}
+
 func TestPoller_DeletesRemovedDomain(t *testing.T) {
 	ms := &memStore{
 		deployments: []store.Deployment{
@@ -193,6 +213,30 @@ func TestPoller_UpdatesChangedUpstream(t *testing.T) {
 
 	if route, _ := tbl.get("example.com"); route.Upstream != "localhost:9090" {
 		t.Errorf("updated upstream: want localhost:9090, got %s", route.Upstream)
+	}
+}
+
+func TestPoller_UsesSelectedProxyPort(t *testing.T) {
+	ms := &memStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Domain: "example.com", Ports: []string{"53:53/udp", "32770:8080", "49123:80"}, ProxyPort: 80},
+		},
+	}
+	tbl := newSpyTable()
+	p := poller.New(ms, tbl, time.Minute)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go p.Run(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	route, ok := tbl.get("example.com")
+	if !ok {
+		t.Fatal("want example.com registered, got not found")
+	}
+	if route.Upstream != "localhost:49123" {
+		t.Fatalf("want upstream localhost:49123 from selected proxy port, got %s", route.Upstream)
 	}
 }
 

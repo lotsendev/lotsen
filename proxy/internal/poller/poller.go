@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ type Table interface {
 type routeState struct {
 	Upstream      string
 	Public        bool
+	ProxyPort     int
 	BasicAuthJSON string
 	SecurityJSON  string
 }
@@ -84,13 +86,14 @@ func (p *Poller) sync() {
 		if domain == "" {
 			continue
 		}
-		upstream := upstreamFromPorts(d.Ports)
+		upstream := upstreamFromPorts(d.Ports, d.ProxyPort)
 		if upstream == "" {
 			continue
 		}
 		current[domain] = routeState{
 			Upstream:      upstream,
 			Public:        d.Public,
+			ProxyPort:     d.ProxyPort,
 			BasicAuthJSON: mustBasicAuthJSON(d.BasicAuth),
 			SecurityJSON:  mustSecurityJSON(d.Security),
 		}
@@ -157,27 +160,66 @@ func mustSecurityJSON(security *store.SecurityConfig) string {
 //   - "8080:80"              → localhost:8080
 //   - "8080:80/tcp"          → localhost:8080
 //   - "127.0.0.1:8080:80"   → localhost:8080
-func upstreamFromPorts(ports []string) string {
-	for _, p := range ports {
-		// Strip protocol suffix: "8080:80/tcp" → "8080:80"
-		if i := strings.IndexByte(p, '/'); i >= 0 {
-			p = p[:i]
+func upstreamFromPorts(ports []string, proxyPort int) string {
+	if proxyPort > 0 {
+		for _, p := range ports {
+			hostPort, containerPort, protocol, ok := parseBinding(p)
+			if !ok || protocol != "tcp" {
+				continue
+			}
+			if containerPort == proxyPort {
+				return "localhost:" + strconv.Itoa(hostPort)
+			}
 		}
-		parts := strings.Split(p, ":")
-		switch len(parts) {
-		case 2:
-			// "hostPort:containerPort"
-			if parts[0] != "" {
-				return "localhost:" + parts[0]
-			}
-		case 3:
-			// "ip:hostPort:containerPort"
-			if parts[1] != "" {
-				return "localhost:" + parts[1]
-			}
+		return ""
+	}
+
+	webPorts := map[int]struct{}{80: {}, 443: {}, 8080: {}, 3000: {}, 8000: {}}
+	fallback := ""
+	for _, p := range ports {
+		hostPort, containerPort, protocol, ok := parseBinding(p)
+		if !ok || protocol != "tcp" {
+			continue
+		}
+		upstream := "localhost:" + strconv.Itoa(hostPort)
+		if _, preferred := webPorts[containerPort]; preferred {
+			return upstream
+		}
+		if fallback == "" {
+			fallback = upstream
 		}
 	}
-	return ""
+	return fallback
+}
+
+func parseBinding(raw string) (hostPort int, containerPort int, protocol string, ok bool) {
+	mainPart := raw
+	protocol = "tcp"
+	if base, proto, hasProtocol := strings.Cut(raw, "/"); hasProtocol {
+		mainPart = base
+		protocol = strings.ToLower(strings.TrimSpace(proto))
+	}
+	if protocol != "tcp" && protocol != "udp" {
+		return 0, 0, "", false
+	}
+
+	parts := strings.Split(mainPart, ":")
+	if len(parts) != 2 && len(parts) != 3 {
+		return 0, 0, "", false
+	}
+
+	hostPart := strings.TrimSpace(parts[len(parts)-2])
+	containerPart := strings.TrimSpace(parts[len(parts)-1])
+	hostPort, err := strconv.Atoi(hostPart)
+	if err != nil || hostPort <= 0 || hostPort > 65535 {
+		return 0, 0, "", false
+	}
+	containerPort, err = strconv.Atoi(containerPart)
+	if err != nil || containerPort <= 0 || containerPort > 65535 {
+		return 0, 0, "", false
+	}
+
+	return hostPort, containerPort, protocol, true
 }
 
 func normalizeDomain(domain string) string {

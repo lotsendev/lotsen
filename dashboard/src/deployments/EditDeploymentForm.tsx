@@ -21,6 +21,7 @@ export default function EditDeploymentForm({ deployment, onClose, className, hid
   const {
     name, setName, image, setImage, domain, setDomain,
     isPublic, setIsPublic,
+    selectedProxyRowId, setSelectedProxyRowId,
     envRows, portRows, volumeRows, basicAuthEnabled, setBasicAuthEnabled, basicAuthRows,
     errors, handleSubmit, isDirty, isPending,
   } = useEditDeploymentForm(deployment, onClose)
@@ -109,14 +110,26 @@ export default function EditDeploymentForm({ deployment, onClose, className, hid
 
         <DynamicSection<PortRow>
           title="Port mappings"
-          description="Use container-only ports (for example 80) for auto host assignment, or explicit mappings like 53:53 and 53:53/udp."
+          description="Use container-only ports (for example 80) for auto host assignment, or explicit mappings like 53:53 and 53:53/udp. When domain is set, choose one TCP row as proxy target."
           addLabel="Add port mapping" removeLabel="Remove port mapping"
           rows={portRows.rows} onAdd={portRows.add} onRemove={portRows.remove}
           errorFor={row => errors.ports[row.id]}
           renderRow={row => (
-            <Input type="text" placeholder="80 or 53:53/udp" value={row.port}
-              onChange={e => portRows.update(row.id, { port: e.target.value })}
-              aria-invalid={Boolean(errors.ports[row.id])} />
+            <>
+              <Input type="text" placeholder="80 or 53:53/udp" value={row.port}
+                onChange={e => portRows.update(row.id, { port: e.target.value })}
+                aria-invalid={Boolean(errors.ports[row.id])}
+                className="flex-1" />
+              <label className="inline-flex shrink-0 items-center gap-2 rounded-md border border-border/60 px-2 py-1 text-xs text-foreground">
+                <input
+                  type="checkbox"
+                  checked={selectedProxyRowId === row.id}
+                  disabled={!domain.trim()}
+                  onChange={e => setSelectedProxyRowId(e.target.checked ? row.id : null)}
+                />
+                Proxy target
+              </label>
+            </>
           )}
         />
 

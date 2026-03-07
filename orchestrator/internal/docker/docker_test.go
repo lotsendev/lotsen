@@ -562,6 +562,46 @@ func TestDocker_StartAndReplace_DomainConfigured_SwapsProxyBeforeStoppingOld(t *
 	}
 }
 
+func TestDocker_StartAndReplace_DomainConfigured_UsesSelectedProxyPort(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/internal/routes" {
+			t.Fatalf("want POST /internal/routes, got %s %s", r.Method, r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		r.Body.Close()
+		if string(body) != `{"domain":"example.com","upstream":"localhost:49123"}` {
+			t.Fatalf("unexpected body: %s", string(body))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer proxy.Close()
+
+	t.Setenv("LOTSEN_PROXY_URL", proxy.URL)
+
+	mock := &mockClient{
+		containerCreate: container.CreateResponse{ID: "new-c1"},
+		listContainers:  []dockertypes.Container{{ID: "new-c1", State: "running"}},
+		inspectContainer: inspectWithPorts(map[string]string{
+			"53/udp":  "53",
+			"80/tcp":  "49123",
+			"443/tcp": "49443",
+		}),
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	dep.Ports = []string{"53:53/udp", "80", "443"}
+	dep.Domain = "example.com"
+	dep.ProxyPort = 80
+
+	if _, err := d.StartAndReplace(context.Background(), dep, "old-c1"); err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+}
+
 func TestDocker_StartAndReplace_ProxySwapFails_CleansUpNewAndKeepsOld(t *testing.T) {
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -677,12 +717,18 @@ func inspectWithState(exitCode int, oomKilled bool, errMsg string) dockertypes.C
 }
 
 func inspectWithPort(containerPort, hostPort string) dockertypes.ContainerJSON {
+	return inspectWithPorts(map[string]string{containerPort: hostPort})
+}
+
+func inspectWithPorts(bindings map[string]string) dockertypes.ContainerJSON {
+	ports := make(nat.PortMap, len(bindings))
+	for containerPort, hostPort := range bindings {
+		ports[nat.Port(containerPort)] = []nat.PortBinding{{HostPort: hostPort}}
+	}
 	return dockertypes.ContainerJSON{
 		NetworkSettings: &dockertypes.NetworkSettings{
 			NetworkSettingsBase: dockertypes.NetworkSettingsBase{
-				Ports: nat.PortMap{
-					nat.Port(containerPort): []nat.PortBinding{{HostPort: hostPort}},
-				},
+				Ports: ports,
 			},
 		},
 	}

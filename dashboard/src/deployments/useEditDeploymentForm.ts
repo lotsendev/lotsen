@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateDeployment, type BasicAuthConfig, type Deployment, type UpdateDeploymentInput } from '../lib/api'
 import { hashPasswordIfNeeded } from '../lib/password'
+import { parsePortSpec } from './portSpec'
 import { useDynamicRows } from './useDynamicRows'
 import type { BasicAuthUserRow, EnvRow, FormErrors, PairRow, PortRow } from './useCreateDeploymentForm'
 
@@ -23,6 +24,17 @@ function toPortRows(items: string[]): PortRow[] {
     const sep = item.indexOf(':')
     return { id: i, port: sep >= 0 ? item.slice(sep + 1) : item }
   })
+}
+
+function findProxyRowId(rows: PortRow[], proxyPort?: number): number | null {
+  if (!proxyPort) {
+    return null
+  }
+  const match = rows.find(row => {
+    const parsed = parsePortSpec(row.port)
+    return parsed?.protocol === 'tcp' && parsed.containerPort === proxyPort
+  })
+  return match?.id ?? null
 }
 
 function toBasicAuthRows(deployment: Deployment): BasicAuthUserRow[] {
@@ -57,6 +69,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
   const portRows = useDynamicRows<PortRow>(id => ({ id, port: '' }), toPortRows(deployment.ports))
   const volumeRows = useDynamicRows<PairRow>(id => ({ id, left: '', right: '' }), toPairRows(deployment.volumes))
   const basicAuthRows = useDynamicRows<BasicAuthUserRow>(id => ({ id, username: '', password: '' }), toBasicAuthRows(deployment))
+  const [selectedProxyRowId, setSelectedProxyRowId] = useState<number | null>(() => findProxyRowId(toPortRows(deployment.ports), deployment.proxy_port))
 
   const normalizedInput = useMemo<UpdateDeploymentInput>(() => {
     const envs: Record<string, string> = {}
@@ -64,11 +77,21 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
       envs[row.key.trim()] = row.value
     }
 
+    let proxyPort: number | undefined
+    if (domain.trim() && selectedProxyRowId != null) {
+      const selected = portRows.rows.find(row => row.id === selectedProxyRowId)
+      const parsed = selected ? parsePortSpec(selected.port) : null
+      if (parsed?.protocol === 'tcp') {
+        proxyPort = parsed.containerPort
+      }
+    }
+
     return {
       name: name.trim(),
       image: image.trim(),
       envs,
       ports: portRows.rows.map(r => r.port.trim()),
+      proxy_port: proxyPort,
       volumes: volumeRows.rows.map(r => `${r.left.trim()}:${r.right.trim()}`),
       domain: domain.trim(),
       public: isPublic,
@@ -82,7 +105,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
         : undefined,
       security: deployment.security,
     }
-  }, [name, image, domain, isPublic, envRows.rows, portRows.rows, volumeRows.rows, basicAuthEnabled, basicAuthRows.rows, deployment.security])
+  }, [name, image, domain, isPublic, envRows.rows, portRows.rows, selectedProxyRowId, volumeRows.rows, basicAuthEnabled, basicAuthRows.rows, deployment.security])
 
   const isDirty = useMemo(() => {
     const initial: UpdateDeploymentInput = {
@@ -93,6 +116,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
         const separator = port.indexOf(':')
         return separator >= 0 ? port.slice(separator + 1) : port
       }),
+      proxy_port: deployment.proxy_port,
       volumes: deployment.volumes,
       domain: deployment.domain,
       public: deployment.public,
@@ -103,7 +127,8 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
     if (initial.name !== normalizedInput.name ||
       initial.image !== normalizedInput.image ||
       initial.domain !== normalizedInput.domain ||
-      initial.public !== normalizedInput.public) {
+      initial.public !== normalizedInput.public ||
+      initial.proxy_port !== normalizedInput.proxy_port) {
       return true
     }
 
@@ -159,6 +184,23 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
     for (const row of portRows.rows) {
       if (!row.port.trim()) errs.ports[row.id] = 'Container port is required'
     }
+    if (domain.trim()) {
+      if (selectedProxyRowId == null) {
+        errs.form = 'Select a proxy target port when domain is set'
+      } else {
+        const selected = portRows.rows.find(row => row.id === selectedProxyRowId)
+        if (!selected) {
+          errs.form = 'Select a valid proxy target port when domain is set'
+        } else {
+          const parsed = parsePortSpec(selected.port)
+          if (!parsed) {
+            errs.ports[selected.id] = 'Proxy target must be a valid port mapping'
+          } else if (parsed.protocol !== 'tcp') {
+            errs.ports[selected.id] = 'Proxy target must use TCP'
+          }
+        }
+      }
+    }
     for (const row of volumeRows.rows) {
       if (!row.left.trim() || !row.right.trim()) errs.volumes[row.id] = 'Both host and container paths are required'
     }
@@ -206,6 +248,7 @@ export function useEditDeploymentForm(deployment: Deployment, onClose: () => voi
     domain, setDomain,
     isPublic, setIsPublic,
     basicAuthEnabled, setBasicAuthEnabled,
+    selectedProxyRowId, setSelectedProxyRowId,
     envRows,
     portRows,
     volumeRows,

@@ -237,6 +237,7 @@ export type Deployment = {
   image: string
   envs: Record<string, string>
   ports: string[]
+  proxy_port?: number
   volumes: string[]
   domain: string
   public: boolean
@@ -432,6 +433,7 @@ export type CreateDeploymentInput = {
   image: string
   envs: Record<string, string>
   ports: string[]
+  proxy_port?: number
   volumes: string[]
   domain: string
   public: boolean
@@ -453,6 +455,7 @@ export type UpdateDeploymentInput = {
   image: string
   envs: Record<string, string>
   ports: string[]
+  proxy_port?: number
   volumes: string[]
   domain: string
   public: boolean
@@ -474,6 +477,7 @@ export type PatchDeploymentInput = {
   image?: string
   envs?: Record<string, string>
   ports?: string[]
+  proxy_port?: number
   volumes?: string[]
   domain?: string
   public?: boolean

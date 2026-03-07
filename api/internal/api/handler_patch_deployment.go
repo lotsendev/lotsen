@@ -48,6 +48,14 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 	if body.Public != nil {
 		effectivePublic = *body.Public
 	}
+	effectivePorts := existing.Ports
+	if body.Ports != nil {
+		effectivePorts = body.Ports
+	}
+	effectiveProxyPort := existing.ProxyPort
+	if body.ProxyPort != nil {
+		effectiveProxyPort = *body.ProxyPort
+	}
 	if !effectivePublic && !h.privateDomainAllowed(effectiveDomain) {
 		http.Error(w, "private deployments must use a domain within LOTSEN_AUTH_COOKIE_DOMAIN", http.StatusBadRequest)
 		return
@@ -73,6 +81,12 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		body.Ports = assignedPorts
+		effectivePorts = assignedPorts
+	}
+
+	if err := validateProxyPortSelection(effectiveDomain, effectiveProxyPort, effectivePorts); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	// Preserve Public when the field is absent from the patch request.
@@ -82,15 +96,17 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	patch := store.Deployment{
-		Image:     body.Image,
-		Envs:      body.Envs,
-		Ports:     body.Ports,
-		Volumes:   body.Volumes,
-		Domain:    body.Domain,
-		Public:    public,
-		PublicSet: body.Public != nil,
-		BasicAuth: basicAuth,
-		Security:  body.Security,
+		Image:        body.Image,
+		Envs:         body.Envs,
+		Ports:        body.Ports,
+		ProxyPort:    effectiveProxyPort,
+		ProxyPortSet: body.ProxyPort != nil,
+		Volumes:      body.Volumes,
+		Domain:       body.Domain,
+		Public:       public,
+		PublicSet:    body.Public != nil,
+		BasicAuth:    basicAuth,
+		Security:     body.Security,
 	}
 	if patchRequiresRedeploy(existing, body) {
 		patch.Status = store.StatusDeploying

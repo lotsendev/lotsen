@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -358,7 +359,7 @@ func (d *Docker) StartAndReplace(ctx context.Context, dep store.Deployment, oldC
 		return nil, fmt.Errorf("docker: resolve runtime ports for %s: %w", resp.ID, err)
 	}
 
-	if err := d.swapProxyRoute(ctx, dep.Domain, runtimePorts); err != nil {
+	if err := d.swapProxyRoute(ctx, dep.Domain, dep.ProxyPort, runtimePorts); err != nil {
 		_ = d.client.ContainerStop(ctx, resp.ID, container.StopOptions{})
 		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 		return nil, fmt.Errorf("docker: swap proxy route for %q: %w", dep.Domain, err)
@@ -603,13 +604,13 @@ type routeRequest struct {
 	Upstream string `json:"upstream"`
 }
 
-func (d *Docker) swapProxyRoute(ctx context.Context, domain string, runtimePorts []string) error {
+func (d *Docker) swapProxyRoute(ctx context.Context, domain string, proxyPort int, runtimePorts []string) error {
 	domain = normalizeDomain(domain)
 	if domain == "" {
 		return nil
 	}
 
-	upstream := upstreamFromRuntimePorts(runtimePorts)
+	upstream := upstreamFromRuntimePorts(runtimePorts, proxyPort)
 	if upstream == "" {
 		return fmt.Errorf("runtime upstream not available")
 	}
@@ -638,7 +639,21 @@ func (d *Docker) swapProxyRoute(ctx context.Context, domain string, runtimePorts
 	return nil
 }
 
-func upstreamFromRuntimePorts(runtimePorts []string) string {
+func upstreamFromRuntimePorts(runtimePorts []string, proxyPort int) string {
+	if proxyPort > 0 {
+		wanted := strconv.Itoa(proxyPort)
+		for _, binding := range runtimePorts {
+			host, container, ok := strings.Cut(binding, ":")
+			if !ok || host == "" || container == "" {
+				continue
+			}
+			if container == wanted {
+				return "localhost:" + host
+			}
+		}
+		return ""
+	}
+
 	for _, binding := range runtimePorts {
 		host, _, ok := strings.Cut(binding, ":")
 		if !ok || host == "" {

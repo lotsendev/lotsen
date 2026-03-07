@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createDeployment } from '../lib/api'
 import { hashPasswordIfNeeded } from '../lib/password'
+import { parsePortSpec } from './portSpec'
 import { useDynamicRows } from './useDynamicRows'
 
 export type EnvRow = { id: number; key: string; value: string }
@@ -33,6 +34,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
   const [domain, setDomain] = useState('')
   const [isPublic, setIsPublic] = useState(false)
   const [basicAuthEnabled, setBasicAuthEnabled] = useState(false)
+  const [selectedProxyRowId, setSelectedProxyRowId] = useState<number | null>(null)
   const [errors, setErrors] = useState<FormErrors>(EMPTY_ERRORS)
 
   const envRows = useDynamicRows<EnvRow>(id => ({ id, key: '', value: '' }))
@@ -49,6 +51,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
       setDomain('')
       setIsPublic(false)
       setBasicAuthEnabled(false)
+      setSelectedProxyRowId(null)
       envRows.reset()
       portRows.reset()
       volumeRows.reset()
@@ -68,6 +71,23 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
     }
     for (const row of portRows.rows) {
       if (!row.port.trim()) errs.ports[row.id] = 'Container port is required'
+    }
+    if (domain.trim()) {
+      if (selectedProxyRowId == null) {
+        errs.form = 'Select a proxy target port when domain is set'
+      } else {
+        const selected = portRows.rows.find(row => row.id === selectedProxyRowId)
+        if (!selected) {
+          errs.form = 'Select a valid proxy target port when domain is set'
+        } else {
+          const parsed = parsePortSpec(selected.port)
+          if (!parsed) {
+            errs.ports[selected.id] = 'Proxy target must be a valid port mapping'
+          } else if (parsed.protocol !== 'tcp') {
+            errs.ports[selected.id] = 'Proxy target must use TCP'
+          }
+        }
+      }
     }
     for (const row of volumeRows.rows) {
       if (!row.left.trim() || !row.right.trim()) errs.volumes[row.id] = 'Both host and container paths are required'
@@ -107,11 +127,21 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
         }
       : undefined
 
+    let proxyPort: number | undefined
+    if (domain.trim() && selectedProxyRowId != null) {
+      const selected = portRows.rows.find(row => row.id === selectedProxyRowId)
+      const parsed = selected ? parsePortSpec(selected.port) : null
+      if (parsed?.protocol === 'tcp') {
+        proxyPort = parsed.containerPort
+      }
+    }
+
     mutation.mutate({
       name: name.trim(),
       image: image.trim(),
       envs,
       ports: portRows.rows.map(r => r.port.trim()),
+      proxy_port: proxyPort,
       volumes: volumeRows.rows.map(r => `${r.left.trim()}:${r.right.trim()}`),
       domain: domain.trim(),
       public: isPublic,
@@ -125,6 +155,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
     domain, setDomain,
     isPublic, setIsPublic,
     basicAuthEnabled, setBasicAuthEnabled,
+    selectedProxyRowId, setSelectedProxyRowId,
     envRows,
     portRows,
     volumeRows,

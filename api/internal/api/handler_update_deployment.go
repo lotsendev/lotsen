@@ -76,6 +76,10 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.Ports = assignedPorts
+	if err := validateProxyPortSelection(body.Domain, body.ProxyPort, body.Ports); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	if updateRequestMatchesExisting(existing, body, basicAuth) {
 		writeJSON(w, http.StatusOK, normalizeDeploymentSecurity(existing))
@@ -93,6 +97,7 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		Image:     body.Image,
 		Envs:      body.Envs,
 		Ports:     body.Ports,
+		ProxyPort: body.ProxyPort,
 		Volumes:   body.Volumes,
 		Domain:    body.Domain,
 		Public:    body.Public,

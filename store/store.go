@@ -58,20 +58,22 @@ const (
 
 // Deployment holds the full configuration and runtime state of a container deployment.
 type Deployment struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Image     string            `json:"image"`
-	Envs      map[string]string `json:"envs"`
-	Ports     []string          `json:"ports"`
-	Volumes   []string          `json:"volumes"`
-	Domain    string            `json:"domain"`
-	Public    bool              `json:"public,omitempty"`
-	PublicSet bool              `json:"-"`
-	BasicAuth *BasicAuthConfig  `json:"basic_auth,omitempty"`
-	Security  *SecurityConfig   `json:"security,omitempty"`
-	Status    Status            `json:"status"`
-	Reason    StatusReason      `json:"reason,omitempty"`
-	Error     string            `json:"error,omitempty"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Image        string            `json:"image"`
+	Envs         map[string]string `json:"envs"`
+	Ports        []string          `json:"ports"`
+	ProxyPort    int               `json:"proxy_port,omitempty"`
+	Volumes      []string          `json:"volumes"`
+	Domain       string            `json:"domain"`
+	Public       bool              `json:"public,omitempty"`
+	PublicSet    bool              `json:"-"`
+	ProxyPortSet bool              `json:"-"`
+	BasicAuth    *BasicAuthConfig  `json:"basic_auth,omitempty"`
+	Security     *SecurityConfig   `json:"security,omitempty"`
+	Status       Status            `json:"status"`
+	Reason       StatusReason      `json:"reason,omitempty"`
+	Error        string            `json:"error,omitempty"`
 }
 
 type BasicAuthConfig struct {
@@ -642,6 +644,9 @@ func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 		}
 		if patch.Volumes != nil {
 			d.Volumes = patch.Volumes
+		}
+		if patch.ProxyPortSet {
+			d.ProxyPort = patch.ProxyPort
 		}
 		if patch.Domain != "" {
 			d.Domain = patch.Domain

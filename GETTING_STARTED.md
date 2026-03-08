@@ -72,6 +72,7 @@ sudo lotsen upgrade
 
 By default, `lotsen upgrade` now shows the current and target version, then asks for confirmation before continuing.
 For unattended runs (for example CI/automation), pass `--non-interactive --yes`.
+Upgrades refresh Lotsen binaries/services only and do not modify host firewall or SSH hardening settings.
 
 ### Manage services
 

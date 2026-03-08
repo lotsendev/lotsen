@@ -25,6 +25,9 @@
 set -euo pipefail
 
 ENV_FILE="/etc/dirigent/dirigent.env"
+UPGRADE_MODE="${DIRIGENT_UPGRADE:-${LOTSEN_UPGRADE:-0}}"
+NON_INTERACTIVE_MODE="${DIRIGENT_NON_INTERACTIVE:-${LOTSEN_NON_INTERACTIVE:-0}}"
+REQUESTED_SECURITY_PROFILE="${DIRIGENT_SECURITY_PROFILE:-${LOTSEN_SECURITY_PROFILE:-}}"
 
 # ─── output helpers ───────────────────────────────────────────────────────────
 
@@ -121,19 +124,19 @@ generate_hex_secret() {
 }
 
 choose_security_profile() {
-    local selected="${DIRIGENT_SECURITY_PROFILE:-}"
+    local selected="${REQUESTED_SECURITY_PROFILE}"
 
     if [ -n "${selected}" ]; then
         echo "${selected}"
         return 0
     fi
 
-    if [ "${DIRIGENT_UPGRADE:-0}" = "1" ]; then
+    if [ "${UPGRADE_MODE}" = "1" ]; then
         echo "standard"
         return 0
     fi
 
-    if [ "${DIRIGENT_NON_INTERACTIVE:-0}" = "1" ] || [ ! -t 0 ]; then
+    if [ "${NON_INTERACTIVE_MODE}" = "1" ] || [ ! -t 0 ]; then
         echo "standard"
         return 0
     fi
@@ -309,18 +312,21 @@ case "${SECURITY_PROFILE}" in
     strict|standard|off)
         ;;
     *)
-        error "Invalid DIRIGENT_SECURITY_PROFILE='${SECURITY_PROFILE}'. Expected strict, standard, or off."
+        error "Invalid security profile '${SECURITY_PROFILE}'. Set DIRIGENT_SECURITY_PROFILE or LOTSEN_SECURITY_PROFILE to strict, standard, or off."
         ;;
 esac
 
 step "Using security profile: ${SECURITY_PROFILE}"
-if [ "${SECURITY_PROFILE}" = "strict" ]; then
+if [ "${UPGRADE_MODE}" = "1" ] && [ -n "${REQUESTED_SECURITY_PROFILE}" ]; then
+    step "Warning: upgrade mode ignores host security profile changes; keeping existing firewall and SSH settings"
+fi
+if [ "${UPGRADE_MODE}" != "1" ] && [ "${SECURITY_PROFILE}" = "strict" ]; then
     ensure_strict_prerequisites
 fi
 
 # ─── version resolution ───────────────────────────────────────────────────────
 
-DIRIGENT_VERSION="${DIRIGENT_VERSION:-latest}"
+DIRIGENT_VERSION="${DIRIGENT_VERSION:-${LOTSEN_VERSION:-latest}}"
 
 if [ "${DIRIGENT_VERSION}" = "latest" ]; then
     RELEASE_BASE="https://github.com/ercadev/dirigent-releases/releases/latest/download"
@@ -494,7 +500,7 @@ if [ -z "${JWT_SECRET}" ]; then
     GENERATED_JWT_SECRET=1
 fi
 
-if [ -t 0 ] && [ "${DIRIGENT_NON_INTERACTIVE:-0}" != "1" ] && [ "${DIRIGENT_UPGRADE:-0}" != "1" ] && [ -z "${AUTH_PASSWORD}" ]; then
+if [ -t 0 ] && [ "${NON_INTERACTIVE_MODE}" != "1" ] && [ "${UPGRADE_MODE}" != "1" ] && [ -z "${AUTH_PASSWORD}" ]; then
     echo ""
     echo "Dashboard /login bootstrap credentials"
     echo "  These credentials are used for the first dashboard login user."
@@ -530,7 +536,7 @@ if [ -z "${AUTH_PASSWORD}" ]; then
     GENERATED_AUTH_PASSWORD=1
 fi
 
-if [ -t 0 ] && [ "${DIRIGENT_NON_INTERACTIVE:-0}" != "1" ] && [ "${DIRIGENT_UPGRADE:-0}" != "1" ]; then
+if [ -t 0 ] && [ "${NON_INTERACTIVE_MODE}" != "1" ] && [ "${UPGRADE_MODE}" != "1" ]; then
     echo ""
     echo "Dashboard public exposure setup"
     echo "  Configure HTTPS on a dedicated domain (optional)."
@@ -566,9 +572,13 @@ fi
 step "Writing shared environment file"
 write_dashboard_env "${DASHBOARD_DOMAIN}" "${AUTH_USER}" "${AUTH_PASSWORD}" "${JWT_SECRET}" "${AUTH_COOKIE_DOMAIN}"
 
-configure_firewall "${SECURITY_PROFILE}"
-if [ "${SECURITY_PROFILE}" = "strict" ]; then
-    apply_strict_ssh_hardening
+if [ "${UPGRADE_MODE}" = "1" ]; then
+    step "Upgrade mode: preserving host firewall and SSH settings"
+else
+    configure_firewall "${SECURITY_PROFILE}"
+    if [ "${SECURITY_PROFILE}" = "strict" ]; then
+        apply_strict_ssh_hardening
+    fi
 fi
 
 # ─── Docker network ───────────────────────────────────────────────────────────

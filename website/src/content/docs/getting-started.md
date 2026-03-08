@@ -136,10 +136,9 @@ Back on the Deployments table, wait for status to become `healthy`.
 Lotsen can be upgraded in two ways:
 
 - **Dashboard:** Open **Settings → System** and click **Check for updates**. If a new version is available, click **Upgrade** to trigger an in-place upgrade without leaving the browser.
-- **CLI:** Re-run the installer on your VPS:
+- **CLI:** Run the upgrade command on your VPS:
   ```bash
-  curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
-  sudo lotsen setup
+  sudo lotsen upgrade
   ```
 
-Both paths perform an in-place upgrade and restart the services.
+Both paths perform an in-place upgrade and restart the services. Upgrade flow does not modify host firewall or SSH settings.

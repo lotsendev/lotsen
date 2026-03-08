@@ -478,6 +478,7 @@ export function SettingsPage() {
               <li>- API and orchestrator restart briefly.</li>
               <li>- Dashboard may disconnect for a short window.</li>
               <li>- A reconnect check confirms upgrade completion.</li>
+              <li>- Host firewall and SSH settings are not modified by upgrade.</li>
             </ul>
           </div>
           <DialogFooter>

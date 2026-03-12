@@ -80,4 +80,26 @@ describe('DeploymentSecurityPanel', () => {
       })
     })
   })
+
+  it('removes an existing denylist entry when clicking chip remove', async () => {
+    const user = userEvent.setup()
+    renderWithQuery(
+      <DeploymentSecurityPanel
+        deployment={{
+          ...deployment,
+          security: {
+            waf_enabled: true,
+            waf_mode: 'detection',
+            ip_denylist: ['10.0.0.0/8'],
+            ip_allowlist: [],
+            custom_rules: [],
+          },
+        }}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Remove 10.0.0.0/8' }))
+
+    expect(screen.queryByText('10.0.0.0/8')).not.toBeInTheDocument()
+  })
 })

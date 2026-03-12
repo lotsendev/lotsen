@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { Input } from '../components/ui/input'
+import { SecurityCIDRListField } from '../deployments/SecurityCIDRListField'
 import {
   getHostProfile,
   getVersionInfo,
@@ -138,6 +139,13 @@ export function SettingsPage() {
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
   const [hostNameDraft, setHostNameDraft] = useState('')
   const [hostUpdateError, setHostUpdateError] = useState<string | null>(null)
+  const [dashboardAccessModeDraft, setDashboardAccessModeDraft] = useState<'login_only' | 'waf_only' | 'waf_and_login'>('login_only')
+  const [dashboardAccessModeError, setDashboardAccessModeError] = useState<string | null>(null)
+  const [dashboardWAFModeDraft, setDashboardWAFModeDraft] = useState<'detection' | 'enforcement'>('detection')
+  const [dashboardWAFAllowlistInput, setDashboardWAFAllowlistInput] = useState('')
+  const [dashboardWAFAllowlistDraft, setDashboardWAFAllowlistDraft] = useState<string[]>([])
+  const [dashboardWAFRulesDraft, setDashboardWAFRulesDraft] = useState('')
+  const [dashboardWAFError, setDashboardWAFError] = useState<string | null>(null)
   const [attemptId, setAttemptId] = useState(0)
 
   const { currentVersion, latestVersion, publishedAt, releaseNotes, upgradeAvailable, cachedAt, isLoading, isError } = useVersionCheck()
@@ -253,10 +261,14 @@ export function SettingsPage() {
 
   useEffect(() => {
     setHostNameDraft(hostProfileQuery.data?.displayName ?? '')
-  }, [hostProfileQuery.data?.displayName])
+    setDashboardAccessModeDraft(hostProfileQuery.data?.dashboardAccessMode ?? 'login_only')
+    setDashboardWAFModeDraft(hostProfileQuery.data?.dashboardWaf?.mode ?? 'detection')
+    setDashboardWAFAllowlistDraft(hostProfileQuery.data?.dashboardWaf?.ipAllowlist ?? [])
+    setDashboardWAFRulesDraft((hostProfileQuery.data?.dashboardWaf?.customRules ?? []).join('\n'))
+  }, [hostProfileQuery.data?.displayName, hostProfileQuery.data?.dashboardAccessMode, hostProfileQuery.data?.dashboardWaf])
 
   const hostNameUpdate = useMutation({
-    mutationFn: updateHostProfile,
+    mutationFn: (displayName: string) => updateHostProfile({ displayName }),
     onSuccess: profile => {
       queryClient.setQueryData(['hostProfile'], profile)
       setHostUpdateError(null)
@@ -266,8 +278,42 @@ export function SettingsPage() {
     },
   })
 
+  const dashboardAccessModeUpdate = useMutation({
+    mutationFn: (dashboardAccessMode: 'login_only' | 'waf_only' | 'waf_and_login') => updateHostProfile({ dashboardAccessMode }),
+    onSuccess: profile => {
+      queryClient.setQueryData(['hostProfile'], profile)
+      setDashboardAccessModeError(null)
+      setDashboardAccessModeDraft(profile.dashboardAccessMode)
+    },
+    onError: error => {
+      setDashboardAccessModeError(error instanceof Error ? error.message : 'Failed to update dashboard protection mode')
+    },
+  })
+
+  const dashboardWAFUpdate = useMutation({
+    mutationFn: (input: { mode: 'detection' | 'enforcement'; ipAllowlist: string[]; customRules: string[] }) => updateHostProfile({ dashboardWaf: input }),
+    onSuccess: profile => {
+      queryClient.setQueryData(['hostProfile'], profile)
+      setDashboardWAFError(null)
+      setDashboardWAFModeDraft(profile.dashboardWaf.mode)
+      setDashboardWAFAllowlistDraft(profile.dashboardWaf.ipAllowlist)
+      setDashboardWAFAllowlistInput('')
+      setDashboardWAFRulesDraft(profile.dashboardWaf.customRules.join('\n'))
+    },
+    onError: error => {
+      setDashboardWAFError(error instanceof Error ? error.message : 'Failed to update dashboard WAF settings')
+    },
+  })
+
   const activeTarget = selectedUpgradeTarget ?? (upgradeAvailable ? latestVersion ?? null : null)
   const canStartUpgrade = upgradeAvailable && Boolean(activeTarget) && !isUpgradeRunning && !startUpgrade.isPending
+  const dashboardProtectionLabel =
+    dashboardAccessModeDraft === 'login_only'
+      ? 'Login only'
+      : dashboardAccessModeDraft === 'waf_only'
+        ? 'WAF only'
+        : 'WAF and login'
+  const dashboardWAFActive = dashboardAccessModeDraft !== 'login_only'
 
   return (
     <section className="space-y-4">
@@ -308,32 +354,156 @@ export function SettingsPage() {
         </div>
 
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.4fr)]">
-          <section className="rounded-lg border border-border/55 bg-background/70 p-4">
-            <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Host identity</p>
-            <p className="mt-1 text-sm text-muted-foreground">Name shown in navigation and logs.</p>
+          <div className="space-y-3">
+            <section className="rounded-lg border border-border/55 bg-background/70 p-4">
+              <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Host identity</p>
+              <p className="mt-1 text-sm text-muted-foreground">Name shown in navigation and logs.</p>
 
-            <form
-              className="mt-3 flex flex-col gap-2 sm:flex-row"
-              onSubmit={event => {
-                event.preventDefault()
-                hostNameUpdate.mutate(hostNameDraft)
-              }}
-            >
-              <Input
-                value={hostNameDraft}
-                onChange={event => setHostNameDraft(event.target.value)}
-                placeholder="e.g. prod-eu-1"
-                maxLength={64}
-                className="sm:max-w-sm"
-                aria-label="Host display name"
-              />
-              <Button type="submit" disabled={hostNameUpdate.isPending || hostProfileQuery.isLoading}>
-                Save host name
-              </Button>
-            </form>
+              <form
+                className="mt-3 flex flex-col gap-2 sm:flex-row"
+                onSubmit={event => {
+                  event.preventDefault()
+                  hostNameUpdate.mutate(hostNameDraft)
+                }}
+              >
+                <Input
+                  value={hostNameDraft}
+                  onChange={event => setHostNameDraft(event.target.value)}
+                  placeholder="e.g. prod-eu-1"
+                  maxLength={64}
+                  className="sm:max-w-sm"
+                  aria-label="Host display name"
+                />
+                <Button type="submit" disabled={hostNameUpdate.isPending || hostProfileQuery.isLoading}>
+                  Save host name
+                </Button>
+              </form>
 
-            {hostUpdateError && <p className="mt-2 text-sm text-destructive">{hostUpdateError}</p>}
-          </section>
+              {hostUpdateError && <p className="mt-2 text-sm text-destructive">{hostUpdateError}</p>}
+            </section>
+
+            <section className="rounded-lg border border-border/55 bg-background/70 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Dashboard protection</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Choose whether dashboard traffic is protected by login, WAF, or both.</p>
+                </div>
+                <Badge variant="outline" className="rounded-md border-border/70 bg-background/80 px-2 py-0.5 text-[11px]">
+                  {dashboardProtectionLabel}
+                </Badge>
+              </div>
+
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <select
+                  value={dashboardAccessModeDraft}
+                  onChange={event => setDashboardAccessModeDraft(event.target.value as 'login_only' | 'waf_only' | 'waf_and_login')}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                  aria-label="Dashboard protection mode"
+                >
+                  <option value="login_only">Login only</option>
+                  <option value="waf_only">WAF only</option>
+                  <option value="waf_and_login">WAF and login</option>
+                </select>
+                <Button
+                  type="button"
+                  disabled={dashboardAccessModeUpdate.isPending || hostProfileQuery.isLoading}
+                  onClick={() => dashboardAccessModeUpdate.mutate(dashboardAccessModeDraft)}
+                >
+                  Save protection mode
+                </Button>
+              </div>
+              {dashboardAccessModeError && <p className="mt-2 text-sm text-destructive">{dashboardAccessModeError}</p>}
+            </section>
+
+            <section className="rounded-lg border border-border/55 bg-background/70 p-4">
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-start justify-between gap-3 [&::-webkit-details-marker]:hidden">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Dashboard WAF controls</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Configure dashboard WAF mode, allowlist, and custom rules when WAF is part of protection.
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                    <Badge variant={dashboardWAFActive ? 'info' : 'secondary'}>{dashboardWAFActive ? 'active' : 'inactive'}</Badge>
+                    <Badge variant="outline" className="rounded-md border-border/70 bg-background/80 px-2 py-0.5 text-[11px]">
+                      {dashboardWAFModeDraft}
+                    </Badge>
+                  </div>
+                </summary>
+
+                <div className="mt-4 rounded-md border border-border/60 bg-background/60 p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <label className="text-sm text-muted-foreground" htmlFor="dashboard-waf-mode">WAF mode</label>
+                    <select
+                      id="dashboard-waf-mode"
+                      value={dashboardWAFModeDraft}
+                      onChange={event => setDashboardWAFModeDraft(event.target.value as 'detection' | 'enforcement')}
+                      className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                    >
+                      <option value="detection">Detection</option>
+                      <option value="enforcement">Enforcement</option>
+                    </select>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    <SecurityCIDRListField
+                      id="dashboard-waf-ip-allowlist"
+                      label="IP allowlist"
+                      value={dashboardWAFAllowlistInput}
+                      entries={dashboardWAFAllowlistDraft}
+                      emptyLabel="No IP allowlist configured."
+                      badgeVariant="info"
+                      onChange={setDashboardWAFAllowlistInput}
+                      onAdd={value => {
+                        const next = value.trim()
+                        if (!next || dashboardWAFAllowlistDraft.includes(next)) {
+                          return
+                        }
+                        setDashboardWAFAllowlistDraft(prev => [...prev, next])
+                        setDashboardWAFAllowlistInput('')
+                      }}
+                      onRemove={value => setDashboardWAFAllowlistDraft(prev => prev.filter(entry => entry !== value))}
+                    />
+                  </div>
+
+                  <details className="mt-3 rounded-md border border-border/60 bg-background/70 p-3">
+                    <summary className="cursor-pointer text-xs font-medium uppercase tracking-[0.13em] text-muted-foreground">
+                      Advanced custom rules
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      <label htmlFor="dashboard-waf-rules" className="text-sm text-muted-foreground">Custom rules (one per line)</label>
+                      <textarea
+                        id="dashboard-waf-rules"
+                        value={dashboardWAFRulesDraft}
+                        onChange={event => setDashboardWAFRulesDraft(event.target.value)}
+                        className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground"
+                        placeholder={'SecRule REQUEST_URI "@contains blocked" "id:10010,phase:1,deny,status:403"'}
+                      />
+                    </div>
+                  </details>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      disabled={dashboardWAFUpdate.isPending || hostProfileQuery.isLoading}
+                      onClick={() => {
+                        const customRules = dashboardWAFRulesDraft
+                          .split('\n')
+                          .map(rule => rule.trim())
+                          .filter(Boolean)
+                        dashboardWAFUpdate.mutate({ mode: dashboardWAFModeDraft, ipAllowlist: dashboardWAFAllowlistDraft, customRules })
+                      }}
+                    >
+                      Save dashboard WAF settings
+                    </Button>
+                  </div>
+
+                  {dashboardWAFError && <p className="mt-2 text-sm text-destructive">{dashboardWAFError}</p>}
+                </div>
+              </details>
+            </section>
+          </div>
 
           <section className="rounded-lg border border-border/55 bg-background/70 p-4">
             <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Machine runtime facts</p>

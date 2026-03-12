@@ -86,8 +86,16 @@ type AuthUserStore interface {
 
 type HostProfileStore interface {
 	Get() (HostProfile, error)
-	UpdateDisplayName(displayName string) (HostProfile, error)
+	Update(profile HostProfile) (HostProfile, error)
 }
+
+type DashboardAccessMode string
+
+const (
+	DashboardAccessModeLoginOnly   DashboardAccessMode = "login_only"
+	DashboardAccessModeWAFOnly     DashboardAccessMode = "waf_only"
+	DashboardAccessModeWAFAndLogin DashboardAccessMode = "waf_and_login"
+)
 
 type basicAuthUserRequest struct {
 	Username string `json:"username"`
@@ -148,6 +156,7 @@ type Handler struct {
 	challenges       *passkeySessionStore
 	hostProfiles     HostProfileStore
 	hostMetadata     HostMetadataIngestor
+	dashboardAccess  DashboardAccessMode
 }
 
 const defaultOrchestratorStaleAfter = 30 * time.Second
@@ -197,23 +206,24 @@ func NewWithDependencies(s Store, eb EventBus, dl DockerLogs, statusSource Syste
 	hostMetadataIngestor, _ := statusSource.(HostMetadataIngestor)
 
 	return &Handler{
-		store:          s,
-		events:         eb,
-		dockerLogs:     dl,
-		statusEvents:   newSystemStatusBroker(),
-		accessLogDir:   proxyAccessLogDirFromEnv(),
-		statusSource:   statusSource,
-		heartbeats:     heartbeatIngestor,
-		docker:         dockerIngestor,
-		loadBalancer:   loadBalancerIngestor,
-		proxyClient:    &http.Client{Timeout: 3 * time.Second},
-		proxyBaseURL:   proxyInternalBaseURLFromEnv(),
-		cpu:            cpuIngestor,
-		ram:            ramIngestor,
-		versions:       versions,
-		upgrade:        upgrader,
-		containerStats: NewContainerStatsCache(),
-		hostMetadata:   hostMetadataIngestor,
+		store:           s,
+		events:          eb,
+		dockerLogs:      dl,
+		statusEvents:    newSystemStatusBroker(),
+		accessLogDir:    proxyAccessLogDirFromEnv(),
+		statusSource:    statusSource,
+		heartbeats:      heartbeatIngestor,
+		docker:          dockerIngestor,
+		loadBalancer:    loadBalancerIngestor,
+		proxyClient:     &http.Client{Timeout: 3 * time.Second},
+		proxyBaseURL:    proxyInternalBaseURLFromEnv(),
+		cpu:             cpuIngestor,
+		ram:             ramIngestor,
+		versions:        versions,
+		upgrade:         upgrader,
+		containerStats:  NewContainerStatsCache(),
+		hostMetadata:    hostMetadataIngestor,
+		dashboardAccess: DashboardAccessModeLoginOnly,
 	}
 }
 
@@ -236,6 +246,38 @@ func (h *Handler) SetWebAuthn(wa *webauthn.WebAuthn) {
 
 func (h *Handler) SetHostProfileStore(store HostProfileStore) {
 	h.hostProfiles = store
+}
+
+func (h *Handler) SetDashboardAccessMode(mode DashboardAccessMode) {
+	h.dashboardAccess = normalizeDashboardAccessMode(string(mode))
+}
+
+func normalizeDashboardAccessMode(raw string) DashboardAccessMode {
+	mode := DashboardAccessMode(strings.ToLower(strings.TrimSpace(raw)))
+	switch mode {
+	case DashboardAccessModeWAFOnly, DashboardAccessModeWAFAndLogin:
+		return mode
+	default:
+		return DashboardAccessModeLoginOnly
+	}
+}
+
+func (h *Handler) dashboardAccessMode() DashboardAccessMode {
+	mode := h.dashboardAccess
+	if h.hostProfiles == nil {
+		return mode
+	}
+
+	profile, err := h.hostProfiles.Get()
+	if err != nil {
+		return mode
+	}
+
+	if profile.DashboardAccessMode == "" {
+		return mode
+	}
+
+	return normalizeDashboardAccessMode(string(profile.DashboardAccessMode))
 }
 
 func buildAPIStoreChecker(s Store) func(context.Context) bool {

@@ -371,6 +371,12 @@ export type HostSystemStatus = {
 
 export type HostProfile = {
   displayName: string
+  dashboardAccessMode: 'login_only' | 'waf_only' | 'waf_and_login'
+  dashboardWaf: {
+    mode: 'detection' | 'enforcement'
+    ipAllowlist: string[]
+    customRules: string[]
+  }
   metadata?: HostMetadata
 }
 
@@ -518,11 +524,15 @@ export async function getHostProfile(): Promise<HostProfile> {
   return res.json()
 }
 
-export async function updateHostProfile(displayName: string): Promise<HostProfile> {
+export async function updateHostProfile(input: {
+  displayName?: string
+  dashboardAccessMode?: HostProfile['dashboardAccessMode']
+  dashboardWaf?: { mode?: HostProfile['dashboardWaf']['mode']; ipAllowlist?: string[]; customRules?: string[] }
+}): Promise<HostProfile> {
   const res = await apiFetch('/api/host', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ displayName }),
+    body: JSON.stringify(input),
   })
   if (!res.ok) throw new Error('Failed to update host profile')
   return res.json()

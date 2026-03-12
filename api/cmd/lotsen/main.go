@@ -62,6 +62,11 @@ func main() {
 
 	h := internalapi.NewWithVersion(s, broker, logStreamer, version)
 	h.SetAuth(userStore, jwtSecret)
+	dashboardAccessMode, err := dashboardAccessModeFromEnv()
+	if err != nil {
+		log.Fatalf("lotsen: %v", err)
+	}
+	h.SetDashboardAccessMode(dashboardAccessMode)
 	authCookieDomain, err := authCookieDomainFromEnv()
 	if err != nil {
 		log.Fatalf("lotsen: %v", err)
@@ -159,6 +164,21 @@ func authCookieDomainFromEnv() (string, error) {
 		return "", fmt.Errorf("LOTSEN_AUTH_COOKIE_DOMAIN must be a valid domain")
 	}
 	return domain, nil
+}
+
+func dashboardAccessModeFromEnv() (internalapi.DashboardAccessMode, error) {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv("LOTSEN_DASHBOARD_ACCESS_MODE")))
+	if raw == "" {
+		return internalapi.DashboardAccessModeLoginOnly, nil
+	}
+
+	mode := internalapi.DashboardAccessMode(raw)
+	switch mode {
+	case internalapi.DashboardAccessModeLoginOnly, internalapi.DashboardAccessModeWAFOnly, internalapi.DashboardAccessModeWAFAndLogin:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("LOTSEN_DASHBOARD_ACCESS_MODE must be one of: login_only, waf_only, waf_and_login")
+	}
 }
 
 func normalizeDomain(domain string) string {

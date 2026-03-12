@@ -46,14 +46,9 @@ func (s *FileHostProfileStore) Get() (HostProfile, error) {
 	return result, nil
 }
 
-func (s *FileHostProfileStore) UpdateDisplayName(displayName string) (HostProfile, error) {
+func (s *FileHostProfileStore) Update(profile HostProfile) (HostProfile, error) {
 	updated := HostProfile{}
 	err := s.withLock(func() error {
-		profile, err := s.read()
-		if err != nil {
-			return err
-		}
-		profile.DisplayName = displayName
 		if err := s.persist(profile); err != nil {
 			return err
 		}

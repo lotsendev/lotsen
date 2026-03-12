@@ -34,6 +34,10 @@ type RoutingTable interface {
 type Handler struct {
 	table            RoutingTable
 	dashboardAuth    *DashboardAuth
+	dashboardAccess  DashboardAccessMode
+	dashboardResolve func() DashboardAccessMode
+	dashboardWAF     DashboardWAFConfig
+	dashboardWAFLoad func() DashboardWAFConfig
 	authCookieDomain string
 	hardening        HardeningProfile
 	scanner          *scannerLimiter
@@ -44,6 +48,20 @@ type Handler struct {
 	wafBlocked       atomic.Int64
 	uaBlocked        atomic.Int64
 	jwtSecret        []byte
+}
+
+type DashboardAccessMode string
+
+const (
+	DashboardAccessModeLoginOnly   DashboardAccessMode = "login_only"
+	DashboardAccessModeWAFOnly     DashboardAccessMode = "waf_only"
+	DashboardAccessModeWAFAndLogin DashboardAccessMode = "waf_and_login"
+)
+
+type DashboardWAFConfig struct {
+	Mode        middleware.WAFMode
+	IPAllowlist []string
+	CustomRules []string
 }
 
 // HardeningProfile controls request filtering and anti-scan behavior.
@@ -67,7 +85,7 @@ type DashboardAuth struct {
 
 // New creates a Handler backed by the given routing table.
 func New(table RoutingTable, dashboardAuth *DashboardAuth, options ...Option) *Handler {
-	h := &Handler{table: table, dashboardAuth: dashboardAuth, hardening: HardeningStandard}
+	h := &Handler{table: table, dashboardAuth: dashboardAuth, hardening: HardeningStandard, dashboardAccess: DashboardAccessModeLoginOnly, dashboardWAF: defaultDashboardWAFConfig()}
 	for _, apply := range options {
 		if apply != nil {
 			apply(h)
@@ -76,6 +94,75 @@ func New(table RoutingTable, dashboardAuth *DashboardAuth, options ...Option) *H
 	h.hardening = normalizeHardeningProfile(h.hardening)
 	h.scanner = newScannerLimiter(h.hardening)
 	return h
+}
+
+func normalizeDashboardAccessMode(mode DashboardAccessMode) DashboardAccessMode {
+	switch DashboardAccessMode(strings.ToLower(strings.TrimSpace(string(mode)))) {
+	case DashboardAccessModeWAFOnly, DashboardAccessModeWAFAndLogin:
+		return DashboardAccessMode(strings.ToLower(strings.TrimSpace(string(mode))))
+	default:
+		return DashboardAccessModeLoginOnly
+	}
+}
+
+func (h *Handler) dashboardAccessMode() DashboardAccessMode {
+	if h.dashboardResolve != nil {
+		return normalizeDashboardAccessMode(h.dashboardResolve())
+	}
+	return normalizeDashboardAccessMode(h.dashboardAccess)
+}
+
+func defaultDashboardWAFConfig() DashboardWAFConfig {
+	return DashboardWAFConfig{Mode: middleware.WAFModeDetection}
+}
+
+func normalizeDashboardWAFConfig(cfg DashboardWAFConfig) DashboardWAFConfig {
+	mode := middleware.WAFMode(strings.ToLower(strings.TrimSpace(string(cfg.Mode))))
+	if mode != middleware.WAFModeEnforcement {
+		mode = middleware.WAFModeDetection
+	}
+	return DashboardWAFConfig{
+		Mode:        mode,
+		IPAllowlist: slices.Clone(cfg.IPAllowlist),
+		CustomRules: slices.Clone(cfg.CustomRules),
+	}
+}
+
+func (h *Handler) dashboardWAFConfig() DashboardWAFConfig {
+	if h.dashboardWAFLoad != nil {
+		return normalizeDashboardWAFConfig(h.dashboardWAFLoad())
+	}
+	return normalizeDashboardWAFConfig(h.dashboardWAF)
+}
+
+func (m DashboardAccessMode) IncludesWAF() bool {
+	return normalizeDashboardAccessMode(m) == DashboardAccessModeWAFOnly || normalizeDashboardAccessMode(m) == DashboardAccessModeWAFAndLogin
+}
+
+// WithDashboardAccessMode sets dashboard domain protection mode.
+func WithDashboardAccessMode(mode DashboardAccessMode) Option {
+	return func(h *Handler) {
+		h.dashboardAccess = normalizeDashboardAccessMode(mode)
+	}
+}
+
+// WithDashboardAccessModeResolver sets a callback used to resolve mode dynamically.
+func WithDashboardAccessModeResolver(resolve func() DashboardAccessMode) Option {
+	return func(h *Handler) {
+		h.dashboardResolve = resolve
+	}
+}
+
+func WithDashboardWAFConfig(cfg DashboardWAFConfig) Option {
+	return func(h *Handler) {
+		h.dashboardWAF = normalizeDashboardWAFConfig(cfg)
+	}
+}
+
+func WithDashboardWAFConfigResolver(resolve func() DashboardWAFConfig) Option {
+	return func(h *Handler) {
+		h.dashboardWAFLoad = resolve
+	}
 }
 
 // WithHardeningProfile applies proxy hardening rules.
@@ -227,7 +314,12 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.ipFilter != nil {
-		switch h.ipFilter.EvaluateDeployment(client, route.Security) {
+		effectiveSecurity := route.Security
+		if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
+			dashboardWAF := h.dashboardWAFConfig()
+			effectiveSecurity = &store.SecurityConfig{IPAllowlist: dashboardWAF.IPAllowlist}
+		}
+		switch h.ipFilter.EvaluateDeployment(client, effectiveSecurity) {
 		case middleware.IPFilterDenied:
 			outcome = "ip_denied"
 			http.Error(rw, "forbidden", http.StatusForbidden)
@@ -248,14 +340,18 @@ func (h *Handler) proxy(w http.ResponseWriter, r *http.Request) {
 
 	applyWAF := true
 	if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
-		applyWAF = false
+		applyWAF = h.dashboardAccessMode().IncludesWAF()
 	} else if route.Security != nil {
 		applyWAF = route.Security.WAFEnabled
 	}
 	if h.waf != nil && applyWAF {
 		customRules := []string(nil)
 		mode := middleware.WAFModeDetection
-		if route.Security != nil {
+		if h.dashboardAuth != nil && host == h.dashboardAuth.Domain {
+			dashboardWAF := h.dashboardWAFConfig()
+			customRules = dashboardWAF.CustomRules
+			mode = dashboardWAF.Mode
+		} else if route.Security != nil {
 			customRules = route.Security.CustomRules
 			mode = middleware.WAFMode(route.Security.WAFMode)
 		}

@@ -457,14 +457,8 @@ func TestProxy_DashboardDomainBypassesWAF(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	wafRule := `SecRule REQUEST_URI "@contains dashboard-waf-trigger" "id:10098,phase:1,deny,status:403,log,msg:'dashboard waf trigger'"`
-
 	tbl := newTestTable()
-	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), false, nil, &store.SecurityConfig{
-		WAFEnabled:  true,
-		WAFMode:     "enforcement",
-		CustomRules: []string{wafRule},
-	})
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), false, nil, nil)
 
 	waf, err := middleware.NewWAF()
 	if err != nil {
@@ -506,6 +500,79 @@ func TestProxy_DashboardDomainBypassesWAF(t *testing.T) {
 	}
 	if body.WAFBlockedRequests != 0 {
 		t.Fatalf("want waf blocked requests 0, got %d", body.WAFBlockedRequests)
+	}
+}
+
+func TestProxy_DashboardDomainAppliesWAFWhenEnabledByMode(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	wafRule := `SecRule REQUEST_URI "@contains dashboard-waf-trigger" "id:10100,phase:1,deny,status:403,log,msg:'dashboard waf trigger mode'"`
+
+	tbl := newTestTable()
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), false, nil, nil)
+
+	waf, err := middleware.NewWAF()
+	if err != nil {
+		t.Fatalf("NewWAF enforcement: %v", err)
+	}
+	proxy := newProxyServerWithDashboardAuthAndOptions(tbl, &handler.DashboardAuth{
+		Domain: "dashboard.example.com",
+	},
+		handler.WithWAF(waf),
+		handler.WithDashboardAccessMode(handler.DashboardAccessModeWAFAndLogin),
+		handler.WithDashboardWAFConfig(handler.DashboardWAFConfig{Mode: middleware.WAFModeEnforcement, CustomRules: []string{wafRule}}),
+	)
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodPut, proxy.URL+"/api/deployments/dashboard-waf-trigger", strings.NewReader(`{"name":"ok"}`))
+	req.Host = "dashboard.example.com"
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/deployments/dashboard-waf-trigger: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("want 403, got %d", resp.StatusCode)
+	}
+}
+
+func TestProxy_DashboardDomainIPAllowlistBlocksNonMatchingClient(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	tbl := newTestTable()
+	tbl.Set("dashboard.example.com", backend.Listener.Addr().String(), false, nil, nil)
+
+	ipFilter, err := middleware.NewIPFilter(nil, nil)
+	if err != nil {
+		t.Fatalf("NewIPFilter: %v", err)
+	}
+
+	proxy := newProxyServerWithDashboardAuthAndOptions(tbl, &handler.DashboardAuth{Domain: "dashboard.example.com"},
+		handler.WithIPFilter(ipFilter),
+		handler.WithDashboardWAFConfig(handler.DashboardWAFConfig{IPAllowlist: []string{"203.0.113.0/24"}}),
+	)
+	defer proxy.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/", nil)
+	req.Host = "dashboard.example.com"
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("want 403, got %d", resp.StatusCode)
 	}
 }
 

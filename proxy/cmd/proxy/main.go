@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -52,6 +54,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("proxy: %v", err)
 	}
+	dashboardAccessMode, err := dashboardAccessModeFromEnv()
+	if err != nil {
+		log.Fatalf("proxy: %v", err)
+	}
+	dashboardWAFConfig, err := dashboardWAFConfigFromEnv()
+	if err != nil {
+		log.Fatalf("proxy: %v", err)
+	}
+	profilePath := hostProfilePath(dataPath())
+	dashboardAccessModeResolver := dashboardAccessModeResolver(profilePath, dashboardAccessMode)
+	dashboardWAFResolver := dashboardWAFConfigResolver(profilePath, dashboardWAFConfig)
 	authCookieDomain, err := authCookieDomainFromEnv()
 	if err != nil {
 		log.Fatalf("proxy: %v", err)
@@ -104,6 +117,8 @@ func main() {
 	h := handler.New(
 		table,
 		dashboardAuth,
+		handler.WithDashboardAccessModeResolver(dashboardAccessModeResolver),
+		handler.WithDashboardWAFConfigResolver(dashboardWAFResolver),
 		handler.WithHardeningProfile(hardeningProfile),
 		handler.WithAccessLogger(accessLogger),
 		handler.WithIPFilter(ipFilter),
@@ -249,6 +264,10 @@ func normalizeDomain(domain string) string {
 	return strings.ToLower(domain)
 }
 
+func hostProfilePath(storePath string) string {
+	return filepath.Join(filepath.Dir(storePath), "host_profile.json")
+}
+
 func portFromAddr(addr string) string {
 	addr = strings.TrimSpace(addr)
 	if strings.HasPrefix(addr, ":") {
@@ -286,6 +305,119 @@ func dashboardAuthFromEnv() (*handler.DashboardAuth, error) {
 	return &handler.DashboardAuth{
 		Domain: domain,
 	}, nil
+}
+
+func dashboardAccessModeFromEnv() (handler.DashboardAccessMode, error) {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv("LOTSEN_DASHBOARD_ACCESS_MODE")))
+	if raw == "" {
+		return handler.DashboardAccessModeLoginOnly, nil
+	}
+
+	mode := handler.DashboardAccessMode(raw)
+	switch mode {
+	case handler.DashboardAccessModeLoginOnly, handler.DashboardAccessModeWAFOnly, handler.DashboardAccessModeWAFAndLogin:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("LOTSEN_DASHBOARD_ACCESS_MODE must be one of: login_only, waf_only, waf_and_login")
+	}
+}
+
+func dashboardWAFConfigFromEnv() (handler.DashboardWAFConfig, error) {
+	modeRaw := strings.ToLower(strings.TrimSpace(envOrDefault("LOTSEN_DASHBOARD_WAF_MODE", string(middleware.WAFModeDetection))))
+	mode := middleware.WAFMode(modeRaw)
+	switch mode {
+	case middleware.WAFModeDetection, middleware.WAFModeEnforcement:
+	default:
+		return handler.DashboardWAFConfig{}, fmt.Errorf("LOTSEN_DASHBOARD_WAF_MODE must be one of: detection, enforcement")
+	}
+
+	ipAllowlist := parseCSVList(os.Getenv("LOTSEN_DASHBOARD_IP_ALLOWLIST"))
+
+	rules := []string{}
+	if rawRules := strings.TrimSpace(os.Getenv("LOTSEN_DASHBOARD_WAF_RULES")); rawRules != "" {
+		for _, line := range strings.Split(rawRules, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			rules = append(rules, line)
+		}
+	}
+
+	return handler.DashboardWAFConfig{Mode: mode, IPAllowlist: ipAllowlist, CustomRules: rules}, nil
+}
+
+func dashboardAccessModeResolver(profilePath string, fallback handler.DashboardAccessMode) func() handler.DashboardAccessMode {
+	return func() handler.DashboardAccessMode {
+		raw, err := os.ReadFile(profilePath)
+		if err != nil {
+			return fallback
+		}
+
+		var profile struct {
+			DashboardAccessMode string `json:"dashboardAccessMode"`
+		}
+		if err := json.Unmarshal(raw, &profile); err != nil {
+			return fallback
+		}
+		mode := handler.DashboardAccessMode(strings.ToLower(strings.TrimSpace(profile.DashboardAccessMode)))
+		switch mode {
+		case handler.DashboardAccessModeLoginOnly, handler.DashboardAccessModeWAFOnly, handler.DashboardAccessModeWAFAndLogin:
+			return mode
+		default:
+			return fallback
+		}
+	}
+}
+
+func dashboardWAFConfigResolver(profilePath string, fallback handler.DashboardWAFConfig) func() handler.DashboardWAFConfig {
+	return func() handler.DashboardWAFConfig {
+		raw, err := os.ReadFile(profilePath)
+		if err != nil {
+			return fallback
+		}
+
+		var profile struct {
+			DashboardWAF struct {
+				Mode        string   `json:"mode"`
+				IPAllowlist []string `json:"ipAllowlist"`
+				CustomRules []string `json:"customRules"`
+			} `json:"dashboardWaf"`
+		}
+		if err := json.Unmarshal(raw, &profile); err != nil {
+			return fallback
+		}
+		if strings.TrimSpace(profile.DashboardWAF.Mode) == "" && len(profile.DashboardWAF.IPAllowlist) == 0 && len(profile.DashboardWAF.CustomRules) == 0 {
+			return fallback
+		}
+
+		mode := middleware.WAFMode(strings.ToLower(strings.TrimSpace(profile.DashboardWAF.Mode)))
+		switch mode {
+		case middleware.WAFModeDetection, middleware.WAFModeEnforcement:
+		default:
+			mode = fallback.Mode
+		}
+
+		allowlist := make([]string, 0, len(profile.DashboardWAF.IPAllowlist))
+		for _, entry := range profile.DashboardWAF.IPAllowlist {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			allowlist = append(allowlist, entry)
+		}
+
+		rules := make([]string, 0, len(profile.DashboardWAF.CustomRules))
+		for _, rule := range profile.DashboardWAF.CustomRules {
+			rule = strings.TrimSpace(rule)
+			if rule == "" {
+				continue
+			}
+			rules = append(rules, rule)
+		}
+
+		return handler.DashboardWAFConfig{Mode: mode, IPAllowlist: allowlist, CustomRules: rules}
+	}
 }
 
 func hardeningProfileFromEnv() (handler.HardeningProfile, error) {

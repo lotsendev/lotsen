@@ -3,6 +3,8 @@ package main
 import (
 	"path/filepath"
 	"testing"
+
+	internalapi "github.com/ercadev/dirigent/internal/api"
 )
 
 func TestAuthFromEnv_NoSecret(t *testing.T) {
@@ -89,5 +91,37 @@ func TestAuthCookieDomainFromEnv_RejectsInvalid(t *testing.T) {
 
 	if _, err := authCookieDomainFromEnv(); err == nil {
 		t.Fatal("want error for invalid cookie domain")
+	}
+}
+
+func TestDashboardAccessModeFromEnv_DefaultsToLoginOnly(t *testing.T) {
+	t.Setenv("LOTSEN_DASHBOARD_ACCESS_MODE", "")
+
+	mode, err := dashboardAccessModeFromEnv()
+	if err != nil {
+		t.Fatalf("dashboardAccessModeFromEnv() error = %v", err)
+	}
+	if mode != internalapi.DashboardAccessModeLoginOnly {
+		t.Fatalf("want %q, got %q", internalapi.DashboardAccessModeLoginOnly, mode)
+	}
+}
+
+func TestDashboardAccessModeFromEnv_AcceptsWAFAndLogin(t *testing.T) {
+	t.Setenv("LOTSEN_DASHBOARD_ACCESS_MODE", " waf_and_login ")
+
+	mode, err := dashboardAccessModeFromEnv()
+	if err != nil {
+		t.Fatalf("dashboardAccessModeFromEnv() error = %v", err)
+	}
+	if mode != internalapi.DashboardAccessModeWAFAndLogin {
+		t.Fatalf("want %q, got %q", internalapi.DashboardAccessModeWAFAndLogin, mode)
+	}
+}
+
+func TestDashboardAccessModeFromEnv_RejectsInvalid(t *testing.T) {
+	t.Setenv("LOTSEN_DASHBOARD_ACCESS_MODE", "strict")
+
+	if _, err := dashboardAccessModeFromEnv(); err == nil {
+		t.Fatal("want validation error for invalid dashboard access mode")
 	}
 }

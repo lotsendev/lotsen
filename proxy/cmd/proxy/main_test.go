@@ -5,12 +5,15 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
 	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/ercadev/dirigent/proxy/internal/handler"
+	"github.com/ercadev/dirigent/proxy/internal/middleware"
 	"github.com/ercadev/dirigent/proxy/internal/routing"
 	"github.com/ercadev/dirigent/store"
 )
@@ -242,5 +245,74 @@ func TestAuthCookieDomainFromEnv_RejectsInvalid(t *testing.T) {
 
 	if _, err := authCookieDomainFromEnv(); err == nil {
 		t.Fatal("want validation error for invalid cookie domain")
+	}
+}
+
+func TestDashboardAccessModeFromEnv_DefaultsToLoginOnly(t *testing.T) {
+	t.Setenv("LOTSEN_DASHBOARD_ACCESS_MODE", "")
+
+	mode, err := dashboardAccessModeFromEnv()
+	if err != nil {
+		t.Fatalf("dashboardAccessModeFromEnv: %v", err)
+	}
+	if mode != handler.DashboardAccessModeLoginOnly {
+		t.Fatalf("want %q, got %q", handler.DashboardAccessModeLoginOnly, mode)
+	}
+}
+
+func TestDashboardAccessModeFromEnv_RejectsInvalidValue(t *testing.T) {
+	t.Setenv("LOTSEN_DASHBOARD_ACCESS_MODE", "strict")
+
+	if _, err := dashboardAccessModeFromEnv(); err == nil {
+		t.Fatal("want validation error for invalid dashboard access mode")
+	}
+}
+
+func TestDashboardAccessModeResolver_UsesHostProfileOverride(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "host_profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"displayName":"prod","dashboardAccessMode":"waf_and_login"}`), 0o644); err != nil {
+		t.Fatalf("write host profile: %v", err)
+	}
+
+	resolve := dashboardAccessModeResolver(profilePath, handler.DashboardAccessModeLoginOnly)
+	if got := resolve(); got != handler.DashboardAccessModeWAFAndLogin {
+		t.Fatalf("want %q, got %q", handler.DashboardAccessModeWAFAndLogin, got)
+	}
+}
+
+func TestDashboardWAFConfigFromEnv_DefaultsToDetection(t *testing.T) {
+	t.Setenv("LOTSEN_DASHBOARD_WAF_MODE", "")
+	t.Setenv("LOTSEN_DASHBOARD_WAF_RULES", "")
+
+	cfg, err := dashboardWAFConfigFromEnv()
+	if err != nil {
+		t.Fatalf("dashboardWAFConfigFromEnv: %v", err)
+	}
+	if cfg.Mode != middleware.WAFModeDetection {
+		t.Fatalf("want mode detection, got %q", cfg.Mode)
+	}
+	if len(cfg.CustomRules) != 0 {
+		t.Fatalf("want no rules, got %d", len(cfg.CustomRules))
+	}
+}
+
+func TestDashboardWAFConfigResolver_UsesHostProfileOverride(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "host_profile.json")
+	if err := os.WriteFile(profilePath, []byte(`{"dashboardWaf":{"mode":"enforcement","ipAllowlist":["203.0.113.0/24"],"customRules":["SecRule REQUEST_URI \"@contains block\" \"id:10001,phase:1,deny,status:403\""]}}`), 0o644); err != nil {
+		t.Fatalf("write host profile: %v", err)
+	}
+
+	fallback := handler.DashboardWAFConfig{Mode: middleware.WAFModeDetection}
+	resolve := dashboardWAFConfigResolver(profilePath, fallback)
+	got := resolve()
+
+	if got.Mode != middleware.WAFModeEnforcement {
+		t.Fatalf("want mode enforcement, got %q", got.Mode)
+	}
+	if len(got.CustomRules) != 1 {
+		t.Fatalf("want 1 custom rule, got %d", len(got.CustomRules))
+	}
+	if len(got.IPAllowlist) != 1 || got.IPAllowlist[0] != "203.0.113.0/24" {
+		t.Fatalf("want ip allowlist [203.0.113.0/24], got %#v", got.IPAllowlist)
 	}
 }

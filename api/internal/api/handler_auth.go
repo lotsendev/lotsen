@@ -21,6 +21,11 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 
 // me handles GET /auth/me, returning the currently authenticated user.
 func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
+	if h.dashboardAccessMode() == DashboardAccessModeWAFOnly {
+		http.Error(w, "auth not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	if len(h.jwtSecret) == 0 {
 		http.Error(w, "auth not configured", http.StatusServiceUnavailable)
 		return
@@ -39,6 +44,11 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 // When no authStore is configured it is a no-op (open access).
 func (h *Handler) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h.dashboardAccessMode() == DashboardAccessModeWAFOnly {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		if h.authStore == nil || len(h.jwtSecret) == 0 {
 			next.ServeHTTP(w, r)
 			return

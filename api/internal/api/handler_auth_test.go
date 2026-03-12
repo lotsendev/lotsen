@@ -144,6 +144,15 @@ func newAuthTestServerWithCookieDomain(store api.Store, authStore api.AuthUserSt
 	return httptest.NewServer(mux)
 }
 
+func newAuthTestServerWithDashboardAccessMode(store api.Store, authStore api.AuthUserStore, mode api.DashboardAccessMode) *httptest.Server {
+	mux := http.NewServeMux()
+	h := api.New(store, events.NewBroker(), noopDockerLogs{})
+	h.SetAuth(authStore, testJWTSecret)
+	h.SetDashboardAccessMode(mode)
+	h.RegisterRoutes(mux)
+	return httptest.NewServer(mux)
+}
+
 func TestLogout_ClearsCookie(t *testing.T) {
 	srv := newAuthTestServer(newMemStore(), newStubAuthStore("testuser"))
 	defer srv.Close()
@@ -264,6 +273,36 @@ func TestProtectedRoute_AllowsWithToken(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("want 200 with valid token, got %d", resp.StatusCode)
+	}
+}
+
+func TestMe_WAFOnlyModeReturnsDisabled(t *testing.T) {
+	srv := newAuthTestServerWithDashboardAccessMode(newMemStore(), newStubAuthStore("testuser"), api.DashboardAccessModeWAFOnly)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/auth/me")
+	if err != nil {
+		t.Fatalf("GET /auth/me: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", resp.StatusCode)
+	}
+}
+
+func TestProtectedRoute_WAFOnlyModeBypassesAuth(t *testing.T) {
+	srv := newAuthTestServerWithDashboardAccessMode(newMemStore(), newStubAuthStore("testuser"), api.DashboardAccessModeWAFOnly)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/deployments")
+	if err != nil {
+		t.Fatalf("GET /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
 	}
 }
 

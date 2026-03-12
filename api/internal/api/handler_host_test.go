@@ -44,13 +44,25 @@ func TestHost_GetAndUpdateDisplayName(t *testing.T) {
 	}
 
 	var initial struct {
-		DisplayName string `json:"displayName"`
+		DisplayName         string `json:"displayName"`
+		DashboardAccessMode string `json:"dashboardAccessMode"`
+		DashboardWAF        struct {
+			Mode        string   `json:"mode"`
+			IPAllowlist []string `json:"ipAllowlist"`
+			CustomRules []string `json:"customRules"`
+		} `json:"dashboardWaf"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&initial); err != nil {
 		t.Fatalf("decode host response: %v", err)
 	}
 	if initial.DisplayName != "" {
 		t.Fatalf("want empty initial display name, got %q", initial.DisplayName)
+	}
+	if initial.DashboardAccessMode != "login_only" {
+		t.Fatalf("want default dashboardAccessMode login_only, got %q", initial.DashboardAccessMode)
+	}
+	if initial.DashboardWAF.Mode != "detection" {
+		t.Fatalf("want default dashboardWaf.mode detection, got %q", initial.DashboardWAF.Mode)
 	}
 
 	req, err := http.NewRequest(http.MethodPut, srv.URL+"/api/host", bytes.NewBufferString(`{"displayName":"prod-eu"}`))
@@ -70,13 +82,25 @@ func TestHost_GetAndUpdateDisplayName(t *testing.T) {
 	}
 
 	var updated struct {
-		DisplayName string `json:"displayName"`
+		DisplayName         string `json:"displayName"`
+		DashboardAccessMode string `json:"dashboardAccessMode"`
+		DashboardWAF        struct {
+			Mode        string   `json:"mode"`
+			IPAllowlist []string `json:"ipAllowlist"`
+			CustomRules []string `json:"customRules"`
+		} `json:"dashboardWaf"`
 	}
 	if err := json.NewDecoder(updateResp.Body).Decode(&updated); err != nil {
 		t.Fatalf("decode updated host response: %v", err)
 	}
 	if updated.DisplayName != "prod-eu" {
 		t.Fatalf("want updated display name prod-eu, got %q", updated.DisplayName)
+	}
+	if updated.DashboardAccessMode != "login_only" {
+		t.Fatalf("want dashboardAccessMode login_only, got %q", updated.DashboardAccessMode)
+	}
+	if updated.DashboardWAF.Mode != "detection" {
+		t.Fatalf("want dashboardWaf.mode detection, got %q", updated.DashboardWAF.Mode)
 	}
 
 	verifyResp, err := http.Get(srv.URL + "/api/host")
@@ -86,13 +110,124 @@ func TestHost_GetAndUpdateDisplayName(t *testing.T) {
 	defer verifyResp.Body.Close()
 
 	var persisted struct {
-		DisplayName string `json:"displayName"`
+		DisplayName         string `json:"displayName"`
+		DashboardAccessMode string `json:"dashboardAccessMode"`
+		DashboardWAF        struct {
+			Mode        string   `json:"mode"`
+			IPAllowlist []string `json:"ipAllowlist"`
+			CustomRules []string `json:"customRules"`
+		} `json:"dashboardWaf"`
 	}
 	if err := json.NewDecoder(verifyResp.Body).Decode(&persisted); err != nil {
 		t.Fatalf("decode persisted host response: %v", err)
 	}
 	if persisted.DisplayName != "prod-eu" {
 		t.Fatalf("want persisted display name prod-eu, got %q", persisted.DisplayName)
+	}
+	if persisted.DashboardAccessMode != "login_only" {
+		t.Fatalf("want persisted dashboardAccessMode login_only, got %q", persisted.DashboardAccessMode)
+	}
+	if persisted.DashboardWAF.Mode != "detection" {
+		t.Fatalf("want persisted dashboardWaf.mode detection, got %q", persisted.DashboardWAF.Mode)
+	}
+}
+
+func TestHost_UpdateDashboardAccessMode(t *testing.T) {
+	t.Parallel()
+
+	srv := newTestServerWithHostProfileStore(t, filepath.Join(t.TempDir(), "host_profile.json"))
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPut, srv.URL+"/api/host", bytes.NewBufferString(`{"dashboardAccessMode":"waf_and_login"}`))
+	if err != nil {
+		t.Fatalf("build PUT /api/host request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/host: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var updated struct {
+		DashboardAccessMode string `json:"dashboardAccessMode"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode updated host response: %v", err)
+	}
+	if updated.DashboardAccessMode != "waf_and_login" {
+		t.Fatalf("want updated dashboardAccessMode waf_and_login, got %q", updated.DashboardAccessMode)
+	}
+}
+
+func TestHost_UpdateDashboardWAFConfig(t *testing.T) {
+	t.Parallel()
+
+	srv := newTestServerWithHostProfileStore(t, filepath.Join(t.TempDir(), "host_profile.json"))
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPut, srv.URL+"/api/host", bytes.NewBufferString(`{"dashboardWaf":{"mode":"enforcement","ipAllowlist":["203.0.113.0/24"],"customRules":["SecRule REQUEST_URI \"@contains blocked\" \"id:10010,phase:1,deny,status:403\""]}}`))
+	if err != nil {
+		t.Fatalf("build PUT /api/host request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/host: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+
+	var updated struct {
+		DashboardWAF struct {
+			Mode        string   `json:"mode"`
+			IPAllowlist []string `json:"ipAllowlist"`
+			CustomRules []string `json:"customRules"`
+		} `json:"dashboardWaf"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode updated host response: %v", err)
+	}
+	if updated.DashboardWAF.Mode != "enforcement" {
+		t.Fatalf("want dashboardWaf.mode enforcement, got %q", updated.DashboardWAF.Mode)
+	}
+	if len(updated.DashboardWAF.CustomRules) != 1 {
+		t.Fatalf("want 1 custom rule, got %d", len(updated.DashboardWAF.CustomRules))
+	}
+	if len(updated.DashboardWAF.IPAllowlist) != 1 || updated.DashboardWAF.IPAllowlist[0] != "203.0.113.0/24" {
+		t.Fatalf("want ipAllowlist [203.0.113.0/24], got %#v", updated.DashboardWAF.IPAllowlist)
+	}
+}
+
+func TestHost_UpdateDashboardWAFConfigRejectsInvalidAllowlist(t *testing.T) {
+	t.Parallel()
+
+	srv := newTestServerWithHostProfileStore(t, filepath.Join(t.TempDir(), "host_profile.json"))
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPut, srv.URL+"/api/host", bytes.NewBufferString(`{"dashboardWaf":{"ipAllowlist":["not-a-cidr"]}}`))
+	if err != nil {
+		t.Fatalf("build PUT /api/host request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/host: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", resp.StatusCode)
 	}
 }
 

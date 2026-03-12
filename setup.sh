@@ -58,12 +58,25 @@ validate_domain() {
     return 0
 }
 
+validate_dashboard_access_mode() {
+    local mode="$1"
+    case "${mode}" in
+        login_only|waf_only|waf_and_login)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 write_dashboard_env() {
     local dashboard_domain="$1"
     local auth_user="$2"
     local auth_password="$3"
     local jwt_secret="$4"
     local auth_cookie_domain="$5"
+    local dashboard_access_mode="$6"
     local rp_origin=""
     local tmp
 
@@ -71,7 +84,7 @@ write_dashboard_env() {
     tmp=$(mktemp)
 
     if [ -f "${ENV_FILE}" ]; then
-        awk '!/^(DIRIGENT|LOTSEN)_(DASHBOARD_(DOMAIN|USER|PASSWORD)|AUTH_(USER|PASSWORD|COOKIE_DOMAIN)|JWT_SECRET|RP_ID|RP_ORIGINS)=/' "${ENV_FILE}" > "${tmp}"
+        awk '!/^(DIRIGENT|LOTSEN)_(DASHBOARD_(DOMAIN|USER|PASSWORD|ACCESS_MODE)|AUTH_(USER|PASSWORD|COOKIE_DOMAIN)|JWT_SECRET|RP_ID|RP_ORIGINS)=/' "${ENV_FILE}" > "${tmp}"
     fi
 
     if [ -n "${dashboard_domain}" ]; then
@@ -90,9 +103,11 @@ write_dashboard_env() {
         echo "DIRIGENT_JWT_SECRET=${jwt_secret}"
         echo "DIRIGENT_AUTH_USER=${auth_user}"
         echo "DIRIGENT_AUTH_PASSWORD=${auth_password}"
+        echo "DIRIGENT_DASHBOARD_ACCESS_MODE=${dashboard_access_mode}"
         echo "LOTSEN_JWT_SECRET=${jwt_secret}"
         echo "LOTSEN_AUTH_USER=${auth_user}"
         echo "LOTSEN_AUTH_PASSWORD=${auth_password}"
+        echo "LOTSEN_DASHBOARD_ACCESS_MODE=${dashboard_access_mode}"
     } >> "${tmp}"
 
     if [ -n "${auth_cookie_domain}" ]; then
@@ -445,6 +460,7 @@ AUTH_USER="${DIRIGENT_AUTH_USER:-${LOTSEN_AUTH_USER:-}}"
 AUTH_PASSWORD="${DIRIGENT_AUTH_PASSWORD:-${LOTSEN_AUTH_PASSWORD:-}}"
 JWT_SECRET="${DIRIGENT_JWT_SECRET:-${LOTSEN_JWT_SECRET:-}}"
 AUTH_COOKIE_DOMAIN="${DIRIGENT_AUTH_COOKIE_DOMAIN:-${LOTSEN_AUTH_COOKIE_DOMAIN:-}}"
+DASHBOARD_ACCESS_MODE="${DIRIGENT_DASHBOARD_ACCESS_MODE:-${LOTSEN_DASHBOARD_ACCESS_MODE:-}}"
 GENERATED_AUTH_PASSWORD=0
 GENERATED_JWT_SECRET=0
 EXISTING_DASHBOARD_DOMAIN=""
@@ -452,6 +468,7 @@ EXISTING_AUTH_USER=""
 EXISTING_AUTH_PASSWORD=""
 EXISTING_JWT_SECRET=""
 EXISTING_AUTH_COOKIE_DOMAIN=""
+EXISTING_DASHBOARD_ACCESS_MODE=""
 
 if [ -f "${ENV_FILE}" ]; then
     EXISTING_DASHBOARD_DOMAIN=$(read_env_value "DIRIGENT_DASHBOARD_DOMAIN")
@@ -459,6 +476,7 @@ if [ -f "${ENV_FILE}" ]; then
     EXISTING_AUTH_PASSWORD=$(read_env_value "DIRIGENT_AUTH_PASSWORD")
     EXISTING_JWT_SECRET=$(read_env_value "DIRIGENT_JWT_SECRET")
     EXISTING_AUTH_COOKIE_DOMAIN=$(read_env_value "DIRIGENT_AUTH_COOKIE_DOMAIN")
+    EXISTING_DASHBOARD_ACCESS_MODE=$(read_env_value "DIRIGENT_DASHBOARD_ACCESS_MODE")
     if [ -z "${EXISTING_DASHBOARD_DOMAIN}" ]; then
         EXISTING_DASHBOARD_DOMAIN=$(read_env_value "LOTSEN_DASHBOARD_DOMAIN")
     fi
@@ -473,6 +491,9 @@ if [ -f "${ENV_FILE}" ]; then
     fi
     if [ -z "${EXISTING_AUTH_COOKIE_DOMAIN}" ]; then
         EXISTING_AUTH_COOKIE_DOMAIN=$(read_env_value "LOTSEN_AUTH_COOKIE_DOMAIN")
+    fi
+    if [ -z "${EXISTING_DASHBOARD_ACCESS_MODE}" ]; then
+        EXISTING_DASHBOARD_ACCESS_MODE=$(read_env_value "LOTSEN_DASHBOARD_ACCESS_MODE")
     fi
 
     if [ -z "${DASHBOARD_DOMAIN}" ] && [ -n "${EXISTING_DASHBOARD_DOMAIN}" ]; then
@@ -490,6 +511,13 @@ if [ -f "${ENV_FILE}" ]; then
     if [ -z "${AUTH_COOKIE_DOMAIN}" ] && [ -n "${EXISTING_AUTH_COOKIE_DOMAIN}" ]; then
         AUTH_COOKIE_DOMAIN="${EXISTING_AUTH_COOKIE_DOMAIN}"
     fi
+    if [ -z "${DASHBOARD_ACCESS_MODE}" ] && [ -n "${EXISTING_DASHBOARD_ACCESS_MODE}" ]; then
+        DASHBOARD_ACCESS_MODE="${EXISTING_DASHBOARD_ACCESS_MODE}"
+    fi
+fi
+
+if [ -z "${DASHBOARD_ACCESS_MODE}" ]; then
+    DASHBOARD_ACCESS_MODE="login_only"
 fi
 
 if [ -z "${AUTH_USER}" ]; then
@@ -531,6 +559,31 @@ if [ -t 0 ] && [ "${NON_INTERACTIVE_MODE}" != "1" ] && [ "${UPGRADE_MODE}" != "1
     done
 fi
 
+if [ -t 0 ] && [ "${NON_INTERACTIVE_MODE}" != "1" ] && [ "${UPGRADE_MODE}" != "1" ]; then
+    echo ""
+    echo "Dashboard protection mode"
+    echo "  1) login only (default)"
+    echo "  2) waf only"
+    echo "  3) waf + login"
+
+    DASHBOARD_ACCESS_CHOICE=""
+    case "${DASHBOARD_ACCESS_MODE}" in
+        waf_only) DASHBOARD_ACCESS_CHOICE="2" ;;
+        waf_and_login) DASHBOARD_ACCESS_CHOICE="3" ;;
+        *) DASHBOARD_ACCESS_CHOICE="1" ;;
+    esac
+
+    read -r -p "Choose mode [${DASHBOARD_ACCESS_CHOICE}]: " INPUT_DASHBOARD_ACCESS_CHOICE
+    case "${INPUT_DASHBOARD_ACCESS_CHOICE:-${DASHBOARD_ACCESS_CHOICE}}" in
+        1|login_only) DASHBOARD_ACCESS_MODE="login_only" ;;
+        2|waf_only) DASHBOARD_ACCESS_MODE="waf_only" ;;
+        3|waf_and_login) DASHBOARD_ACCESS_MODE="waf_and_login" ;;
+        *)
+            echo "Invalid selection, keeping ${DASHBOARD_ACCESS_MODE}."
+            ;;
+    esac
+fi
+
 if [ -z "${AUTH_PASSWORD}" ]; then
     AUTH_PASSWORD=$(generate_hex_secret 16)
     GENERATED_AUTH_PASSWORD=1
@@ -569,8 +622,12 @@ if [ -n "${DASHBOARD_DOMAIN}" ]; then
     fi
 fi
 
+if ! validate_dashboard_access_mode "${DASHBOARD_ACCESS_MODE}"; then
+    error "DIRIGENT_DASHBOARD_ACCESS_MODE must be one of: login_only, waf_only, waf_and_login"
+fi
+
 step "Writing shared environment file"
-write_dashboard_env "${DASHBOARD_DOMAIN}" "${AUTH_USER}" "${AUTH_PASSWORD}" "${JWT_SECRET}" "${AUTH_COOKIE_DOMAIN}"
+write_dashboard_env "${DASHBOARD_DOMAIN}" "${AUTH_USER}" "${AUTH_PASSWORD}" "${JWT_SECRET}" "${AUTH_COOKIE_DOMAIN}" "${DASHBOARD_ACCESS_MODE}"
 
 if [ "${UPGRADE_MODE}" = "1" ]; then
     step "Upgrade mode: preserving host firewall and SSH settings"
@@ -707,6 +764,7 @@ else
     echo "  Dashboard:  http://${SERVER_IP}:8080"
 fi
 echo "  Dashboard login user: ${AUTH_USER}"
+echo "  Dashboard protection: ${DASHBOARD_ACCESS_MODE}"
 if [ "${GENERATED_AUTH_PASSWORD}" = "1" ]; then
     echo "  Dashboard login password: ${AUTH_PASSWORD}"
 fi

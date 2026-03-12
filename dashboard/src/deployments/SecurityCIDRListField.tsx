@@ -51,7 +51,7 @@ export function SecurityCIDRListField({
       {entries.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {entries.map(item => (
-            <Badge key={`${id}-${item}`} variant={badgeVariant} className="gap-1 pr-1">
+            <Badge key={`${id}-${item}`} variant={badgeVariant} className="pointer-events-auto gap-1 pr-1">
               <span className="font-mono">{item}</span>
               <button
                 type="button"

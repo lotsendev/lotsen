@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ercadev/dirigent/orchestrator/internal/docker"
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/orchestrator/internal/docker"
+	"github.com/ercadev/lotsen/store"
 )
 
 // Docker is the container management interface required by the reconciler.

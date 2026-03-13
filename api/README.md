@@ -1,6 +1,6 @@
 # api
 
-The Dirigent REST API, written in Go. Reads and writes the shared JSON store.
+The Lotsen REST API, written in Go. Reads and writes the shared JSON store.
 
 ## Requirements
 
@@ -12,25 +12,25 @@ The Dirigent REST API, written in Go. Reads and writes the shared JSON store.
 # From the api/ directory
 
 # Run the API server (port 8080)
-go run ./cmd/dirigent
+go run ./cmd/lotsen
 
 # Run all tests
 go test ./...
 
 # Build the binary
-go build -o dirigent ./cmd/dirigent
+go build -o lotsen ./cmd/lotsen
 ```
 
 ## Configuration
 
 | Environment variable | Default                                   | Description                        |
 |----------------------|-------------------------------------------|------------------------------------|
-| `DIRIGENT_DATA`      | `/var/lib/dirigent/deployments.json`      | Path to the JSON state file        |
+| `LOTSEN_DATA`      | `/var/lib/lotsen/deployments.json`      | Path to the JSON state file        |
 
-For local development, set `DIRIGENT_DATA` to a writable path:
+For local development, set `LOTSEN_DATA` to a writable path:
 
 ```bash
-DIRIGENT_DATA=/tmp/dirigent.json go run ./cmd/dirigent
+LOTSEN_DATA=/tmp/lotsen.json go run ./cmd/lotsen
 ```
 
 ## API
@@ -71,9 +71,9 @@ curl -X POST http://localhost:8080/api/deployments \
 
 ```
 api/
-├── cmd/dirigent/     Entry point
+├── cmd/lotsen/     Entry point
 └── internal/
     └── api/          HTTP handlers and Store interface
 ```
 
-Deployment persistence is provided by the shared `store/` module at the repo root (`github.com/ercadev/dirigent/store`).
+Deployment persistence is provided by the shared `store/` module at the repo root (`github.com/ercadev/lotsen/store`).

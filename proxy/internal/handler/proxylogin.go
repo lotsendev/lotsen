@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/ercadev/dirigent/auth"
+	"github.com/ercadev/lotsen/auth"
 )
 
 const tokenCookieName = "lotsen_token"

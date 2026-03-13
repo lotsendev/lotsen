@@ -13,9 +13,9 @@ import (
 
 	"github.com/go-webauthn/webauthn/webauthn"
 
-	"github.com/ercadev/dirigent/auth"
-	"github.com/ercadev/dirigent/internal/api"
-	"github.com/ercadev/dirigent/internal/events"
+	"github.com/ercadev/lotsen/auth"
+	"github.com/ercadev/lotsen/internal/api"
+	"github.com/ercadev/lotsen/internal/events"
 )
 
 // stubAuthStore is an in-memory AuthUserStore for tests.

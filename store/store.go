@@ -532,7 +532,7 @@ func (s *JSONStore) secretKey() []byte {
 		keyMaterial = strings.TrimSpace(os.Getenv("LOTSEN_JWT_SECRET"))
 	}
 	if keyMaterial == "" {
-		keyMaterial = "dirigent-registry:" + s.path
+		keyMaterial = "lotsen-registry:" + s.path
 	}
 
 	sum := sha256.Sum256([]byte(keyMaterial))

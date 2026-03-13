@@ -1,4 +1,4 @@
-module github.com/ercadev/dirigent/auth
+module github.com/ercadev/lotsen/auth
 
 go 1.25.0
 

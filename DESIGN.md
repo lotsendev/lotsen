@@ -1,4 +1,4 @@
-# Dirigent — Brand & Design System
+# Lotsen — Brand & Design System
 
 A living reference for colours, typography, spacing, and component patterns across the dashboard and landing page.
 
@@ -6,7 +6,7 @@ A living reference for colours, typography, spacing, and component patterns acro
 
 ## Brand Identity
 
-**Dirigent** is a lightweight Docker orchestration tool for solo devs and VPS deployments. The aesthetic balances developer pragmatism with visual refinement — clean, approachable, and quietly elegant.
+**Lotsen** is a lightweight Docker orchestration tool for solo devs and VPS deployments. The aesthetic balances developer pragmatism with visual refinement — clean, approachable, and quietly elegant.
 
 ### Mascot
 A corgi sitting at a navy keyboard. The mascot's palette is the direct source of the two brand colours: navy (keyboard) and orange (corgi coat).

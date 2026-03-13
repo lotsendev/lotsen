@@ -17,12 +17,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ercadev/dirigent/auth"
+	"github.com/ercadev/lotsen/auth"
 )
 
 const (
-	releaseBaseLatest = "https://github.com/ercadev/dirigent-releases/releases/latest/download"
-	releaseBaseTagFmt = "https://github.com/ercadev/dirigent-releases/releases/download/%s"
+	releaseBaseLatest = "https://github.com/ercadev/lotsen-releases/releases/latest/download"
+	releaseBaseTagFmt = "https://github.com/ercadev/lotsen-releases/releases/download/%s"
 )
 
 type versionSnapshot struct {

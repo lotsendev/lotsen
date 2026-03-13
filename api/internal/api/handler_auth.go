@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ercadev/dirigent/auth"
+	"github.com/ercadev/lotsen/auth"
 )
 
 const (

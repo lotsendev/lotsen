@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/store"
 )
 
 func (h *Handler) getDeployment(w http.ResponseWriter, r *http.Request) {

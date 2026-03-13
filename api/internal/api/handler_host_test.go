@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ercadev/dirigent/internal/api"
-	"github.com/ercadev/dirigent/internal/events"
+	"github.com/ercadev/lotsen/internal/api"
+	"github.com/ercadev/lotsen/internal/events"
 )
 
 func newTestServerWithHostProfileStore(t *testing.T, storePath string) *httptest.Server {

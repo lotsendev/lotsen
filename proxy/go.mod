@@ -1,11 +1,11 @@
-module github.com/ercadev/dirigent/proxy
+module github.com/ercadev/lotsen/proxy
 
 go 1.25.0
 
 require (
 	github.com/corazawaf/coraza/v3 v3.3.3
-	github.com/ercadev/dirigent/auth v0.0.0
-	github.com/ercadev/dirigent/store v0.0.0
+	github.com/ercadev/lotsen/auth v0.0.0
+	github.com/ercadev/lotsen/store v0.0.0
 )
 
 require (
@@ -45,6 +45,6 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 )
 
-replace github.com/ercadev/dirigent/auth => ../auth
+replace github.com/ercadev/lotsen/auth => ../auth
 
-replace github.com/ercadev/dirigent/store => ../store
+replace github.com/ercadev/lotsen/store => ../store

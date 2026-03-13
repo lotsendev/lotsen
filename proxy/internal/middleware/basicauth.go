@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/store"
 	"golang.org/x/crypto/bcrypt"
 )
 

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/store"
 )
 
 func TestClient_NotifyHeartbeat(t *testing.T) {

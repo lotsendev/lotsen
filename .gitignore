@@ -1,6 +1,6 @@
 # Go
-/dirigent
-control-plane/dirigent
+/lotsen
+control-plane/lotsen
 orchestrator/orchestrator
 
 # Air hot reload

@@ -39,7 +39,7 @@ dev-website:
 
 # Trigger a release via conventional-commit analysis (requires gh CLI).
 release:
-	gh workflow run auto-tag.yml --repo ercadev/dirigent
+	gh workflow run auto-tag.yml --repo ercadev/lotsen
 
 # Remove build artifacts.
 clean:

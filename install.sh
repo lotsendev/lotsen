@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Dirigent bootstrap installer
+# Lotsen bootstrap installer
 #
 # Usage:
-#   curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
+#   curl -fsSL https://github.com/ercadev/lotsen-releases/releases/latest/download/install.sh | sudo bash
 #
-# This script only installs the Dirigent CLI binary. Run `lotsen setup`
+# This script only installs the Lotsen CLI binary. Run `lotsen setup`
 # afterwards to perform the full host setup.
 
 set -euo pipefail
@@ -26,7 +26,7 @@ fi
 
 step "Detecting operating system"
 if [ ! -f /etc/os-release ]; then
-    error "Cannot determine OS: /etc/os-release not found. Dirigent supports Ubuntu 22.04+ and Debian 11+."
+    error "Cannot determine OS: /etc/os-release not found. Lotsen supports Ubuntu 22.04+ and Debian 11+."
 fi
 
 # shellcheck source=/dev/null
@@ -48,7 +48,7 @@ case "${OS_ID}" in
         fi
         ;;
     *)
-        error "Unsupported operating system: ${OS_ID}. Dirigent supports Ubuntu 22.04+ and Debian 11+."
+        error "Unsupported operating system: ${OS_ID}. Lotsen supports Ubuntu 22.04+ and Debian 11+."
         ;;
 esac
 
@@ -59,15 +59,15 @@ case "${ARCH}" in
     *) error "Unsupported architecture: ${ARCH}. Supported: x86_64, aarch64." ;;
 esac
 
-DIRIGENT_VERSION="${DIRIGENT_VERSION:-latest}"
+LOTSEN_VERSION="${LOTSEN_VERSION:-latest}"
 
-if [ "${DIRIGENT_VERSION}" = "latest" ]; then
-    RELEASE_BASE="https://github.com/ercadev/dirigent-releases/releases/latest/download"
+if [ "${LOTSEN_VERSION}" = "latest" ]; then
+    RELEASE_BASE="https://github.com/ercadev/lotsen-releases/releases/latest/download"
 else
-    RELEASE_BASE="https://github.com/ercadev/dirigent-releases/releases/download/${DIRIGENT_VERSION}"
+    RELEASE_BASE="https://github.com/ercadev/lotsen-releases/releases/download/${LOTSEN_VERSION}"
 fi
 
-step "Installing Lotsen CLI (${DIRIGENT_VERSION}, linux/${ARCH})"
+step "Installing Lotsen CLI (${LOTSEN_VERSION}, linux/${ARCH})"
 curl -fsSL "${RELEASE_BASE}/lotsen-cli-linux-${ARCH}" -o /usr/local/bin/lotsen
 chmod 0755 /usr/local/bin/lotsen
 

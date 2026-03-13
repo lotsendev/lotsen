@@ -188,9 +188,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
-          gh release delete ${{ env.RELEASE_TAG }} --repo ercadev/dirigent-releases --yes || true
+          gh release delete ${{ env.RELEASE_TAG }} --repo ercadev/lotsen-releases --yes || true
           gh release create ${{ env.RELEASE_TAG }} \
-            --repo ercadev/dirigent-releases \
+            --repo ercadev/lotsen-releases \
             --title "${{ env.RELEASE_TAG }}" \
             --notes-file release-notes.md \
             --latest \
@@ -230,5 +230,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ercadevapps/dirigent:${{ env.RELEASE_TAG }}
-            ercadevapps/dirigent:latest
+            ercadevapps/lotsen:${{ env.RELEASE_TAG }}
+            ercadevapps/lotsen:latest

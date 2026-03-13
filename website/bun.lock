@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "dirigent-website",
+      "name": "lotsen-website",
       "dependencies": {
         "lucide-react": "^0.575.0",
         "react": "^19.0.0",

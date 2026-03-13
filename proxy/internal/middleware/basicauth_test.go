@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ercadev/dirigent/proxy/internal/middleware"
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/proxy/internal/middleware"
+	"github.com/ercadev/lotsen/store"
 	"golang.org/x/crypto/bcrypt"
 )
 

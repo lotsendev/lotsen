@@ -1,8 +1,8 @@
-# CLAUDE.md - Dirigent
+# CLAUDE.md - Lotsen
 
 ## Project Context
 Docker orchestration for solo devs/VPS. Lightweight K8s alternative.
-- **Repo:** `ercadev/dirigent` (Always use for `gh` commands).
+- **Repo:** `ercadev/lotsen` (Always use for `gh` commands).
 - **Stack:** Go (Backend/Orchestrator), Bun + React + Vite (Frontend).
 - **Data Flow:** Dashboard → API → JSON Store ← Orchestrator → Docker.
 
@@ -21,4 +21,4 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/).
 ### Coding Standards
 - **Backend:** Go 1.23. Use `internal/` for shared logic.
 - **Frontend:** React with Vite. Pages go in `dashboard/src/pages/`.
-- **State:** Shared via `/tmp/dirigent.json` in dev.
+- **State:** Shared via `/tmp/lotsen.json` in dev.

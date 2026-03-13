@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/store"
 )
 
 func (h *Handler) deleteDeployment(w http.ResponseWriter, r *http.Request) {

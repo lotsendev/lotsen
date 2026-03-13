@@ -295,10 +295,11 @@ export function SettingsPage() {
     onSuccess: profile => {
       queryClient.setQueryData(['hostProfile'], profile)
       setDashboardWAFError(null)
-      setDashboardWAFModeDraft(profile.dashboardWaf.mode)
-      setDashboardWAFAllowlistDraft(profile.dashboardWaf.ipAllowlist)
+      const nextDashboardWAF = profile.dashboardWaf ?? { mode: 'detection', ipAllowlist: [], customRules: [] }
+      setDashboardWAFModeDraft(nextDashboardWAF.mode)
+      setDashboardWAFAllowlistDraft(Array.isArray(nextDashboardWAF.ipAllowlist) ? nextDashboardWAF.ipAllowlist : [])
       setDashboardWAFAllowlistInput('')
-      setDashboardWAFRulesDraft(profile.dashboardWaf.customRules.join('\n'))
+      setDashboardWAFRulesDraft(Array.isArray(nextDashboardWAF.customRules) ? nextDashboardWAF.customRules.join('\n') : '')
     },
     onError: error => {
       setDashboardWAFError(error instanceof Error ? error.message : 'Failed to update dashboard WAF settings')

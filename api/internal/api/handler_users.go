@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ercadev/lotsen/auth"
+	"github.com/lotsendev/lotsen/auth"
 )
 
 func (h *Handler) listUsers(w http.ResponseWriter, _ *http.Request) {

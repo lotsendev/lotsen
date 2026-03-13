@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/store"
 )
 
 // seedStore writes deployments directly to the JSON file, bypassing the store.

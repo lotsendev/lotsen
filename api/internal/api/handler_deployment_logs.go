@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/store"
 )
 
 // deploymentLogs streams container log lines for a deployment as SSE.

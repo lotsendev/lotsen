@@ -334,9 +334,9 @@ fi
 LOTSEN_VERSION="${LOTSEN_VERSION:-latest}"
 
 if [ "${LOTSEN_VERSION}" = "latest" ]; then
-    RELEASE_BASE="https://github.com/ercadev/lotsen-releases/releases/latest/download"
+    RELEASE_BASE="https://github.com/lotsendev/lotsen/releases/latest/download"
 else
-    RELEASE_BASE="https://github.com/ercadev/lotsen-releases/releases/download/${LOTSEN_VERSION}"
+    RELEASE_BASE="https://github.com/lotsendev/lotsen/releases/download/${LOTSEN_VERSION}"
 fi
 
 step "Using release: ${LOTSEN_VERSION}"
@@ -612,7 +612,7 @@ step "Writing systemd unit files"
 cat > /etc/systemd/system/lotsen-api.service << EOF
 [Unit]
 Description=Lotsen API
-Documentation=https://github.com/ercadev/lotsen
+Documentation=https://github.com/lotsendev/lotsen
 After=network.target docker.service
 Requires=docker.service
 
@@ -631,7 +631,7 @@ EOF
 cat > /etc/systemd/system/lotsen-orchestrator.service << EOF
 [Unit]
 Description=Lotsen orchestrator
-Documentation=https://github.com/ercadev/lotsen
+Documentation=https://github.com/lotsendev/lotsen
 After=network.target docker.service lotsen-api.service
 Requires=docker.service
 
@@ -651,7 +651,7 @@ EOF
 cat > /etc/systemd/system/lotsen-proxy.service << EOF
 [Unit]
 Description=Lotsen reverse proxy
-Documentation=https://github.com/ercadev/lotsen
+Documentation=https://github.com/lotsendev/lotsen
 After=network.target docker.service lotsen-api.service
 Requires=docker.service
 

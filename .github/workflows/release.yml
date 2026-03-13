@@ -186,11 +186,11 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete ${{ env.RELEASE_TAG }} --repo ercadev/lotsen-releases --yes || true
+          gh release delete ${{ env.RELEASE_TAG }} --repo lotsendev/lotsen --yes || true
           gh release create ${{ env.RELEASE_TAG }} \
-            --repo ercadev/lotsen-releases \
+            --repo lotsendev/lotsen \
             --title "${{ env.RELEASE_TAG }}" \
             --notes-file release-notes.md \
             --latest \

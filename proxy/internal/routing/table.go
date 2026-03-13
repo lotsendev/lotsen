@@ -3,7 +3,7 @@ package routing
 import (
 	"sync"
 
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/store"
 )
 
 // Route stores upstream and optional per-deployment configuration.

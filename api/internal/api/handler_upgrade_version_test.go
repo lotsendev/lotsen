@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ercadev/lotsen/internal/api"
-	"github.com/ercadev/lotsen/internal/events"
-	"github.com/ercadev/lotsen/internal/upgrade"
-	"github.com/ercadev/lotsen/internal/version"
+	"github.com/lotsendev/lotsen/internal/api"
+	"github.com/lotsendev/lotsen/internal/events"
+	"github.com/lotsendev/lotsen/internal/upgrade"
+	"github.com/lotsendev/lotsen/internal/version"
 )
 
 type versionProviderStub struct {

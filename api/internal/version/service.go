@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-var latestReleaseURL = "https://api.github.com/repos/ercadev/lotsen-releases/releases/latest"
-var releasesURL = "https://api.github.com/repos/ercadev/lotsen-releases/releases"
+var latestReleaseURL = "https://api.github.com/repos/lotsendev/lotsen/releases/latest"
+var releasesURL = "https://api.github.com/repos/lotsendev/lotsen/releases"
 
 const defaultCacheTTL = 5 * time.Minute
 

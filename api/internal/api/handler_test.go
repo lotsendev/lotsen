@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ercadev/lotsen/internal/api"
-	"github.com/ercadev/lotsen/internal/events"
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/internal/api"
+	"github.com/lotsendev/lotsen/internal/events"
+	"github.com/lotsendev/lotsen/store"
 )
 
 // memStore is an in-memory store used only in tests.

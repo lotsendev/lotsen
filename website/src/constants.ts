@@ -1,4 +1,4 @@
 export const INSTALL_COMMAND =
-  'curl -fsSL https://github.com/ercadev/lotsen-releases/releases/latest/download/install.sh | sudo bash'
+  'curl -fsSL https://github.com/lotsendev/lotsen/releases/latest/download/install.sh | sudo bash'
 
-export const GITHUB_URL = 'https://github.com/ercadev/lotsen'
+export const GITHUB_URL = 'https://github.com/lotsendev/lotsen'

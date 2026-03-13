@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/store"
 )
 
 // Client calls the Lotsen API to notify it of deployment status transitions.

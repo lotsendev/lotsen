@@ -76,4 +76,4 @@ api/
     └── api/          HTTP handlers and Store interface
 ```
 
-Deployment persistence is provided by the shared `store/` module at the repo root (`github.com/ercadev/lotsen/store`).
+Deployment persistence is provided by the shared `store/` module at the repo root (`github.com/lotsendev/lotsen/store`).

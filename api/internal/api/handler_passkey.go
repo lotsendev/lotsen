@@ -14,7 +14,7 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
-	"github.com/ercadev/lotsen/auth"
+	"github.com/lotsendev/lotsen/auth"
 )
 
 const passkeySessionCookie = "lotsen_pk_session"

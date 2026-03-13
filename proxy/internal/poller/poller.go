@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/store"
 )
 
 // Table is the routing table the poller updates as deployments change.

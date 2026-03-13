@@ -1,4 +1,4 @@
-module github.com/ercadev/lotsen/auth
+module github.com/lotsendev/lotsen/auth
 
 go 1.25.0
 

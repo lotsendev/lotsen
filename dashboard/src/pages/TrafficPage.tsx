@@ -335,14 +335,14 @@ export function TrafficPage() {
                       <td className="px-3 py-2 whitespace-nowrap">{formatTimestamp(entry.timestamp)}</td>
                       <td className="px-3 py-2 font-mono text-[11px]">{entry.clientIp || '-'}</td>
                       <td className="px-3 py-2">
-                        <div className="text-foreground">
+                        <div className="text-foreground [overflow-wrap:anywhere]">
                           {entry.method} {entry.path}
                           {entry.query ? `?${entry.query}` : ''}
                         </div>
                         {entry.headers && Object.keys(entry.headers).length > 0 && (
                           <details className="mt-1 text-[11px] text-muted-foreground">
                             <summary className="cursor-pointer select-none">Headers</summary>
-                            <pre className="mt-1 whitespace-pre-wrap rounded border border-border/50 bg-background p-2 text-[10px] text-foreground">
+                            <pre className="mt-1 whitespace-pre-wrap rounded border border-border/50 bg-background p-2 text-[10px] text-foreground [overflow-wrap:anywhere]">
                               {JSON.stringify(entry.headers, null, 2)}
                             </pre>
                           </details>

@@ -1,7 +1,7 @@
-module github.com/ercadev/dirigent/cli
+module github.com/ercadev/lotsen/cli
 
 go 1.24.0
 
-require github.com/ercadev/dirigent/auth v0.0.0
+require github.com/ercadev/lotsen/auth v0.0.0
 
-replace github.com/ercadev/dirigent/auth => ../auth
+replace github.com/ercadev/lotsen/auth => ../auth

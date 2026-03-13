@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ercadev/dirigent/internal/upgrade"
+	"github.com/ercadev/lotsen/internal/upgrade"
 )
 
 func (h *Handler) startUpgrade(w http.ResponseWriter, r *http.Request) {

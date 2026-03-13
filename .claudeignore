@@ -45,8 +45,8 @@ bun.lockb
 
 # --- Backend (Go) ---
 # Ignore the compiled binary and temporary state file
-dirigent
-/tmp/dirigent.json
+lotsen
+/tmp/lotsen.json
 vendor/
 *.out
 *.test

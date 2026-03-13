@@ -6,14 +6,14 @@ Updating a Docker container in production — changing the image version, updati
 
 ## Solution
 
-When a deployment's configuration changes and the user saves, Dirigent starts the new container alongside the old one. Once the new container is confirmed healthy, the old one is stopped. If the new container never becomes healthy, the old one continues running uninterrupted. The user sees the deployment status update in real time throughout the process.
+When a deployment's configuration changes and the user saves, Lotsen starts the new container alongside the old one. Once the new container is confirmed healthy, the old one is stopped. If the new container never becomes healthy, the old one continues running uninterrupted. The user sees the deployment status update in real time throughout the process.
 
 ## User Stories
 
 1. As a developer, I want my service to remain available while I update a deployment, so that users don't experience downtime during routine changes.
-2. As a developer, I want Dirigent to start the new container before stopping the old one, so that there's always a healthy instance serving traffic.
-3. As a developer, I want Dirigent to use a Docker healthcheck if one is defined in the image, so that the new container is only considered healthy when it's actually ready to serve requests.
-4. As a developer, I want Dirigent to fall back to checking that the container stays running for a short period if no healthcheck is defined, so that basic stability is verified even for images without explicit healthchecks.
+2. As a developer, I want Lotsen to start the new container before stopping the old one, so that there's always a healthy instance serving traffic.
+3. As a developer, I want Lotsen to use a Docker healthcheck if one is defined in the image, so that the new container is only considered healthy when it's actually ready to serve requests.
+4. As a developer, I want Lotsen to fall back to checking that the container stays running for a short period if no healthcheck is defined, so that basic stability is verified even for images without explicit healthchecks.
 5. As a developer, I want the old container to keep running if the new one never becomes healthy, so that my service stays up even during a bad deployment.
 6. As a developer, I want to see the deployment status change to "deploying" when a save triggers a redeploy, so that I know the process has started.
 7. As a developer, I want to see the deployment status update to "healthy" or "failed" once the redeploy completes, so that I know the outcome without having to check manually.
@@ -52,4 +52,4 @@ When a deployment's configuration changes and the user saves, Dirigent starts th
 
 ## Further Notes
 
-The key invariant is: at no point during a redeploy should a request to the domain fail due to Dirigent's actions. The old container is the fallback and must stay alive until the new one is confirmed good. This should be treated as a safety-critical property of the orchestrator.
+The key invariant is: at no point during a redeploy should a request to the domain fail due to Lotsen's actions. The old container is the fallback and must stay alive until the new one is confirmed good. This should be treated as a safety-critical property of the orchestrator.

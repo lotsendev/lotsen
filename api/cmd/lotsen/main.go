@@ -12,12 +12,12 @@ import (
 
 	dockerclient "github.com/docker/docker/client"
 
-	"github.com/ercadev/dirigent/auth"
-	internalapi "github.com/ercadev/dirigent/internal/api"
-	"github.com/ercadev/dirigent/internal/dashboard"
-	"github.com/ercadev/dirigent/internal/docker"
-	"github.com/ercadev/dirigent/internal/events"
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/auth"
+	internalapi "github.com/ercadev/lotsen/internal/api"
+	"github.com/ercadev/lotsen/internal/dashboard"
+	"github.com/ercadev/lotsen/internal/docker"
+	"github.com/ercadev/lotsen/internal/events"
+	"github.com/ercadev/lotsen/store"
 )
 
 const addr = ":8080"

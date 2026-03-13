@@ -13,12 +13,12 @@ import (
 
 	dockerclient "github.com/docker/docker/client"
 
-	"github.com/ercadev/dirigent/orchestrator/internal/apiclient"
-	"github.com/ercadev/dirigent/orchestrator/internal/docker"
-	"github.com/ercadev/dirigent/orchestrator/internal/hostinfo"
-	"github.com/ercadev/dirigent/orchestrator/internal/hostmetrics"
-	"github.com/ercadev/dirigent/orchestrator/internal/reconciler"
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/orchestrator/internal/apiclient"
+	"github.com/ercadev/lotsen/orchestrator/internal/docker"
+	"github.com/ercadev/lotsen/orchestrator/internal/hostinfo"
+	"github.com/ercadev/lotsen/orchestrator/internal/hostmetrics"
+	"github.com/ercadev/lotsen/orchestrator/internal/reconciler"
+	"github.com/ercadev/lotsen/store"
 )
 
 func dataPath() string {

@@ -70,7 +70,7 @@ export function RegistriesPage() {
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Registry credentials</p>
           <h2 className="mt-1 font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight text-foreground">Private image access</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Save registry prefixes once and Dirigent reuses credentials automatically for matching pulls.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Save registry prefixes once and Lotsen reuses credentials automatically for matching pulls.</p>
         </div>
         <Badge variant="outline" className="rounded-md border-border/70 bg-background/70 px-2.5 py-1 font-mono text-[11px]">
           {(registriesQuery.data ?? []).length} configured

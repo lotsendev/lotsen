@@ -3,8 +3,8 @@ package middleware_test
 import (
 	"testing"
 
-	"github.com/ercadev/dirigent/proxy/internal/middleware"
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/proxy/internal/middleware"
+	"github.com/ercadev/lotsen/store"
 )
 
 func TestIPFilter_EvaluateGlobal(t *testing.T) {

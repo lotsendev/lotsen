@@ -6,7 +6,7 @@ Exposing a Docker container to the internet on a VPS requires manually configuri
 
 ## Solution
 
-Dirigent includes an integrated reverse proxy that automatically handles domain-based routing and TLS certificate provisioning. When a deployment has a domain configured, it becomes publicly reachable over HTTPS with no additional setup. The proxy configuration is updated automatically as deployments are created, updated, or removed.
+Lotsen includes an integrated reverse proxy that automatically handles domain-based routing and TLS certificate provisioning. When a deployment has a domain configured, it becomes publicly reachable over HTTPS with no additional setup. The proxy configuration is updated automatically as deployments are created, updated, or removed.
 
 ## User Stories
 
@@ -23,8 +23,8 @@ Dirigent includes an integrated reverse proxy that automatically handles domain-
 
 ## Implementation Decisions
 
-- Reverse proxy is embedded in the Dirigent Go process or managed as a controlled subprocess (e.g. Caddy)
-- Domain-to-deployment routing table is maintained in memory and persisted by Dirigent
+- Reverse proxy is embedded in the Lotsen Go process or managed as a controlled subprocess (e.g. Caddy)
+- Domain-to-deployment routing table is maintained in memory and persisted by Lotsen
 - TLS certificate provisioning uses the ACME protocol via Let's Encrypt
 - Certificates are stored on disk and reused across restarts
 - HTTP → HTTPS redirect is enabled by default for all domains

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ercadev/dirigent/internal/version"
+	"github.com/ercadev/lotsen/internal/version"
 )
 
 type versionResponse struct {

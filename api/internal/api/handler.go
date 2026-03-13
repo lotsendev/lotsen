@@ -19,11 +19,11 @@ import (
 
 	"github.com/go-webauthn/webauthn/webauthn"
 
-	"github.com/ercadev/dirigent/auth"
-	"github.com/ercadev/dirigent/internal/events"
-	"github.com/ercadev/dirigent/internal/upgrade"
-	"github.com/ercadev/dirigent/internal/version"
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/auth"
+	"github.com/ercadev/lotsen/internal/events"
+	"github.com/ercadev/lotsen/internal/upgrade"
+	"github.com/ercadev/lotsen/internal/version"
+	"github.com/ercadev/lotsen/store"
 )
 
 // Store is the persistence interface required by the API handlers.

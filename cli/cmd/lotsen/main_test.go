@@ -9,7 +9,7 @@ import (
 )
 
 func TestSha256File_ReturnsHashForKnownContent(t *testing.T) {
-	content := []byte("hello dirigent")
+	content := []byte("hello lotsen")
 	tmp, err := os.CreateTemp("", "sha256test-*")
 	if err != nil {
 		t.Fatal(err)

@@ -12,10 +12,10 @@ import (
 
 	"golang.org/x/crypto/acme/autocert"
 
-	"github.com/ercadev/dirigent/proxy/internal/handler"
-	"github.com/ercadev/dirigent/proxy/internal/middleware"
-	"github.com/ercadev/dirigent/proxy/internal/routing"
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/proxy/internal/handler"
+	"github.com/ercadev/lotsen/proxy/internal/middleware"
+	"github.com/ercadev/lotsen/proxy/internal/routing"
+	"github.com/ercadev/lotsen/store"
 )
 
 type tableStub struct {

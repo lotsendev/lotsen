@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/ercadev/dirigent/internal/events"
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/internal/events"
+	"github.com/ercadev/lotsen/store"
 )
 
 func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {

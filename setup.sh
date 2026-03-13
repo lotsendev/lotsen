@@ -10,7 +10,7 @@
 #   sudo bash setup.sh
 #
 # To pin a specific version:
-#   sudo DIRIGENT_VERSION=v0.0.2 bash setup.sh
+#   sudo LOTSEN_VERSION=v0.0.2 bash setup.sh
 #
 # Supported operating systems:
 #   Ubuntu 22.04 (Jammy) and later
@@ -24,10 +24,10 @@
 
 set -euo pipefail
 
-ENV_FILE="/etc/dirigent/dirigent.env"
-UPGRADE_MODE="${DIRIGENT_UPGRADE:-${LOTSEN_UPGRADE:-0}}"
-NON_INTERACTIVE_MODE="${DIRIGENT_NON_INTERACTIVE:-${LOTSEN_NON_INTERACTIVE:-0}}"
-REQUESTED_SECURITY_PROFILE="${DIRIGENT_SECURITY_PROFILE:-${LOTSEN_SECURITY_PROFILE:-}}"
+ENV_FILE="/etc/lotsen/lotsen.env"
+UPGRADE_MODE="${LOTSEN_UPGRADE:-0}"
+NON_INTERACTIVE_MODE="${LOTSEN_NON_INTERACTIVE:-0}"
+REQUESTED_SECURITY_PROFILE="${LOTSEN_SECURITY_PROFILE:-}"
 
 # ─── output helpers ───────────────────────────────────────────────────────────
 
@@ -80,30 +80,23 @@ write_dashboard_env() {
     local rp_origin=""
     local tmp
 
-    install -m 700 -d /etc/dirigent
+    install -m 700 -d /etc/lotsen
     tmp=$(mktemp)
 
     if [ -f "${ENV_FILE}" ]; then
-        awk '!/^(DIRIGENT|LOTSEN)_(DASHBOARD_(DOMAIN|USER|PASSWORD|ACCESS_MODE)|AUTH_(USER|PASSWORD|COOKIE_DOMAIN)|JWT_SECRET|RP_ID|RP_ORIGINS)=/' "${ENV_FILE}" > "${tmp}"
+        awk '!/^LOTSEN_(DASHBOARD_(DOMAIN|USER|PASSWORD|ACCESS_MODE)|AUTH_(USER|PASSWORD|COOKIE_DOMAIN)|JWT_SECRET|RP_ID|RP_ORIGINS)=/' "${ENV_FILE}" > "${tmp}"
     fi
 
     if [ -n "${dashboard_domain}" ]; then
         rp_origin="https://${dashboard_domain}"
         {
-            echo "DIRIGENT_DASHBOARD_DOMAIN=${dashboard_domain}"
             echo "LOTSEN_DASHBOARD_DOMAIN=${dashboard_domain}"
-            echo "DIRIGENT_RP_ID=${dashboard_domain}"
-            echo "DIRIGENT_RP_ORIGINS=${rp_origin}"
             echo "LOTSEN_RP_ID=${dashboard_domain}"
             echo "LOTSEN_RP_ORIGINS=${rp_origin}"
         } >> "${tmp}"
     fi
 
     {
-        echo "DIRIGENT_JWT_SECRET=${jwt_secret}"
-        echo "DIRIGENT_AUTH_USER=${auth_user}"
-        echo "DIRIGENT_AUTH_PASSWORD=${auth_password}"
-        echo "DIRIGENT_DASHBOARD_ACCESS_MODE=${dashboard_access_mode}"
         echo "LOTSEN_JWT_SECRET=${jwt_secret}"
         echo "LOTSEN_AUTH_USER=${auth_user}"
         echo "LOTSEN_AUTH_PASSWORD=${auth_password}"
@@ -111,10 +104,7 @@ write_dashboard_env() {
     } >> "${tmp}"
 
     if [ -n "${auth_cookie_domain}" ]; then
-        {
-            echo "DIRIGENT_AUTH_COOKIE_DOMAIN=${auth_cookie_domain}"
-            echo "LOTSEN_AUTH_COOKIE_DOMAIN=${auth_cookie_domain}"
-        } >> "${tmp}"
+        echo "LOTSEN_AUTH_COOKIE_DOMAIN=${auth_cookie_domain}" >> "${tmp}"
     fi
 
     install -m 600 "${tmp}" "${ENV_FILE}"
@@ -205,7 +195,7 @@ apply_strict_ssh_hardening() {
         error "Strict profile requested but /etc/ssh/sshd_config is missing"
     fi
 
-    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.dirigent.bak
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.lotsen.bak
 
     if grep -qE '^\s*PasswordAuthentication\s+' /etc/ssh/sshd_config; then
         sed -i 's/^\s*PasswordAuthentication\s\+.*/PasswordAuthentication no/' /etc/ssh/sshd_config
@@ -253,10 +243,10 @@ configure_firewall() {
     ufw allow 80/tcp
     ufw allow 443/tcp
 
-    if [ "${DIRIGENT_OPEN_DASHBOARD_PORT:-0}" = "1" ]; then
+    if [ "${LOTSEN_OPEN_DASHBOARD_PORT:-0}" = "1" ]; then
         ufw allow 3000/tcp
     fi
-    if [ "${DIRIGENT_OPEN_API_PORT:-0}" = "1" ]; then
+    if [ "${LOTSEN_OPEN_API_PORT:-0}" = "1" ]; then
         ufw allow 8080/tcp
     fi
 
@@ -278,7 +268,7 @@ step "Detecting operating system"
 
 if [ ! -f /etc/os-release ]; then
     error "Cannot determine OS: /etc/os-release not found.
-       Dirigent supports Ubuntu 22.04+ and Debian 11+."
+       Lotsen supports Ubuntu 22.04+ and Debian 11+."
 fi
 
 # Source the file to get ID and VERSION_ID as shell variables.
@@ -305,7 +295,7 @@ case "${OS_ID}" in
         ;;
     *)
         error "Unsupported operating system: ${OS_ID}.
-       Dirigent supports Ubuntu 22.04+ and Debian 11+."
+       Lotsen supports Ubuntu 22.04+ and Debian 11+."
         ;;
 esac
 
@@ -327,7 +317,7 @@ case "${SECURITY_PROFILE}" in
     strict|standard|off)
         ;;
     *)
-        error "Invalid security profile '${SECURITY_PROFILE}'. Set DIRIGENT_SECURITY_PROFILE or LOTSEN_SECURITY_PROFILE to strict, standard, or off."
+        error "Invalid security profile '${SECURITY_PROFILE}'. Set LOTSEN_SECURITY_PROFILE to strict, standard, or off."
         ;;
 esac
 
@@ -341,15 +331,15 @@ fi
 
 # ─── version resolution ───────────────────────────────────────────────────────
 
-DIRIGENT_VERSION="${DIRIGENT_VERSION:-${LOTSEN_VERSION:-latest}}"
+LOTSEN_VERSION="${LOTSEN_VERSION:-latest}"
 
-if [ "${DIRIGENT_VERSION}" = "latest" ]; then
-    RELEASE_BASE="https://github.com/ercadev/dirigent-releases/releases/latest/download"
+if [ "${LOTSEN_VERSION}" = "latest" ]; then
+    RELEASE_BASE="https://github.com/ercadev/lotsen-releases/releases/latest/download"
 else
-    RELEASE_BASE="https://github.com/ercadev/dirigent-releases/releases/download/${DIRIGENT_VERSION}"
+    RELEASE_BASE="https://github.com/ercadev/lotsen-releases/releases/download/${LOTSEN_VERSION}"
 fi
 
-step "Using release: ${DIRIGENT_VERSION}"
+step "Using release: ${LOTSEN_VERSION}"
 
 # ─── Docker installation ──────────────────────────────────────────────────────
 
@@ -398,33 +388,13 @@ fi
 # out from under a running process. Also stop and disable the legacy monolithic
 # service from older installs so it does not hold port 8080.
 SERVICES="lotsen-api lotsen-orchestrator lotsen-proxy"
-LEGACY_SERVICES="dirigent-api dirigent-orchestrator dirigent-proxy"
 
-step "Stopping any running Dirigent services"
+step "Stopping any running Lotsen services"
 
-if systemctl is-active --quiet dirigent 2>/dev/null; then
-    step "Stopping legacy dirigent.service"
-    systemctl stop dirigent
-    systemctl disable dirigent 2>/dev/null || true
-fi
-
-if systemctl is-active --quiet dirigent-dashboard 2>/dev/null; then
-    step "Stopping legacy dirigent-dashboard"
-    systemctl stop dirigent-dashboard
-fi
-systemctl disable dirigent-dashboard 2>/dev/null || true
-
-for svc in ${SERVICES} ${LEGACY_SERVICES}; do
+for svc in ${SERVICES}; do
     if systemctl is-active --quiet "${svc}" 2>/dev/null; then
         step "Stopping ${svc}"
         systemctl stop "${svc}"
-    fi
-done
-
-for svc in ${LEGACY_SERVICES}; do
-    if systemctl is-enabled --quiet "${svc}" 2>/dev/null; then
-        step "Disabling legacy ${svc}"
-        systemctl disable "${svc}" 2>/dev/null || true
     fi
 done
 
@@ -444,7 +414,7 @@ download_binary "lotsen-proxy-linux-${ARCH}"            /usr/local/bin/lotsen-pr
 
 # ─── data directory ───────────────────────────────────────────────────────────
 
-DATA_DIR="/var/lib/dirigent"
+DATA_DIR="/var/lib/lotsen"
 
 if [ ! -d "${DATA_DIR}" ]; then
     step "Creating data directory ${DATA_DIR}"
@@ -455,12 +425,12 @@ fi
 
 # ─── dashboard public exposure setup ──────────────────────────────────────────
 
-DASHBOARD_DOMAIN="${DIRIGENT_DASHBOARD_DOMAIN:-}"
-AUTH_USER="${DIRIGENT_AUTH_USER:-${LOTSEN_AUTH_USER:-}}"
-AUTH_PASSWORD="${DIRIGENT_AUTH_PASSWORD:-${LOTSEN_AUTH_PASSWORD:-}}"
-JWT_SECRET="${DIRIGENT_JWT_SECRET:-${LOTSEN_JWT_SECRET:-}}"
-AUTH_COOKIE_DOMAIN="${DIRIGENT_AUTH_COOKIE_DOMAIN:-${LOTSEN_AUTH_COOKIE_DOMAIN:-}}"
-DASHBOARD_ACCESS_MODE="${DIRIGENT_DASHBOARD_ACCESS_MODE:-${LOTSEN_DASHBOARD_ACCESS_MODE:-}}"
+DASHBOARD_DOMAIN="${LOTSEN_DASHBOARD_DOMAIN:-}"
+AUTH_USER="${LOTSEN_AUTH_USER:-}"
+AUTH_PASSWORD="${LOTSEN_AUTH_PASSWORD:-}"
+JWT_SECRET="${LOTSEN_JWT_SECRET:-}"
+AUTH_COOKIE_DOMAIN="${LOTSEN_AUTH_COOKIE_DOMAIN:-}"
+DASHBOARD_ACCESS_MODE="${LOTSEN_DASHBOARD_ACCESS_MODE:-}"
 GENERATED_AUTH_PASSWORD=0
 GENERATED_JWT_SECRET=0
 EXISTING_DASHBOARD_DOMAIN=""
@@ -471,31 +441,12 @@ EXISTING_AUTH_COOKIE_DOMAIN=""
 EXISTING_DASHBOARD_ACCESS_MODE=""
 
 if [ -f "${ENV_FILE}" ]; then
-    EXISTING_DASHBOARD_DOMAIN=$(read_env_value "DIRIGENT_DASHBOARD_DOMAIN")
-    EXISTING_AUTH_USER=$(read_env_value "DIRIGENT_AUTH_USER")
-    EXISTING_AUTH_PASSWORD=$(read_env_value "DIRIGENT_AUTH_PASSWORD")
-    EXISTING_JWT_SECRET=$(read_env_value "DIRIGENT_JWT_SECRET")
-    EXISTING_AUTH_COOKIE_DOMAIN=$(read_env_value "DIRIGENT_AUTH_COOKIE_DOMAIN")
-    EXISTING_DASHBOARD_ACCESS_MODE=$(read_env_value "DIRIGENT_DASHBOARD_ACCESS_MODE")
-    if [ -z "${EXISTING_DASHBOARD_DOMAIN}" ]; then
-        EXISTING_DASHBOARD_DOMAIN=$(read_env_value "LOTSEN_DASHBOARD_DOMAIN")
-    fi
-    if [ -z "${EXISTING_AUTH_USER}" ]; then
-        EXISTING_AUTH_USER=$(read_env_value "LOTSEN_AUTH_USER")
-    fi
-    if [ -z "${EXISTING_AUTH_PASSWORD}" ]; then
-        EXISTING_AUTH_PASSWORD=$(read_env_value "LOTSEN_AUTH_PASSWORD")
-    fi
-    if [ -z "${EXISTING_JWT_SECRET}" ]; then
-        EXISTING_JWT_SECRET=$(read_env_value "LOTSEN_JWT_SECRET")
-    fi
-    if [ -z "${EXISTING_AUTH_COOKIE_DOMAIN}" ]; then
-        EXISTING_AUTH_COOKIE_DOMAIN=$(read_env_value "LOTSEN_AUTH_COOKIE_DOMAIN")
-    fi
-    if [ -z "${EXISTING_DASHBOARD_ACCESS_MODE}" ]; then
-        EXISTING_DASHBOARD_ACCESS_MODE=$(read_env_value "LOTSEN_DASHBOARD_ACCESS_MODE")
-    fi
-
+    EXISTING_DASHBOARD_DOMAIN=$(read_env_value "LOTSEN_DASHBOARD_DOMAIN")
+    EXISTING_AUTH_USER=$(read_env_value "LOTSEN_AUTH_USER")
+    EXISTING_AUTH_PASSWORD=$(read_env_value "LOTSEN_AUTH_PASSWORD")
+    EXISTING_JWT_SECRET=$(read_env_value "LOTSEN_JWT_SECRET")
+    EXISTING_AUTH_COOKIE_DOMAIN=$(read_env_value "LOTSEN_AUTH_COOKIE_DOMAIN")
+    EXISTING_DASHBOARD_ACCESS_MODE=$(read_env_value "LOTSEN_DASHBOARD_ACCESS_MODE")
     if [ -z "${DASHBOARD_DOMAIN}" ] && [ -n "${EXISTING_DASHBOARD_DOMAIN}" ]; then
         DASHBOARD_DOMAIN="${EXISTING_DASHBOARD_DOMAIN}"
     fi
@@ -618,12 +569,12 @@ fi
 
 if [ -n "${DASHBOARD_DOMAIN}" ]; then
     if ! validate_domain "${DASHBOARD_DOMAIN}"; then
-        error "DIRIGENT_DASHBOARD_DOMAIN is set but invalid. Example: dashboard.example.com"
+        error "LOTSEN_DASHBOARD_DOMAIN is set but invalid. Example: dashboard.example.com"
     fi
 fi
 
 if ! validate_dashboard_access_mode "${DASHBOARD_ACCESS_MODE}"; then
-    error "DIRIGENT_DASHBOARD_ACCESS_MODE must be one of: login_only, waf_only, waf_and_login"
+    error "LOTSEN_DASHBOARD_ACCESS_MODE must be one of: login_only, waf_only, waf_and_login"
 fi
 
 step "Writing shared environment file"
@@ -640,17 +591,17 @@ fi
 
 # ─── Docker network ───────────────────────────────────────────────────────────
 
-DIRIGENT_NETWORK="dirigent"
+LOTSEN_NETWORK="lotsen"
 
-step "Checking for Dirigent Docker network"
+step "Checking for Lotsen Docker network"
 
-if docker network inspect "${DIRIGENT_NETWORK}" > /dev/null 2>&1; then
-    step "Docker network '${DIRIGENT_NETWORK}' already exists; skipping"
+if docker network inspect "${LOTSEN_NETWORK}" > /dev/null 2>&1; then
+    step "Docker network '${LOTSEN_NETWORK}' already exists; skipping"
     STEP_NETWORK="already exists"
 else
-    step "Creating Docker bridge network '${DIRIGENT_NETWORK}'"
-    docker network create --driver bridge "${DIRIGENT_NETWORK}"
-    step "Docker network '${DIRIGENT_NETWORK}' created"
+    step "Creating Docker bridge network '${LOTSEN_NETWORK}'"
+    docker network create --driver bridge "${LOTSEN_NETWORK}"
+    step "Docker network '${LOTSEN_NETWORK}' created"
     STEP_NETWORK="created"
 fi
 
@@ -661,7 +612,7 @@ step "Writing systemd unit files"
 cat > /etc/systemd/system/lotsen-api.service << EOF
 [Unit]
 Description=Lotsen API
-Documentation=https://github.com/ercadev/dirigent
+Documentation=https://github.com/ercadev/lotsen
 After=network.target docker.service
 Requires=docker.service
 
@@ -669,7 +620,7 @@ Requires=docker.service
 Type=simple
 ExecStart=/usr/local/bin/lotsen-api
 EnvironmentFile=-${ENV_FILE}
-Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
+Environment=LOTSEN_DATA=${DATA_DIR}/deployments.json
 Restart=on-failure
 RestartSec=5
 
@@ -680,7 +631,7 @@ EOF
 cat > /etc/systemd/system/lotsen-orchestrator.service << EOF
 [Unit]
 Description=Lotsen orchestrator
-Documentation=https://github.com/ercadev/dirigent
+Documentation=https://github.com/ercadev/lotsen
 After=network.target docker.service lotsen-api.service
 Requires=docker.service
 
@@ -688,8 +639,8 @@ Requires=docker.service
 Type=simple
 ExecStart=/usr/local/bin/lotsen-orchestrator
 EnvironmentFile=-${ENV_FILE}
-Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
-Environment=DIRIGENT_API_URL=http://localhost:8080
+Environment=LOTSEN_DATA=${DATA_DIR}/deployments.json
+Environment=LOTSEN_API_URL=http://localhost:8080
 Restart=on-failure
 RestartSec=5
 
@@ -700,7 +651,7 @@ EOF
 cat > /etc/systemd/system/lotsen-proxy.service << EOF
 [Unit]
 Description=Lotsen reverse proxy
-Documentation=https://github.com/ercadev/dirigent
+Documentation=https://github.com/ercadev/lotsen
 After=network.target docker.service lotsen-api.service
 Requires=docker.service
 
@@ -708,17 +659,13 @@ Requires=docker.service
 Type=simple
 ExecStart=/usr/local/bin/lotsen-proxy
 EnvironmentFile=-${ENV_FILE}
-Environment=DIRIGENT_DATA=${DATA_DIR}/deployments.json
+Environment=LOTSEN_DATA=${DATA_DIR}/deployments.json
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 EOF
-
-rm -f /etc/systemd/system/dirigent-api.service
-rm -f /etc/systemd/system/dirigent-orchestrator.service
-rm -f /etc/systemd/system/dirigent-proxy.service
 
 # ─── enable and start services ────────────────────────────────────────────────
 
@@ -750,7 +697,7 @@ fi
 
 echo ""
 echo "  ┌─────────────────────────────────────────────────────────────────────────┐"
-echo "  │  Dirigent is ready                                                      │"
+echo "  │  Lotsen is ready                                                      │"
 echo "  └─────────────────────────────────────────────────────────────────────────┘"
 echo ""
 echo "  Services:"
@@ -779,7 +726,7 @@ if [ -n "${DASHBOARD_DOMAIN}" ]; then
     echo "  and port 80 is open so certificates can be issued."
 else
     echo "  Note: The dashboard is served directly by lotsen-api on :8080."
-    echo "  Configure DIRIGENT_DASHBOARD_DOMAIN in setup to expose it through"
+    echo "  Configure LOTSEN_DASHBOARD_DOMAIN in setup to expose it through"
     echo "  the :80/:443 reverse proxy with TLS."
 fi
 echo ""
@@ -787,5 +734,5 @@ echo "  Setup summary:"
 echo "    Docker        ${STEP_DOCKER}"
 echo "    Network       ${STEP_NETWORK}"
 echo "    Data dir      ${DATA_DIR}"
-echo "    Version       ${DIRIGENT_VERSION}"
+echo "    Version       ${LOTSEN_VERSION}"
 echo ""

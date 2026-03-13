@@ -1,6 +1,6 @@
-# Getting Started with Dirigent
+# Getting Started with Lotsen
 
-This guide covers two paths: running Dirigent on a VPS (production) and running it locally for development.
+This guide covers two paths: running Lotsen on a VPS (production) and running it locally for development.
 
 ---
 
@@ -15,7 +15,7 @@ This guide covers two paths: running Dirigent on a VPS (production) and running 
 ### Install
 
 ```bash
-curl -fsSL https://github.com/ercadev/dirigent-releases/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/ercadev/lotsen-releases/releases/latest/download/install.sh | sudo bash
 sudo lotsen setup
 ```
 
@@ -23,7 +23,7 @@ The bootstrap installer installs the `lotsen` CLI.
 
 Then `lotsen setup` will:
 1. Install Docker Engine if not already present
-2. Download all Dirigent components for your architecture (`amd64` or `arm64`)
+2. Download all Lotsen components for your architecture (`amd64` or `arm64`)
 3. Create and enable three systemd services
 4. Print a summary of running services and their ports
 
@@ -49,13 +49,13 @@ You can re-run dashboard exposure/auth setup at any time:
 sudo lotsen setup
 ```
 
-This command updates `/etc/dirigent/dirigent.env` and restarts `lotsen-proxy`.
+This command updates `/etc/lotsen/lotsen.env` and restarts `lotsen-proxy`.
 
 ### Pin a specific version
 
 ```bash
-DIRIGENT_VERSION=v0.1.0 curl -fsSL https://github.com/ercadev/dirigent-releases/releases/download/v0.1.0/install.sh | sudo bash
-sudo DIRIGENT_VERSION=v0.1.0 lotsen setup
+LOTSEN_VERSION=v0.1.0 curl -fsSL https://github.com/ercadev/lotsen-releases/releases/download/v0.1.0/install.sh | sudo bash
+sudo LOTSEN_VERSION=v0.1.0 lotsen setup
 ```
 
 ### Upgrade
@@ -137,7 +137,7 @@ make clean   # remove build artifacts
 
 ### State
 
-All services share a single JSON file at `/tmp/dirigent.json` in dev mode. Delete it to reset state.
+All services share a single JSON file at `/tmp/lotsen.json` in dev mode. Delete it to reset state.
 
 ---
 

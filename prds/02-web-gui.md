@@ -6,7 +6,7 @@ Managing Docker containers on a VPS today requires SSH access and CLI knowledge.
 
 ## Solution
 
-A browser-based GUI served by the Dirigent backend that gives the user full control over their deployments. Users can create, view, edit, and remove deployments, see real-time status and logs, and configure everything needed to run a container in production — all without touching the command line.
+A browser-based GUI served by the Lotsen backend that gives the user full control over their deployments. Users can create, view, edit, and remove deployments, see real-time status and logs, and configure everything needed to run a container in production — all without touching the command line.
 
 ## User Stories
 
@@ -28,13 +28,13 @@ A browser-based GUI served by the Dirigent backend that gives the user full cont
 
 ## Implementation Decisions
 
-- React frontend, served as a static build by the Dirigent Go server
+- React frontend, served as a static build by the Lotsen Go server
 - Go backend exposes a REST API for deployment CRUD operations
 - Deployment entity fields: id, name, image, envs (key-value pairs), ports (host:container mappings), volumes (host path:container path), domain (optional), status
 - Deployment statuses: `idle`, `deploying`, `healthy`, `failed`
 - Real-time log streaming via WebSocket or Server-Sent Events (SSE)
 - Real-time status updates via WebSocket or SSE
-- GUI is served on a well-known port (e.g. 3000 or 8080) by the Dirigent process
+- GUI is served on a well-known port (e.g. 3000 or 8080) by the Lotsen process
 - The backend is the single source of truth for deployment state — the GUI is stateless
 
 ## Testing Decisions
@@ -56,4 +56,4 @@ A browser-based GUI served by the Dirigent backend that gives the user full cont
 
 ## Further Notes
 
-The GUI should feel fast and minimal. Every interaction should be obvious to a developer who has used Docker before, even if they've never heard of Dirigent. Avoid introducing new terminology where Docker's own terms suffice.
+The GUI should feel fast and minimal. Every interaction should be obvious to a developer who has used Docker before, even if they've never heard of Lotsen. Avoid introducing new terminology where Docker's own terms suffice.

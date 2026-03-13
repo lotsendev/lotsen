@@ -3,8 +3,8 @@ package routing_test
 import (
 	"testing"
 
-	"github.com/ercadev/dirigent/proxy/internal/routing"
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/proxy/internal/routing"
+	"github.com/ercadev/lotsen/store"
 )
 
 func TestTable_SetAndGet(t *testing.T) {

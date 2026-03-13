@@ -1,4 +1,4 @@
-# Product Definition: Dirigent
+# Product Definition: Lotsen
 
 ## Vision
 Give any solo developer or small team the power of a production-grade Docker orchestration platform without the complexity tax of Kubernetes.
@@ -10,7 +10,7 @@ Running Docker containers in production on a VPS is manual, fragile, and undocum
 Solo developers and small engineering teams (1–5 people) running production workloads on one or a few VPS instances. They know Docker, they don't want to learn Kubernetes, and they value their time over configurability.
 
 ## Core Value Proposition
-Dirigent is the simplest path from "a VPS with Docker" to "production-ready container orchestration." No YAML sprawl, no cluster setup, no ops expertise required. Install in one command, deploy in minutes.
+Lotsen is the simplest path from "a VPS with Docker" to "production-ready container orchestration." No YAML sprawl, no cluster setup, no ops expertise required. Install in one command, deploy in minutes.
 
 ## Key Features (v1)
 - **One-script installer**: Full setup in a single command. Zero prerequisites beyond Docker.
@@ -26,6 +26,6 @@ Dirigent is the simplest path from "a VPS with Docker" to "production-ready cont
 - **App marketplace / templates**: No one-click app catalog.
 
 ## Success Metrics
-- Dirigent is running in at least one personal production environment (dogfood signal)
+- Lotsen is running in at least one personal production environment (dogfood signal)
 - 100+ installs within 60 days of public release
 - End-to-end time from blank VPS to running container is under 5 minutes

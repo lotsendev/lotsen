@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ercadev/dirigent/orchestrator/internal/docker"
-	"github.com/ercadev/dirigent/orchestrator/internal/reconciler"
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/orchestrator/internal/docker"
+	"github.com/ercadev/lotsen/orchestrator/internal/reconciler"
+	"github.com/ercadev/lotsen/store"
 )
 
 // mockNotifier records NotifyStatus calls and can be configured to fail.

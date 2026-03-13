@@ -5,7 +5,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/ercadev/dirigent/store"
+	"github.com/ercadev/lotsen/store"
 )
 
 const (

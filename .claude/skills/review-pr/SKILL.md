@@ -35,7 +35,7 @@ description: Reviews GitHub pull requests by fetching PR diffs, summarizing chan
 
 ## Posting to GitHub
 
-Use `mcp__github__create_pull_request_review` with `owner=ercadev`, `repo=dirigent`, and the PR number.
+Use `mcp__github__create_pull_request_review` with `owner=ercadev`, `repo=lotsen`, and the PR number.
 
 ### Approve
 Set `event=APPROVE` and `body="<summary>"`.

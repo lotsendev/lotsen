@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/store"
 )
 
 type deploymentResponse struct {

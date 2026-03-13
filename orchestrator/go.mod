@@ -1,15 +1,15 @@
-module github.com/ercadev/lotsen/orchestrator
+module github.com/lotsendev/lotsen/orchestrator
 
 go 1.24.0
 
 require (
 	github.com/docker/docker v27.5.1+incompatible
 	github.com/docker/go-connections v0.6.0
-	github.com/ercadev/lotsen/store v0.0.0
+	github.com/lotsendev/lotsen/store v0.0.0
 	github.com/opencontainers/image-spec v1.1.1
 )
 
-replace github.com/ercadev/lotsen/store => ../store
+replace github.com/lotsendev/lotsen/store => ../store
 
 require (
 	github.com/Microsoft/go-winio v0.4.21 // indirect

@@ -50,7 +50,7 @@ export function Footer() {
           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--clr-muted)')}
           onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--clr-subtle)')}
         >
-          ercadev/lotsen ↗
+          lotsendev/lotsen ↗
         </a>
       </div>
     </footer>

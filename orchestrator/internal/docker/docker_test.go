@@ -19,8 +19,8 @@ import (
 	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"github.com/ercadev/lotsen/orchestrator/internal/docker"
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/orchestrator/internal/docker"
+	"github.com/lotsendev/lotsen/store"
 )
 
 type mockClient struct {

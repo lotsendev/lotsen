@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ercadev/lotsen/proxy/internal/handler"
-	"github.com/ercadev/lotsen/proxy/internal/middleware"
-	"github.com/ercadev/lotsen/proxy/internal/routing"
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/proxy/internal/handler"
+	"github.com/lotsendev/lotsen/proxy/internal/middleware"
+	"github.com/lotsendev/lotsen/proxy/internal/routing"
+	"github.com/lotsendev/lotsen/store"
 	"golang.org/x/crypto/bcrypt"
 )
 

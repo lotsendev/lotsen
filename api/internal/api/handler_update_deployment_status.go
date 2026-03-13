@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/ercadev/lotsen/internal/events"
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/internal/events"
+	"github.com/lotsendev/lotsen/store"
 )
 
 func (h *Handler) updateDeploymentStatus(w http.ResponseWriter, r *http.Request) {

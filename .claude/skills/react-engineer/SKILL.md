@@ -21,7 +21,7 @@ description: Senior React engineer that reads GitHub issues, plans UI architectu
 
 ### 1. Read the issue
 
-Fetch the issue with `mcp__github__get_issue` (`owner=ercadev`, `repo=lotsen`). Read all comments via `mcp__github__get_issue_comments`. Internalize:
+Fetch the issue with `mcp__github__get_issue` (`owner=lotsendev`, `repo=lotsen`). Read all comments via `mcp__github__get_issue_comments`. Internalize:
 
 - What user problem is being solved (not just what to build)
 - Acceptance criteria

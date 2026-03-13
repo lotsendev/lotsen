@@ -3,7 +3,7 @@ package middleware_test
 import (
 	"testing"
 
-	"github.com/ercadev/lotsen/proxy/internal/middleware"
+	"github.com/lotsendev/lotsen/proxy/internal/middleware"
 )
 
 func TestUAFilter_BlocksScannerAndHeadless(t *testing.T) {

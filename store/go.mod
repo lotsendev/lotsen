@@ -1,3 +1,3 @@
-module github.com/ercadev/lotsen/store
+module github.com/lotsendev/lotsen/store
 
 go 1.24.0

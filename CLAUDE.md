@@ -2,7 +2,7 @@
 
 ## Project Context
 Docker orchestration for solo devs/VPS. Lightweight K8s alternative.
-- **Repo:** `ercadev/lotsen` (Always use for `gh` commands).
+- **Repo:** `lotsendev/lotsen` (Always use for `gh` commands).
 - **Stack:** Go (Backend/Orchestrator), Bun + React + Vite (Frontend).
 - **Data Flow:** Dashboard → API → JSON Store ← Orchestrator → Docker.
 

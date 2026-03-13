@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ercadev/lotsen/proxy/internal/middleware"
-	"github.com/ercadev/lotsen/proxy/internal/routing"
-	"github.com/ercadev/lotsen/store"
+	"github.com/lotsendev/lotsen/proxy/internal/middleware"
+	"github.com/lotsendev/lotsen/proxy/internal/routing"
+	"github.com/lotsendev/lotsen/store"
 )
 
 // RoutingTable is the interface the handler reads from when proxying requests

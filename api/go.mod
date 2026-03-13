@@ -1,11 +1,11 @@
-module github.com/ercadev/lotsen
+module github.com/lotsendev/lotsen
 
 go 1.25.0
 
 require (
 	github.com/docker/docker v27.5.1+incompatible
-	github.com/ercadev/lotsen/auth v0.0.0
-	github.com/ercadev/lotsen/store v0.0.0
+	github.com/lotsendev/lotsen/auth v0.0.0
+	github.com/lotsendev/lotsen/store v0.0.0
 	github.com/go-webauthn/webauthn v0.16.0
 	golang.org/x/crypto v0.48.0
 )
@@ -57,6 +57,6 @@ require (
 	modernc.org/sqlite v1.37.0 // indirect
 )
 
-replace github.com/ercadev/lotsen/auth => ../auth
+replace github.com/lotsendev/lotsen/auth => ../auth
 
-replace github.com/ercadev/lotsen/store => ../store
+replace github.com/lotsendev/lotsen/store => ../store

@@ -36,7 +36,7 @@ Iterate until the user approves.
 
 ```bash
 gh issue create \
-  --repo ercadev/lotsen \
+  --repo lotsendev/lotsen \
   --title "<title>" \
   --body "<body>"
 ```

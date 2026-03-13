@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ercadev/lotsen/proxy/internal/middleware"
+	"github.com/lotsendev/lotsen/proxy/internal/middleware"
 )
 
 func TestWAF_EnforcementBlocksCustomRuleMatch(t *testing.T) {

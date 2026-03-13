@@ -3,7 +3,7 @@
 # Lotsen bootstrap installer
 #
 # Usage:
-#   curl -fsSL https://github.com/ercadev/lotsen-releases/releases/latest/download/install.sh | sudo bash
+#   curl -fsSL https://github.com/lotsendev/lotsen/releases/latest/download/install.sh | sudo bash
 #
 # This script only installs the Lotsen CLI binary. Run `lotsen setup`
 # afterwards to perform the full host setup.
@@ -62,9 +62,9 @@ esac
 LOTSEN_VERSION="${LOTSEN_VERSION:-latest}"
 
 if [ "${LOTSEN_VERSION}" = "latest" ]; then
-    RELEASE_BASE="https://github.com/ercadev/lotsen-releases/releases/latest/download"
+    RELEASE_BASE="https://github.com/lotsendev/lotsen/releases/latest/download"
 else
-    RELEASE_BASE="https://github.com/ercadev/lotsen-releases/releases/download/${LOTSEN_VERSION}"
+    RELEASE_BASE="https://github.com/lotsendev/lotsen/releases/download/${LOTSEN_VERSION}"
 fi
 
 step "Installing Lotsen CLI (${LOTSEN_VERSION}, linux/${ARCH})"

@@ -30,7 +30,7 @@ If you expose the dashboard on a domain, also prepare DNS:
 If Lotsen is not installed yet:
 
 ```bash
-curl -fsSL https://github.com/ercadev/lotsen-releases/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/lotsendev/lotsen/releases/latest/download/install.sh | sudo bash
 sudo lotsen setup --profile strict --proxy-hardening-profile strict
 ```
 

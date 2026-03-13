@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	internalapi "github.com/ercadev/lotsen/internal/api"
+	internalapi "github.com/lotsendev/lotsen/internal/api"
 )
 
 func TestAuthFromEnv_NoSecret(t *testing.T) {

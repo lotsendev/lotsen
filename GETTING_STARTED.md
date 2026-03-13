@@ -15,7 +15,7 @@ This guide covers two paths: running Lotsen on a VPS (production) and running it
 ### Install
 
 ```bash
-curl -fsSL https://github.com/ercadev/lotsen-releases/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/lotsendev/lotsen/releases/latest/download/install.sh | sudo bash
 sudo lotsen setup
 ```
 
@@ -54,7 +54,7 @@ This command updates `/etc/lotsen/lotsen.env` and restarts `lotsen-proxy`.
 ### Pin a specific version
 
 ```bash
-LOTSEN_VERSION=v0.1.0 curl -fsSL https://github.com/ercadev/lotsen-releases/releases/download/v0.1.0/install.sh | sudo bash
+LOTSEN_VERSION=v0.1.0 curl -fsSL https://github.com/lotsendev/lotsen/releases/download/v0.1.0/install.sh | sudo bash
 sudo LOTSEN_VERSION=v0.1.0 lotsen setup
 ```
 

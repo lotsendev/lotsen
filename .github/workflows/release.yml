@@ -17,7 +17,7 @@ env:
 jobs:
   ci-go:
     name: CI / Go
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -62,7 +62,7 @@ jobs:
 
   ci-react:
     name: CI / React
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     defaults:
       run:
         working-directory: dashboard
@@ -88,7 +88,7 @@ jobs:
   build:
     name: Build artifacts
     needs: [ci-go, ci-react]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -167,7 +167,7 @@ jobs:
   release:
     name: GitHub Release
     needs: [build]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: write
     steps:
@@ -208,7 +208,7 @@ jobs:
   docker-landing:
     name: Docker / Landing
     needs: [build]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 

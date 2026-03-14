@@ -32,6 +32,14 @@ func dataPath() string {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "config" {
+		if err := runConfig(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	s, err := store.NewJSONStore(dataPath())
 	if err != nil {
 		log.Fatalf("lotsen: open store: %v", err)

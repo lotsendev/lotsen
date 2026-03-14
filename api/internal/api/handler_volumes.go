@@ -1,30 +1,45 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
 const (
 	volumeMountModeManaged = "managed"
 	volumeMountModeBind    = "bind"
+	defaultManagedDirMode  = 0o777
 )
 
 var managedVolumeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
 
 type volumeMountRequest struct {
-	Mode   string `json:"mode"`
-	Source string `json:"source"`
-	Target string `json:"target"`
+	Mode    string `json:"mode"`
+	Source  string `json:"source"`
+	Target  string `json:"target"`
+	UID     *int   `json:"uid,omitempty"`
+	GID     *int   `json:"gid,omitempty"`
+	DirMode string `json:"dir_mode,omitempty"`
 }
 
 type volumeMountResponse struct {
 	Mode   string `json:"mode"`
 	Source string `json:"source"`
 	Target string `json:"target"`
+}
+
+type managedVolumeSettings struct {
+	hasUID     bool
+	uid        int
+	hasGID     bool
+	gid        int
+	hasDirMode bool
+	dirMode    os.FileMode
 }
 
 func managedVolumesBaseDirFromEnv() string {
@@ -65,7 +80,12 @@ func resolveVolumeBindings(deploymentID string, volumes []string, mounts []volum
 				return nil, fmt.Errorf("managed volume names must match %q", managedVolumeNamePattern.String())
 			}
 
-			hostPath, pathErr := ensureManagedVolumeDirectory(deploymentID, source)
+			settings, settingsErr := managedVolumeSettingsFromRequest(mount)
+			if settingsErr != nil {
+				return nil, settingsErr
+			}
+
+			hostPath, pathErr := ensureManagedVolumeDirectoryWithSettings(deploymentID, source, settings)
 			if pathErr != nil {
 				return nil, pathErr
 			}
@@ -76,6 +96,10 @@ func resolveVolumeBindings(deploymentID string, volumes []string, mounts []volum
 			seenSources[hostPath] = struct{}{}
 			bindings = append(bindings, hostPath+":"+target)
 		case volumeMountModeBind:
+			if mount.UID != nil || mount.GID != nil || strings.TrimSpace(mount.DirMode) != "" {
+				return nil, fmt.Errorf("uid, gid, and dir_mode are only supported for managed volume mounts")
+			}
+
 			hostPath, hostErr := cleanAbsolutePath(source)
 			if hostErr != nil {
 				return nil, fmt.Errorf("bind source must be an absolute path")
@@ -93,7 +117,7 @@ func resolveVolumeBindings(deploymentID string, volumes []string, mounts []volum
 	return bindings, nil
 }
 
-func ensureManagedVolumeDirectory(deploymentID, volumeName string) (string, error) {
+func ensureManagedVolumeDirectoryWithSettings(deploymentID, volumeName string, settings managedVolumeSettings) (string, error) {
 	base := managedVolumesBaseDirFromEnv()
 	if !filepath.IsAbs(base) {
 		return "", fmt.Errorf("managed volumes base path must be absolute")
@@ -105,11 +129,85 @@ func ensureManagedVolumeDirectory(deploymentID, volumeName string) (string, erro
 		return "", fmt.Errorf("managed volume path escapes configured base directory")
 	}
 
+	existed := true
+	if _, err := os.Stat(volumeDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			existed = false
+		} else {
+			return "", fmt.Errorf("stat managed volume directory: %w", err)
+		}
+	}
+
 	if err := os.MkdirAll(volumeDir, 0o755); err != nil {
 		return "", fmt.Errorf("create managed volume directory: %w", err)
 	}
 
+	if err := applyManagedVolumeSettings(volumeDir, settings, existed); err != nil {
+		return "", err
+	}
+
 	return volumeDir, nil
+}
+
+func managedVolumeSettingsFromRequest(mount volumeMountRequest) (managedVolumeSettings, error) {
+	settings := managedVolumeSettings{}
+
+	if mount.UID != nil {
+		if *mount.UID < 0 {
+			return managedVolumeSettings{}, fmt.Errorf("uid must be >= 0")
+		}
+		settings.hasUID = true
+		settings.uid = *mount.UID
+	}
+
+	if mount.GID != nil {
+		if *mount.GID < 0 {
+			return managedVolumeSettings{}, fmt.Errorf("gid must be >= 0")
+		}
+		settings.hasGID = true
+		settings.gid = *mount.GID
+	}
+
+	rawDirMode := strings.TrimSpace(mount.DirMode)
+	if rawDirMode != "" {
+		parsed, err := strconv.ParseUint(rawDirMode, 8, 32)
+		if err != nil || parsed > 0o777 {
+			return managedVolumeSettings{}, fmt.Errorf("dir_mode must be an octal permission between 0000 and 0777")
+		}
+		settings.hasDirMode = true
+		settings.dirMode = os.FileMode(parsed)
+	}
+
+	return settings, nil
+}
+
+func applyManagedVolumeSettings(volumeDir string, settings managedVolumeSettings, existed bool) error {
+	if !settings.hasDirMode && !existed {
+		settings.hasDirMode = true
+		settings.dirMode = defaultManagedDirMode
+	}
+
+	if settings.hasUID || settings.hasGID {
+		uid := -1
+		if settings.hasUID {
+			uid = settings.uid
+		}
+		gid := -1
+		if settings.hasGID {
+			gid = settings.gid
+		}
+		if err := os.Chown(volumeDir, uid, gid); err != nil {
+			return fmt.Errorf("set managed volume ownership: %w", err)
+		}
+	}
+
+	if settings.hasDirMode {
+		if err := os.Chmod(volumeDir, settings.dirMode); err != nil {
+			return fmt.Errorf("set managed volume permissions: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func cleanAbsolutePath(raw string) (string, error) {

@@ -9,7 +9,7 @@ A deployment is the central object in Lotsen. It describes a container you want 
 | name    | string   | Yes      | A human-readable identifier for the deployment. Used as the container name in Docker. Must be unique across all deployments. |
 | image   | string   | Yes      | The Docker image to run, including tag. The orchestrator pulls this image before starting the container. Example: `nginx:1.27` or `ghcr.io/myorg/api:latest`. |
 | ports   | string[] | No       | Port mappings in `host:container` format. Each entry maps a port on the VPS host to a port inside the container. Example: `["80:80", "443:443"]`. |
-| volume_mounts | object[] | No | Volume mounts with explicit mode: managed or bind. Managed mounts are created automatically under `/var/lib/lotsen/volumes/<deployment>/<volume>`. Example: `[{"mode":"managed","source":"postgres-data","target":"/var/lib/postgresql/data"}]`. |
+| volume_mounts | object[] | No | Volume mounts with explicit mode: managed or bind. Managed mounts are created automatically under `/var/lib/lotsen/volumes/<deployment>/<volume>`. Managed mounts also support optional `uid`, `gid`, and `dir_mode` ownership settings. Example: `[{"mode":"managed","source":"postgres-data","target":"/var/lib/postgresql/data","uid":5050,"gid":5050,"dir_mode":"0770"}]`. |
 | volumes | string[] | No | Backward-compatible raw bind format (`host-path:container-path`). Prefer `volume_mounts` for new deployments. |
 | envs    | object   | No       | Environment variables passed into the container as a key-value map. Values are stored in the Lotsen data file on disk. Example: `{"DATABASE_URL": "postgres://..."}`. |
 | domain  | string   | No       | A fully-qualified domain name to route to this container via the integrated reverse proxy. Point your DNS A record to the VPS IP, and Lotsen will forward HTTP traffic on port 80. Example: `api.example.com`. |
@@ -59,6 +59,21 @@ The first deploy creates:
 ```
 
 This path is remounted automatically on redeploy.
+
+For non-root images (for example pgAdmin), managed mounts are created with writable permissions by default (`0777`) so first boot can succeed without manual host `chown`. You can also override ownership explicitly:
+
+```json
+"volume_mounts": [
+  {
+    "mode": "managed",
+    "source": "pgadmin-data",
+    "target": "/var/lib/pgadmin",
+    "uid": 5050,
+    "gid": 5050,
+    "dir_mode": "0770"
+  }
+]
+```
 
 ### Advanced bind mount mode
 

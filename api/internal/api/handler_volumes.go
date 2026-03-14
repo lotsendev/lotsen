@@ -117,10 +117,6 @@ func resolveVolumeBindings(deploymentID string, volumes []string, mounts []volum
 	return bindings, nil
 }
 
-func ensureManagedVolumeDirectory(deploymentID, volumeName string) (string, error) {
-	return ensureManagedVolumeDirectoryWithSettings(deploymentID, volumeName, managedVolumeSettings{})
-}
-
 func ensureManagedVolumeDirectoryWithSettings(deploymentID, volumeName string, settings managedVolumeSettings) (string, error) {
 	base := managedVolumesBaseDirFromEnv()
 	if !filepath.IsAbs(base) {

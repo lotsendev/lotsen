@@ -592,3 +592,35 @@ func TestJSONStore_ResolveRegistryAuth_LongestPrefixWins(t *testing.T) {
 		t.Fatalf("want nil for public image, got %#v", auth)
 	}
 }
+
+func TestJSONStore_ListRegistriesForExport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deployments.json")
+	s, err := store.NewJSONStore(path)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	_, err = s.CreateRegistry("r1", "ghcr.io", "alice", "token-a")
+	if err != nil {
+		t.Fatalf("create registry r1: %v", err)
+	}
+	_, err = s.CreateRegistry("r2", "docker.io/myorg", "bob", "token-b")
+	if err != nil {
+		t.Fatalf("create registry r2: %v", err)
+	}
+
+	registries, err := s.ListRegistriesForExport()
+	if err != nil {
+		t.Fatalf("list registries for export: %v", err)
+	}
+	if len(registries) != 2 {
+		t.Fatalf("want 2 registries, got %d", len(registries))
+	}
+
+	if registries[0].Prefix != "ghcr.io" || registries[0].Username != "alice" || registries[0].Password != "token-a" {
+		t.Fatalf("unexpected first registry export: %#v", registries[0])
+	}
+	if registries[1].Prefix != "docker.io/myorg" || registries[1].Username != "bob" || registries[1].Password != "token-b" {
+		t.Fatalf("unexpected second registry export: %#v", registries[1])
+	}
+}

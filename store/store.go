@@ -111,6 +111,12 @@ type RegistryAuth struct {
 	Password string
 }
 
+type RegistryExport struct {
+	Prefix   string
+	Username string
+	Password string
+}
+
 type persistedState struct {
 	Deployments []Deployment `json:"deployments"`
 	Registries  []Registry   `json:"registries,omitempty"`
@@ -451,6 +457,32 @@ func (s *JSONStore) ResolveRegistryAuth(imageRef string) (*RegistryAuth, error) 
 	}
 
 	return &RegistryAuth{Username: match.Username, Password: password}, nil
+}
+
+func (s *JSONStore) ListRegistriesForExport() ([]RegistryExport, error) {
+	var result []RegistryExport
+	err := s.withRLock(func() error {
+		state, err := s.readState()
+		if err != nil {
+			return err
+		}
+
+		result = make([]RegistryExport, 0, len(state.Registries))
+		for _, entry := range state.Registries {
+			password, err := s.decryptSecret(entry.Secret)
+			if err != nil {
+				return err
+			}
+			result = append(result, RegistryExport{Prefix: entry.Prefix, Username: entry.Username, Password: password})
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func normalizeRegistryPrefix(prefix string) string {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -84,5 +85,47 @@ func TestCreateDeployment_ManagedVolumeMountRejectsTraversalName(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestCreateDeployment_ManagedVolumeMountAppliesDirMode(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("LOTSEN_MANAGED_VOLUMES_DIR", base)
+
+	srv := newTestServer(newMemStore())
+	defer srv.Close()
+
+	body := []byte(`{
+		"name":"pgadmin",
+		"image":"dpage/pgadmin4",
+		"ports":["80"],
+		"envs":{},
+		"volume_mounts":[{"mode":"managed","source":"data","target":"/var/lib/pgadmin","dir_mode":"0770"}]
+	}`)
+
+	resp, err := http.Post(srv.URL+"/api/deployments", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST /api/deployments: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("want 201, got %d", resp.StatusCode)
+	}
+
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	managedPath := filepath.Join(base, created.ID, "data")
+	info, statErr := os.Stat(managedPath)
+	if statErr != nil {
+		t.Fatalf("stat managed path: %v", statErr)
+	}
+	if got := info.Mode().Perm(); got != 0o770 {
+		t.Fatalf("want managed dir mode 0770, got %04o", got)
 	}
 }

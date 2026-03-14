@@ -46,9 +46,12 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 	if body.Envs == nil {
 		body.Envs = map[string]string{}
 	}
-	if body.Volumes == nil {
-		body.Volumes = []string{}
+	resolvedVolumes, err := resolveVolumeBindings(id, body.Volumes, body.VolumeMounts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
+	body.Volumes = resolvedVolumes
 	body.Security = normalizeSecurityConfig(body.Security)
 
 	allDeployments, err := h.store.List()
@@ -105,5 +108,5 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		Status:       string(store.StatusDeploying),
 	})
 
-	writeJSON(w, http.StatusCreated, normalizeDeploymentSecurity(created))
+	writeJSON(w, http.StatusCreated, deploymentResponseFromStore(created, nil))
 }

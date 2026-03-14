@@ -6,7 +6,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { cn } from '../lib/utils'
 import { DynamicSection } from './DynamicSection'
-import { useCreateDeploymentForm, type BasicAuthUserRow, type EnvRow, type PairRow, type PortRow } from './useCreateDeploymentForm'
+import { useCreateDeploymentForm, type BasicAuthUserRow, type EnvRow, type PortRow, type VolumeMountRow } from './useCreateDeploymentForm'
 
 const fieldErrorCls = 'text-xs text-destructive'
 
@@ -192,8 +192,9 @@ export default function CreateDeploymentForm({ onSuccess, className, hideHeader 
             )}
           />
 
-          <DynamicSection<PairRow>
+          <DynamicSection<VolumeMountRow>
             title="Volume mounts"
+            description="Managed volumes are created under Lotsen's data directory and persist automatically. Bind mounts map directly to an absolute VPS path for advanced setups."
             addLabel="Add volume mount"
             removeLabel="Remove volume mount"
             rows={volumeRows.rows}
@@ -202,11 +203,20 @@ export default function CreateDeploymentForm({ onSuccess, className, hideHeader 
             errorFor={row => errors.volumes[row.id]}
             renderRow={row => (
               <>
+                <select
+                  value={row.mode}
+                  onChange={e => volumeRows.update(row.id, { mode: e.target.value as VolumeMountRow['mode'] })}
+                  className="h-9 shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+                  aria-label="Volume mode"
+                >
+                  <option value="managed">Managed</option>
+                  <option value="bind">Bind mount</option>
+                </select>
                 <Input
                   type="text"
-                  placeholder="/host/path"
-                  value={row.left}
-                  onChange={e => volumeRows.update(row.id, { left: e.target.value })}
+                  placeholder={row.mode === 'managed' ? 'postgres-data' : '/host/path'}
+                  value={row.source}
+                  onChange={e => volumeRows.update(row.id, { source: e.target.value })}
                   aria-invalid={Boolean(errors.volumes[row.id])}
                   className="font-mono"
                 />
@@ -214,8 +224,8 @@ export default function CreateDeploymentForm({ onSuccess, className, hideHeader 
                 <Input
                   type="text"
                   placeholder="/container/path"
-                  value={row.right}
-                  onChange={e => volumeRows.update(row.id, { right: e.target.value })}
+                  value={row.target}
+                  onChange={e => volumeRows.update(row.id, { target: e.target.value })}
                   aria-invalid={Boolean(errors.volumes[row.id])}
                   className="font-mono"
                 />

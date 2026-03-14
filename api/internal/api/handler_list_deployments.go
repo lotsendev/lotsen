@@ -8,7 +8,19 @@ import (
 
 type deploymentResponse struct {
 	store.Deployment
-	Stats *ContainerStats `json:"stats,omitempty"`
+	VolumeMounts []volumeMountResponse `json:"volume_mounts,omitempty"`
+	Stats        *ContainerStats       `json:"stats,omitempty"`
+}
+
+func deploymentResponseFromStore(deployment store.Deployment, stats *ContainerStats) deploymentResponse {
+	response := deploymentResponse{
+		Deployment:   normalizeDeploymentSecurity(deployment),
+		VolumeMounts: volumeMountsFromBindings(deployment.ID, deployment.Volumes),
+	}
+	if stats != nil {
+		response.Stats = stats
+	}
+	return response
 }
 
 func (h *Handler) listDeployments(w http.ResponseWriter, _ *http.Request) {
@@ -23,11 +35,11 @@ func (h *Handler) listDeployments(w http.ResponseWriter, _ *http.Request) {
 
 	responses := make([]deploymentResponse, 0, len(deployments))
 	for _, deployment := range deployments {
-		response := deploymentResponse{Deployment: normalizeDeploymentSecurity(deployment)}
+		response := deploymentResponseFromStore(deployment, nil)
 		if h.containerStats != nil {
 			if stats, ok := h.containerStats.Get(deployment.ID); ok {
 				statsCopy := stats
-				response.Stats = &statsCopy
+				response = deploymentResponseFromStore(deployment, &statsCopy)
 			}
 		}
 		responses = append(responses, response)

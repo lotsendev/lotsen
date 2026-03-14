@@ -52,6 +52,9 @@ LOTSEN_DATA=/tmp/lotsen.json go run ./cmd/lotsen
   "envs":    { "PORT": "80" },
   "ports":   ["80:80"],
   "volumes": ["/data:/data"],
+  "volume_mounts": [
+    { "mode": "managed", "source": "app-data", "target": "/data" }
+  ],
   "domain":  "example.com",
   "status":  "idle"
 }
@@ -64,7 +67,7 @@ LOTSEN_DATA=/tmp/lotsen.json go run ./cmd/lotsen
 ```bash
 curl -X POST http://localhost:8080/api/deployments \
   -H "Content-Type: application/json" \
-  -d '{"name":"web","image":"nginx:latest","ports":["80:80"]}'
+  -d '{"name":"web","image":"nginx:latest","ports":["80:80"],"volume_mounts":[{"mode":"managed","source":"web-data","target":"/data"}]}'
 ```
 
 ## Package structure

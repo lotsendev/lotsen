@@ -60,7 +60,7 @@ describe('CreateDeploymentForm', () => {
         image: 'nginx:latest',
         envs: {},
         ports: [],
-        volumes: [],
+        volume_mounts: [],
         domain: '',
         public: false,
       })
@@ -93,7 +93,7 @@ describe('CreateDeploymentForm', () => {
         image: 'nginx:latest',
         envs: {},
         ports: [],
-        volumes: [],
+        volume_mounts: [],
         domain: '',
         public: true,
       })
@@ -130,10 +130,10 @@ describe('CreateDeploymentForm', () => {
     renderWithQuery(<CreateDeploymentForm />)
 
     await user.click(screen.getByRole('button', { name: /add port/i }))
-    expect(screen.getByPlaceholderText('Container port')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('80 or 53:53/udp')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /remove port mapping/i }))
-    expect(screen.queryByPlaceholderText('Container port')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('80 or 53:53/udp')).not.toBeInTheDocument()
   })
 
   it('adds and removes a volume mount row', async () => {
@@ -141,10 +141,10 @@ describe('CreateDeploymentForm', () => {
     renderWithQuery(<CreateDeploymentForm />)
 
     await user.click(screen.getByRole('button', { name: /add volume/i }))
-    expect(screen.getByPlaceholderText('/host/path')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('postgres-data')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /remove volume mount/i }))
-    expect(screen.queryByPlaceholderText('/host/path')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('postgres-data')).not.toBeInTheDocument()
   })
 
   it('includes env vars, ports, and volumes in the submitted payload', async () => {
@@ -156,7 +156,7 @@ describe('CreateDeploymentForm', () => {
       envs: { DEBUG: 'true' },
       ports: ['8080:80'],
       volumes: ['/data:/app/data'],
-      domain: 'example.com',
+      domain: '',
       public: false,
     })
     const user = userEvent.setup()
@@ -164,16 +164,16 @@ describe('CreateDeploymentForm', () => {
 
     await user.type(screen.getByLabelText(/name \*/i), 'full-app')
     await user.type(screen.getByLabelText(/image \*/i), 'alpine:3')
-    await user.type(screen.getByLabelText(/domain/i), 'example.com')
-
     await user.click(screen.getByRole('button', { name: /add env var/i }))
     await user.type(screen.getByPlaceholderText('KEY'), 'DEBUG')
     await user.type(screen.getByPlaceholderText('value'), 'true')
 
     await user.click(screen.getByRole('button', { name: /add port/i }))
-    await user.type(screen.getByPlaceholderText('Container port'), '80')
+    await user.type(screen.getByPlaceholderText('80 or 53:53/udp'), '80')
 
     await user.click(screen.getByRole('button', { name: /add volume/i }))
+    await user.click(screen.getByRole('combobox', { name: /volume mode/i }))
+    await user.selectOptions(screen.getByRole('combobox', { name: /volume mode/i }), 'bind')
     await user.type(screen.getByPlaceholderText('/host/path'), '/data')
     await user.type(screen.getByPlaceholderText('/container/path'), '/app/data')
 
@@ -185,8 +185,8 @@ describe('CreateDeploymentForm', () => {
         image: 'alpine:3',
         envs: { DEBUG: 'true' },
         ports: ['80'],
-        volumes: ['/data:/app/data'],
-        domain: 'example.com',
+        volume_mounts: [{ mode: 'bind', source: '/data', target: '/app/data' }],
+        domain: '',
         public: false,
       })
     )

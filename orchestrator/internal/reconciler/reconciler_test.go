@@ -366,7 +366,7 @@ func TestReconcile_Redeploy_FailedNewContainer_KeepsOldAndBecomesFailed(t *testi
 	}
 }
 
-func TestReconcile_DeployingWithStoppedContainer_BecomesFailed(t *testing.T) {
+func TestReconcile_DeployingWithStoppedContainer_RedeploysAndBecomesHealthy(t *testing.T) {
 	s := &mockStore{
 		deployments: []store.Deployment{
 			{ID: "d1", Name: "web", Status: store.StatusDeploying},
@@ -383,11 +383,40 @@ func TestReconcile_DeployingWithStoppedContainer_BecomesFailed(t *testing.T) {
 		t.Fatalf("reconcile: %v", err)
 	}
 
+	if len(d.replaced) != 1 || d.replaced[0] != "c1" {
+		t.Fatalf("want StartAndReplace called with c1, got %v", d.replaced)
+	}
+	if s.getStatus("d1") != store.StatusHealthy {
+		t.Errorf("want status healthy, got %s", s.getStatus("d1"))
+	}
+	if s.getReason("d1") != store.StatusReasonRedeployStartSucceeded {
+		t.Errorf("want reason %q, got %q", store.StatusReasonRedeployStartSucceeded, s.getReason("d1"))
+	}
+}
+
+func TestReconcile_DeployingWithStoppedContainer_RedeployFails_BecomesFailed(t *testing.T) {
+	s := &mockStore{
+		deployments: []store.Deployment{
+			{ID: "d1", Name: "web", Status: store.StatusDeploying},
+		},
+	}
+	d := &mockDocker{
+		containers: []docker.ManagedContainer{
+			{ID: "c1", DeploymentID: "d1", Running: false},
+		},
+		startAndReplaceErr: errors.New("new container did not reach running state"),
+	}
+	r := reconciler.New(s, d, nil)
+
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
 	if s.getStatus("d1") != store.StatusFailed {
 		t.Errorf("want status failed, got %s", s.getStatus("d1"))
 	}
-	if s.getReason("d1") != store.StatusReasonContainerNotRunning {
-		t.Errorf("want reason %q, got %q", store.StatusReasonContainerNotRunning, s.getReason("d1"))
+	if s.getReason("d1") != store.StatusReasonRedeployStartFailed {
+		t.Errorf("want reason %q, got %q", store.StatusReasonRedeployStartFailed, s.getReason("d1"))
 	}
 }
 
@@ -627,10 +656,10 @@ func TestReconcile_HealthyContainerGone_NotifiesFailed(t *testing.T) {
 	}
 }
 
-func TestReconcile_DeployingWithStoppedContainer_OOMKilled_ShowsOOMMessage(t *testing.T) {
+func TestReconcile_HealthyWithStoppedContainer_OOMKilled_ShowsOOMMessage(t *testing.T) {
 	s := &mockStore{
 		deployments: []store.Deployment{
-			{ID: "d1", Name: "web", Status: store.StatusDeploying},
+			{ID: "d1", Name: "web", Status: store.StatusHealthy},
 		},
 	}
 	d := &mockDocker{
@@ -658,10 +687,10 @@ func TestReconcile_DeployingWithStoppedContainer_OOMKilled_ShowsOOMMessage(t *te
 	}
 }
 
-func TestReconcile_DeployingWithStoppedContainer_NonZeroExit_ShowsExitMessage(t *testing.T) {
+func TestReconcile_HealthyWithStoppedContainer_NonZeroExit_ShowsExitMessage(t *testing.T) {
 	s := &mockStore{
 		deployments: []store.Deployment{
-			{ID: "d1", Name: "web", Status: store.StatusDeploying},
+			{ID: "d1", Name: "web", Status: store.StatusHealthy},
 		},
 	}
 	d := &mockDocker{

@@ -154,8 +154,8 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				} else {
 					r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy, store.StatusReasonDeployStartSucceeded)
 				}
-			} else if c.Running {
-				// Container already running — this is a redeploy; apply start-then-stop.
+			} else {
+				// Any existing container means this is a redeploy; apply start-then-stop.
 				runtimePorts, err := r.docker.StartAndReplace(ctx, d, c.ID)
 				if err != nil {
 					log.Printf("reconciler: redeploy %s (%s): %v", d.ID, d.Name, err)
@@ -163,8 +163,6 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				} else {
 					r.updatePortsAndStatus(d.ID, runtimePorts, store.StatusHealthy, store.StatusReasonRedeployStartSucceeded)
 				}
-			} else {
-				r.updateStatus(d.ID, store.StatusFailed, exitReason(c.ExitDetails), exitMessage(c.ExitDetails))
 			}
 
 		case store.StatusHealthy:

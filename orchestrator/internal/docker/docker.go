@@ -24,6 +24,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
 	dockerclient "github.com/docker/docker/client"
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
@@ -263,12 +264,17 @@ func (d *Docker) StopAndRemove(ctx context.Context, containerID string) error {
 		if dockerclient.IsErrConnectionFailed(err) {
 			return fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
 		}
-		return fmt.Errorf("docker: stop container %s: %w", containerID, err)
+		if !errdefs.IsNotModified(err) && !errdefs.IsNotFound(err) {
+			return fmt.Errorf("docker: stop container %s: %w", containerID, err)
+		}
 	}
 
 	if err := d.client.ContainerRemove(ctx, containerID, container.RemoveOptions{}); err != nil {
 		if dockerclient.IsErrConnectionFailed(err) {
 			return fmt.Errorf("%w: %v", ErrDockerUnavailable, err)
+		}
+		if errdefs.IsNotFound(err) {
+			return nil
 		}
 		return fmt.Errorf("docker: remove container %s: %w", containerID, err)
 	}

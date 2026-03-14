@@ -16,6 +16,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/go-connections/nat"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
@@ -365,6 +366,34 @@ func TestDocker_StopAndRemove(t *testing.T) {
 	}
 	if len(mock.removed) != 1 || mock.removed[0] != "c1" {
 		t.Errorf("want c1 removed, got %v", mock.removed)
+	}
+}
+
+func TestDocker_StopAndRemove_AlreadyStoppedStillRemoves(t *testing.T) {
+	mock := &mockClient{stopErr: errdefs.NotModified(errors.New("container already stopped"))}
+	d := docker.New(mock)
+	if err := d.StopAndRemove(context.Background(), "c1"); err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+	if len(mock.stopped) != 1 || mock.stopped[0] != "c1" {
+		t.Errorf("want c1 stop attempted, got %v", mock.stopped)
+	}
+	if len(mock.removed) != 1 || mock.removed[0] != "c1" {
+		t.Errorf("want c1 removed, got %v", mock.removed)
+	}
+}
+
+func TestDocker_StopAndRemove_MissingContainerIgnored(t *testing.T) {
+	mock := &mockClient{removeErr: errdefs.NotFound(errors.New("no such container"))}
+	d := docker.New(mock)
+	if err := d.StopAndRemove(context.Background(), "c1"); err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+	if len(mock.stopped) != 1 || mock.stopped[0] != "c1" {
+		t.Errorf("want c1 stop attempted, got %v", mock.stopped)
+	}
+	if len(mock.removed) != 1 || mock.removed[0] != "c1" {
+		t.Errorf("want c1 remove attempted, got %v", mock.removed)
 	}
 }
 

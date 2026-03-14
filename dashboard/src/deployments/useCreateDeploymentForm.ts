@@ -6,7 +6,7 @@ import { parsePortSpec } from './portSpec'
 import { useDynamicRows } from './useDynamicRows'
 
 export type EnvRow = { id: number; key: string; value: string }
-export type PairRow = { id: number; left: string; right: string }
+export type VolumeMountRow = { id: number; mode: 'managed' | 'bind'; source: string; target: string }
 export type PortRow = { id: number; port: string }
 export type BasicAuthUserRow = { id: number; username: string; password: string }
 
@@ -39,7 +39,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
 
   const envRows = useDynamicRows<EnvRow>(id => ({ id, key: '', value: '' }))
   const portRows = useDynamicRows<PortRow>(id => ({ id, port: '' }))
-  const volumeRows = useDynamicRows<PairRow>(id => ({ id, left: '', right: '' }))
+  const volumeRows = useDynamicRows<VolumeMountRow>(id => ({ id, mode: 'managed', source: '', target: '' }))
   const basicAuthRows = useDynamicRows<BasicAuthUserRow>(id => ({ id, username: '', password: '' }))
 
   const mutation = useMutation({
@@ -90,7 +90,11 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
       }
     }
     for (const row of volumeRows.rows) {
-      if (!row.left.trim() || !row.right.trim()) errs.volumes[row.id] = 'Both host and container paths are required'
+      if (!row.source.trim() || !row.target.trim()) {
+        errs.volumes[row.id] = row.mode === 'managed'
+          ? 'Volume name and container path are required'
+          : 'Host and container paths are required'
+      }
     }
     if (basicAuthEnabled) {
       if (basicAuthRows.rows.length === 0) errs.form = 'Add at least one basic auth user'
@@ -142,7 +146,11 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
       envs,
       ports: portRows.rows.map(r => r.port.trim()),
       proxy_port: proxyPort,
-      volumes: volumeRows.rows.map(r => `${r.left.trim()}:${r.right.trim()}`),
+      volume_mounts: volumeRows.rows.map(r => ({
+        mode: r.mode,
+        source: r.source.trim(),
+        target: r.target.trim(),
+      })),
       domain: domain.trim(),
       public: isPublic,
       basic_auth: basicAuth,

@@ -41,9 +41,12 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 	if body.Envs == nil {
 		body.Envs = map[string]string{}
 	}
-	if body.Volumes == nil {
-		body.Volumes = []string{}
+	resolvedVolumes, err := resolveVolumeBindings(id, body.Volumes, body.VolumeMounts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
+	body.Volumes = resolvedVolumes
 	body.Security = normalizeSecurityConfig(body.Security)
 
 	existing, err := h.store.Get(id)
@@ -82,7 +85,7 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if updateRequestMatchesExisting(existing, body, basicAuth) {
-		writeJSON(w, http.StatusOK, normalizeDeploymentSecurity(existing))
+		writeJSON(w, http.StatusOK, deploymentResponseFromStore(existing, nil))
 		return
 	}
 
@@ -119,5 +122,5 @@ func (h *Handler) updateDeployment(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, normalizeDeploymentSecurity(updated))
+	writeJSON(w, http.StatusOK, deploymentResponseFromStore(updated, nil))
 }

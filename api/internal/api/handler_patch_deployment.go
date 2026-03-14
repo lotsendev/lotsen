@@ -22,6 +22,14 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "domain is reserved for dashboard", http.StatusConflict)
 		return
 	}
+	if body.VolumeMounts != nil {
+		resolvedVolumes, err := resolveVolumeBindings(id, nil, body.VolumeMounts)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		body.Volumes = resolvedVolumes
+	}
 	body.Security = normalizeSecurityConfig(body.Security)
 
 	basicAuth, err := sanitizeAndHashBasicAuth(body.BasicAuth)
@@ -125,5 +133,5 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusAccepted, normalizeDeploymentSecurity(updated))
+	writeJSON(w, http.StatusAccepted, deploymentResponseFromStore(updated, nil))
 }

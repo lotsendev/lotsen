@@ -107,28 +107,30 @@ type basicAuthRequest struct {
 }
 
 type deploymentRequest struct {
-	Name      string                `json:"name"`
-	Image     string                `json:"image"`
-	Envs      map[string]string     `json:"envs"`
-	Ports     []string              `json:"ports"`
-	ProxyPort int                   `json:"proxy_port"`
-	Volumes   []string              `json:"volumes"`
-	Domain    string                `json:"domain"`
-	Public    bool                  `json:"public"`
-	BasicAuth *basicAuthRequest     `json:"basic_auth"`
-	Security  *store.SecurityConfig `json:"security"`
+	Name         string                `json:"name"`
+	Image        string                `json:"image"`
+	Envs         map[string]string     `json:"envs"`
+	Ports        []string              `json:"ports"`
+	ProxyPort    int                   `json:"proxy_port"`
+	Volumes      []string              `json:"volumes"`
+	VolumeMounts []volumeMountRequest  `json:"volume_mounts"`
+	Domain       string                `json:"domain"`
+	Public       bool                  `json:"public"`
+	BasicAuth    *basicAuthRequest     `json:"basic_auth"`
+	Security     *store.SecurityConfig `json:"security"`
 }
 
 type patchDeploymentRequest struct {
-	Image     string                `json:"image"`
-	Envs      map[string]string     `json:"envs"`
-	Ports     []string              `json:"ports"`
-	ProxyPort *int                  `json:"proxy_port"`
-	Volumes   []string              `json:"volumes"`
-	Domain    string                `json:"domain"`
-	Public    *bool                 `json:"public"`
-	BasicAuth *basicAuthRequest     `json:"basic_auth"`
-	Security  *store.SecurityConfig `json:"security"`
+	Image        string                `json:"image"`
+	Envs         map[string]string     `json:"envs"`
+	Ports        []string              `json:"ports"`
+	ProxyPort    *int                  `json:"proxy_port"`
+	Volumes      []string              `json:"volumes"`
+	VolumeMounts []volumeMountRequest  `json:"volume_mounts"`
+	Domain       string                `json:"domain"`
+	Public       *bool                 `json:"public"`
+	BasicAuth    *basicAuthRequest     `json:"basic_auth"`
+	Security     *store.SecurityConfig `json:"security"`
 }
 
 // Handler holds the dependencies for the API layer.

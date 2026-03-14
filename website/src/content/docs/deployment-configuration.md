@@ -9,7 +9,8 @@ A deployment is the central object in Lotsen. It describes a container you want 
 | name    | string   | Yes      | A human-readable identifier for the deployment. Used as the container name in Docker. Must be unique across all deployments. |
 | image   | string   | Yes      | The Docker image to run, including tag. The orchestrator pulls this image before starting the container. Example: `nginx:1.27` or `ghcr.io/myorg/api:latest`. |
 | ports   | string[] | No       | Port mappings in `host:container` format. Each entry maps a port on the VPS host to a port inside the container. Example: `["80:80", "443:443"]`. |
-| volumes | string[] | No       | Volume mounts in `host-path:container-path` format. The host path must be an absolute path on the VPS. Example: `["/data/postgres:/var/lib/postgresql/data"]`. |
+| volume_mounts | object[] | No | Volume mounts with explicit mode: managed or bind. Managed mounts are created automatically under `/var/lib/lotsen/volumes/<deployment>/<volume>`. Example: `[{"mode":"managed","source":"postgres-data","target":"/var/lib/postgresql/data"}]`. |
+| volumes | string[] | No | Backward-compatible raw bind format (`host-path:container-path`). Prefer `volume_mounts` for new deployments. |
 | envs    | object   | No       | Environment variables passed into the container as a key-value map. Values are stored in the Lotsen data file on disk. Example: `{"DATABASE_URL": "postgres://..."}`. |
 | domain  | string   | No       | A fully-qualified domain name to route to this container via the integrated reverse proxy. Point your DNS A record to the VPS IP, and Lotsen will forward HTTP traffic on port 80. Example: `api.example.com`. |
 | basic_auth | object | No       | Require HTTP Basic Auth on the proxy route for this deployment. Only applies when `domain` is set. Contains a `users` list of `{ username, password }` pairs. |
@@ -35,13 +36,65 @@ Omitting ports means the container is not directly accessible from the host. Use
 
 ## Volumes
 
-Volumes persist data across container restarts and re-deployments:
+Volumes persist data across container restarts and re-deployments.
 
-```text
-"/var/lib/lotsen/myapp:/data"  // host path : container path
+### Managed volume mode (recommended)
+
+Managed volumes let Lotsen create and own host directories for you:
+
+```json
+"volume_mounts": [
+  {
+    "mode": "managed",
+    "source": "postgres-data",
+    "target": "/var/lib/postgresql/data"
+  }
+]
 ```
 
-> **Note:** The host path must exist before the deployment is created. Lotsen does not create directories on your behalf. Use `mkdir -p /path/to/dir` on the VPS first.
+The first deploy creates:
+
+```text
+/var/lib/lotsen/volumes/<deployment-id>/postgres-data
+```
+
+This path is remounted automatically on redeploy.
+
+### Advanced bind mount mode
+
+Use bind mounts when you need full host-path control:
+
+```text
+"volume_mounts": [
+  {
+    "mode": "bind",
+    "source": "/srv/postgres-data",
+    "target": "/var/lib/postgresql/data"
+  }
+]
+```
+
+### Postgres example (managed)
+
+```json
+{
+  "name": "postgres",
+  "image": "postgres:16",
+  "ports": ["5432:5432"],
+  "envs": {
+    "POSTGRES_DB": "app",
+    "POSTGRES_USER": "app",
+    "POSTGRES_PASSWORD": "change-me"
+  },
+  "volume_mounts": [
+    {
+      "mode": "managed",
+      "source": "data",
+      "target": "/var/lib/postgresql/data"
+    }
+  ]
+}
+```
 
 ## Environment variables
 

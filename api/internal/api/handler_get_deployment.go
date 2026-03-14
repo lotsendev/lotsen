@@ -20,11 +20,11 @@ func (h *Handler) getDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := deploymentResponse{Deployment: normalizeDeploymentSecurity(d)}
+	response := deploymentResponseFromStore(d, nil)
 	if h.containerStats != nil {
 		if stats, ok := h.containerStats.Get(d.ID); ok {
 			statsCopy := stats
-			response.Stats = &statsCopy
+			response = deploymentResponseFromStore(d, &statsCopy)
 		}
 	}
 

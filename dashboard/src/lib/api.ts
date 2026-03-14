@@ -231,6 +231,14 @@ export type SecurityConfig = {
   custom_rules: string[]
 }
 
+export type VolumeMountMode = 'managed' | 'bind'
+
+export type VolumeMount = {
+  mode: VolumeMountMode
+  source: string
+  target: string
+}
+
 export type Deployment = {
   id: string
   name: string
@@ -239,6 +247,7 @@ export type Deployment = {
   ports: string[]
   proxy_port?: number
   volumes: string[]
+  volume_mounts?: VolumeMount[]
   domain: string
   public: boolean
   basic_auth?: BasicAuthConfig
@@ -440,7 +449,8 @@ export type CreateDeploymentInput = {
   envs: Record<string, string>
   ports: string[]
   proxy_port?: number
-  volumes: string[]
+  volumes?: string[]
+  volume_mounts?: VolumeMount[]
   domain: string
   public: boolean
   basic_auth?: BasicAuthConfig
@@ -462,7 +472,8 @@ export type UpdateDeploymentInput = {
   envs: Record<string, string>
   ports: string[]
   proxy_port?: number
-  volumes: string[]
+  volumes?: string[]
+  volume_mounts?: VolumeMount[]
   domain: string
   public: boolean
   basic_auth?: BasicAuthConfig
@@ -485,6 +496,7 @@ export type PatchDeploymentInput = {
   ports?: string[]
   proxy_port?: number
   volumes?: string[]
+  volume_mounts?: VolumeMount[]
   domain?: string
   public?: boolean
   basic_auth?: BasicAuthConfig

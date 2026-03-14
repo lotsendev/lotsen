@@ -245,6 +245,7 @@ func exportConfigDocument() (configv1.Document, error) {
 		}
 
 		entry.VolumeMounts = exportVolumeMounts(deployment.ID, deployment.Volumes)
+		entry.FileMounts = exportFileMounts(deployment.FileMounts)
 		doc.Spec.Deployments = append(doc.Spec.Deployments, entry)
 	}
 
@@ -351,6 +352,28 @@ func exportVolumeMounts(deploymentID string, bindings []string) []configv1.Volum
 		}
 
 		mounts = append(mounts, configv1.VolumeMount{Mode: "bind", Source: source, Target: target})
+	}
+
+	return mounts
+}
+
+func exportFileMounts(fileMounts []store.FileMount) []configv1.FileMount {
+	if len(fileMounts) == 0 {
+		return nil
+	}
+
+	mounts := make([]configv1.FileMount, 0, len(fileMounts))
+	for _, mount := range fileMounts {
+		copied := configv1.FileMount{
+			Source:   strings.TrimSpace(mount.Source),
+			Target:   strings.TrimSpace(mount.Target),
+			Content:  mount.Content,
+			UID:      mount.UID,
+			GID:      mount.GID,
+			FileMode: strings.TrimSpace(mount.FileMode),
+			ReadOnly: mount.ReadOnly,
+		}
+		mounts = append(mounts, copied)
 	}
 
 	return mounts

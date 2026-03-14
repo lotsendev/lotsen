@@ -51,6 +51,9 @@ func TestRunConfigExport_DeterministicOutput(t *testing.T) {
 		Domain:  "zeta.example.com",
 		Public:  true,
 		Volumes: []string{filepath.Join(filepath.Dir(storePath), "volumes", "dep-z", "db") + ":/var/lib/postgres"},
+		FileMounts: []store.FileMount{
+			{Source: "prometheus.yml", Target: "/etc/prometheus/prometheus.yml", Content: "global:\n", ReadOnly: true},
+		},
 		BasicAuth: &store.BasicAuthConfig{Users: []store.BasicAuthUser{
 			{Username: "zz", Password: "not-placeholder"},
 			{Username: "aa", Password: "${LOTSEN_SECRET_EXISTING}"},
@@ -129,6 +132,9 @@ func TestRunConfigExport_DeterministicOutput(t *testing.T) {
 	}
 	if !strings.HasPrefix(doc.Spec.Deployments[0].Env["DATABASE_URL"], "${LOTSEN_SECRET_") {
 		t.Fatalf("want DATABASE_URL exported as placeholder, got %q", doc.Spec.Deployments[0].Env["DATABASE_URL"])
+	}
+	if len(doc.Spec.Deployments[0].FileMounts) != 1 || doc.Spec.Deployments[0].FileMounts[0].Source != "prometheus.yml" {
+		t.Fatalf("want exported file mount, got %#v", doc.Spec.Deployments[0].FileMounts)
 	}
 
 	if len(doc.Spec.Registries) != 2 || doc.Spec.Registries[0].Prefix != "a.example" {

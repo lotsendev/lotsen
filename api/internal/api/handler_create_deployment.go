@@ -51,6 +51,11 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	resolvedFileMounts, err := resolveFileMounts(id, body.FileMounts)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	body.Volumes = resolvedVolumes
 	body.Security = normalizeSecurityConfig(body.Security)
 
@@ -79,18 +84,19 @@ func (h *Handler) createDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	d := store.Deployment{
-		ID:        id,
-		Name:      body.Name,
-		Image:     body.Image,
-		Envs:      body.Envs,
-		Ports:     assignedPorts,
-		ProxyPort: body.ProxyPort,
-		Volumes:   body.Volumes,
-		Domain:    body.Domain,
-		Public:    body.Public,
-		BasicAuth: basicAuth,
-		Security:  body.Security,
-		Status:    store.StatusDeploying,
+		ID:         id,
+		Name:       body.Name,
+		Image:      body.Image,
+		Envs:       body.Envs,
+		Ports:      assignedPorts,
+		ProxyPort:  body.ProxyPort,
+		Volumes:    body.Volumes,
+		FileMounts: resolvedFileMounts,
+		Domain:     body.Domain,
+		Public:     body.Public,
+		BasicAuth:  basicAuth,
+		Security:   body.Security,
+		Status:     store.StatusDeploying,
 	}
 
 	created, err := h.store.Create(d)

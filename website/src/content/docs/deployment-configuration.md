@@ -10,6 +10,7 @@ A deployment is the central object in Lotsen. It describes a container you want 
 | image   | string   | Yes      | The Docker image to run, including tag. The orchestrator pulls this image before starting the container. Example: `nginx:1.27` or `ghcr.io/myorg/api:latest`. |
 | ports   | string[] | No       | Port mappings in `host:container` format. Each entry maps a port on the VPS host to a port inside the container. Example: `["80:80", "443:443"]`. |
 | volume_mounts | object[] | No | Volume mounts with explicit mode: managed or bind. Managed mounts are created automatically under `/var/lib/lotsen/volumes/<deployment>/<volume>`. Managed mounts also support optional `uid`, `gid`, and `dir_mode` ownership settings. Example: `[{"mode":"managed","source":"postgres-data","target":"/var/lib/postgresql/data","uid":5050,"gid":5050,"dir_mode":"0770"}]`. |
+| file_mounts | object[] | No | Managed text files created by Lotsen and mounted into the container. Useful for apps that need config files (for example Prometheus). Supports `source`, `target`, `content`, optional `uid`, `gid`, `file_mode`, and `read_only`. |
 | volumes | string[] | No | Backward-compatible raw bind format (`host-path:container-path`). Prefer `volume_mounts` for new deployments. |
 | envs    | object   | No       | Environment variables passed into the container as a key-value map. Values are stored in the Lotsen data file on disk. Example: `{"DATABASE_URL": "postgres://..."}`. |
 | domain  | string   | No       | A fully-qualified domain name to route to this container via the integrated reverse proxy. Point your DNS A record to the VPS IP, and Lotsen will forward HTTP traffic on port 80. Example: `api.example.com`. |
@@ -110,6 +111,29 @@ Use bind mounts when you need full host-path control:
   ]
 }
 ```
+
+## Config files (`file_mounts`)
+
+Some images need a real config file on disk. Use `file_mounts` to write file content from the dashboard and mount it into the container.
+
+```json
+"file_mounts": [
+  {
+    "source": "prometheus.yml",
+    "target": "/etc/prometheus/prometheus.yml",
+    "content": "global:\n  scrape_interval: 15s\n",
+    "read_only": true
+  }
+]
+```
+
+Managed files are created under:
+
+```text
+/var/lib/lotsen/files/<deployment-id>/<source>
+```
+
+This makes it possible to run services like Prometheus without SSH access just to create config files.
 
 ## Environment variables
 

@@ -6,7 +6,7 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { cn } from '../lib/utils'
 import { DynamicSection } from './DynamicSection'
-import { useCreateDeploymentForm, type BasicAuthUserRow, type EnvRow, type PortRow, type VolumeMountRow } from './useCreateDeploymentForm'
+import { useCreateDeploymentForm, type BasicAuthUserRow, type EnvRow, type FileMountRow, type PortRow, type VolumeMountRow } from './useCreateDeploymentForm'
 
 const fieldErrorCls = 'text-xs text-destructive'
 
@@ -21,7 +21,7 @@ export default function CreateDeploymentForm({ onSuccess, className, hideHeader 
     name, setName, image, setImage, domain, setDomain,
     isPublic, setIsPublic,
     selectedProxyRowId, setSelectedProxyRowId,
-    envRows, portRows, volumeRows, basicAuthEnabled, setBasicAuthEnabled, basicAuthRows,
+    envRows, portRows, volumeRows, fileRows, basicAuthEnabled, setBasicAuthEnabled, basicAuthRows,
     errors, handleSubmit, isPending,
   } = useCreateDeploymentForm({ onSuccess })
 
@@ -230,6 +230,54 @@ export default function CreateDeploymentForm({ onSuccess, className, hideHeader 
                   className="font-mono"
                 />
               </>
+            )}
+          />
+
+          <DynamicSection<FileMountRow>
+            title="Config files"
+            description="Create text config files on the VPS and mount them into the container. Useful for Prometheus, Nginx, and other services that require config files."
+            addLabel="Add config file"
+            removeLabel="Remove config file"
+            rows={fileRows.rows}
+            onAdd={fileRows.add}
+            onRemove={fileRows.remove}
+            errorFor={row => errors.files[row.id]}
+            renderRow={row => (
+              <div className="grid flex-1 gap-2">
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto_1fr_auto] md:items-center">
+                  <Input
+                    type="text"
+                    placeholder="prometheus.yml"
+                    value={row.source}
+                    onChange={e => fileRows.update(row.id, { source: e.target.value })}
+                    aria-invalid={Boolean(errors.files[row.id])}
+                    className="font-mono"
+                  />
+                  <span className="hidden text-sm text-muted-foreground md:inline">-&gt;</span>
+                  <Input
+                    type="text"
+                    placeholder="/etc/prometheus/prometheus.yml"
+                    value={row.target}
+                    onChange={e => fileRows.update(row.id, { target: e.target.value })}
+                    aria-invalid={Boolean(errors.files[row.id])}
+                    className="font-mono"
+                  />
+                  <label className="inline-flex items-center gap-2 rounded-md border border-border/60 px-2 py-1 text-xs text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={row.readOnly}
+                      onChange={e => fileRows.update(row.id, { readOnly: e.target.checked })}
+                    />
+                    Read only
+                  </label>
+                </div>
+                <textarea
+                  value={row.content}
+                  onChange={e => fileRows.update(row.id, { content: e.target.value })}
+                  placeholder="Paste file content here"
+                  className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
+                />
+              </div>
             )}
           />
 

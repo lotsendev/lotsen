@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	internalapi "github.com/lotsendev/lotsen/internal/api"
+	"github.com/lotsendev/lotsen/internal/configplan"
 	"github.com/lotsendev/lotsen/internal/configv1"
 	"github.com/lotsendev/lotsen/store"
 )
@@ -23,7 +24,7 @@ var (
 
 func runConfig(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: lotsen config <validate|fmt|export> [flags]")
+		return errors.New("usage: lotsen config <validate|fmt|export|plan> [flags]")
 	}
 
 	switch args[0] {
@@ -33,9 +34,55 @@ func runConfig(args []string, stdout io.Writer) error {
 		return runConfigFmt(args[1:], stdout)
 	case "export":
 		return runConfigExport(args[1:])
+	case "plan":
+		return runConfigPlan(args[1:])
 	default:
 		return fmt.Errorf("unknown config command %q", args[0])
 	}
+}
+
+func runConfigPlan(args []string) error {
+	fs := flag.NewFlagSet("config plan", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("f", "", "Path to config file")
+	outPath := fs.String("out", "", "Path to plan file")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("%w\n\nUsage: lotsen config plan -f <file> --out <plan-file>", err)
+	}
+
+	if strings.TrimSpace(*configPath) == "" || strings.TrimSpace(*outPath) == "" {
+		return errors.New("Usage: lotsen config plan -f <file> --out <plan-file>")
+	}
+
+	desired, err := readConfigFile(*configPath)
+	if err != nil {
+		return err
+	}
+
+	if err := configv1.Validate(desired); err != nil {
+		return fmt.Errorf("config validation failed: %w", err)
+	}
+
+	live, err := exportConfigDocument()
+	if err != nil {
+		return fmt.Errorf("export live state: %w", err)
+	}
+
+	planDoc, err := configplan.Build(desired, live)
+	if err != nil {
+		return fmt.Errorf("build plan: %w", err)
+	}
+
+	formatted, err := configplan.MarshalCanonical(planDoc)
+	if err != nil {
+		return fmt.Errorf("marshal plan: %w", err)
+	}
+
+	if err := os.WriteFile(*outPath, formatted, 0o644); err != nil {
+		return fmt.Errorf("write plan file: %w", err)
+	}
+
+	return nil
 }
 
 func runConfigValidate(args []string, stdout io.Writer) error {

@@ -30,6 +30,15 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		}
 		body.Volumes = resolvedVolumes
 	}
+	resolvedFileMounts := []store.FileMount(nil)
+	if body.FileMounts != nil {
+		var err error
+		resolvedFileMounts, err = resolveFileMounts(id, body.FileMounts)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	body.Security = normalizeSecurityConfig(body.Security)
 
 	basicAuth, err := sanitizeAndHashBasicAuth(body.BasicAuth)
@@ -110,6 +119,7 @@ func (h *Handler) patchDeployment(w http.ResponseWriter, r *http.Request) {
 		ProxyPort:    effectiveProxyPort,
 		ProxyPortSet: body.ProxyPort != nil,
 		Volumes:      body.Volumes,
+		FileMounts:   resolvedFileMounts,
 		Domain:       body.Domain,
 		Public:       public,
 		PublicSet:    body.Public != nil,

@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -128,7 +129,7 @@ func (d *Docker) Start(ctx context.Context, dep store.Deployment) ([]string, err
 
 	hostCfg := &container.HostConfig{
 		PortBindings: portBindings,
-		Binds:        dep.Volumes,
+		Binds:        deploymentBinds(dep),
 	}
 
 	resp, err := d.client.ContainerCreate(ctx, cfg, hostCfg, nil, nil, dep.Name)
@@ -325,7 +326,7 @@ func (d *Docker) StartAndReplace(ctx context.Context, dep store.Deployment, oldC
 	}
 	hostCfg := &container.HostConfig{
 		PortBindings: portBindings,
-		Binds:        dep.Volumes,
+		Binds:        deploymentBinds(dep),
 	}
 
 	nextName := dep.Name + "-next"
@@ -502,6 +503,36 @@ func parsePorts(ports []string) (nat.PortSet, nat.PortMap, error) {
 		return nil, nil, err
 	}
 	return nat.PortSet(exposed), bindings, nil
+}
+
+func deploymentBinds(dep store.Deployment) []string {
+	binds := make([]string, 0, len(dep.Volumes)+len(dep.FileMounts))
+	binds = append(binds, dep.Volumes...)
+	if len(dep.FileMounts) == 0 {
+		return binds
+	}
+
+	base := strings.TrimSpace(os.Getenv("LOTSEN_MANAGED_FILES_DIR"))
+	if base == "" {
+		base = "/var/lib/lotsen/files"
+	}
+	base = filepath.Clean(base)
+
+	for _, mount := range dep.FileMounts {
+		source := strings.TrimSpace(mount.Source)
+		target := strings.TrimSpace(mount.Target)
+		if source == "" || target == "" {
+			continue
+		}
+		hostPath := filepath.Join(base, dep.ID, source)
+		binding := hostPath + ":" + target
+		if mount.ReadOnly {
+			binding += ":ro"
+		}
+		binds = append(binds, binding)
+	}
+
+	return binds
 }
 
 func (d *Docker) resolvedPorts(ctx context.Context, containerID string) ([]string, error) {

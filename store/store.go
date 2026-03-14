@@ -65,6 +65,7 @@ type Deployment struct {
 	Ports        []string          `json:"ports"`
 	ProxyPort    int               `json:"proxy_port,omitempty"`
 	Volumes      []string          `json:"volumes"`
+	FileMounts   []FileMount       `json:"file_mounts,omitempty"`
 	Domain       string            `json:"domain"`
 	Public       bool              `json:"public,omitempty"`
 	PublicSet    bool              `json:"-"`
@@ -91,6 +92,16 @@ type SecurityConfig struct {
 	IPDenylist  []string `json:"ip_denylist,omitempty"`
 	IPAllowlist []string `json:"ip_allowlist,omitempty"`
 	CustomRules []string `json:"custom_rules,omitempty"`
+}
+
+type FileMount struct {
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	Content  string `json:"content"`
+	UID      *int   `json:"uid,omitempty"`
+	GID      *int   `json:"gid,omitempty"`
+	FileMode string `json:"file_mode,omitempty"`
+	ReadOnly bool   `json:"read_only,omitempty"`
 }
 
 type Registry struct {
@@ -652,7 +663,8 @@ func (s *JSONStore) Update(d Deployment) (Deployment, error) {
 }
 
 // Patch merges the non-zero fields of patch into the stored deployment and persists atomically.
-// Only image, envs, ports, volumes, domain, basic auth config, status, and error are merged; id and name are immutable.
+// Only image, envs, ports, volumes, file mounts, domain, basic auth config,
+// status, and error are merged; id and name are immutable.
 // Returns ErrNotFound if no deployment with that ID exists.
 func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 	var result Deployment
@@ -676,6 +688,9 @@ func (s *JSONStore) Patch(id string, patch Deployment) (Deployment, error) {
 		}
 		if patch.Volumes != nil {
 			d.Volumes = patch.Volumes
+		}
+		if patch.FileMounts != nil {
+			d.FileMounts = patch.FileMounts
 		}
 		if patch.ProxyPortSet {
 			d.ProxyPort = patch.ProxyPort

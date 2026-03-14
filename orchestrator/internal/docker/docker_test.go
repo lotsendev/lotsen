@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -156,6 +157,42 @@ func TestDocker_Start_OK(t *testing.T) {
 	d := docker.New(mock)
 	if _, err := d.Start(context.Background(), deployment()); err != nil {
 		t.Fatalf("want nil, got %v", err)
+	}
+}
+
+func TestDocker_Start_IncludesManagedFileMounts(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("LOTSEN_MANAGED_FILES_DIR", base)
+
+	mock := &mockClient{
+		containerCreate:  container.CreateResponse{ID: "c1"},
+		inspectContainer: inspectWithPort("80/tcp", "80"),
+	}
+	d := docker.New(mock)
+
+	dep := deployment()
+	dep.FileMounts = []store.FileMount{
+		{Source: "prometheus.yml", Target: "/etc/prometheus/prometheus.yml", Content: "global:\n", ReadOnly: true},
+	}
+
+	if _, err := d.Start(context.Background(), dep); err != nil {
+		t.Fatalf("want nil, got %v", err)
+	}
+
+	if mock.createdHostCfg == nil {
+		t.Fatal("want ContainerCreate called with host config")
+	}
+
+	want := filepath.Join(base, dep.ID, "prometheus.yml") + ":/etc/prometheus/prometheus.yml:ro"
+	found := false
+	for _, bind := range mock.createdHostCfg.Binds {
+		if bind == want {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("want bind %q in %v", want, mock.createdHostCfg.Binds)
 	}
 }
 

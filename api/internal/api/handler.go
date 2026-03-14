@@ -114,6 +114,7 @@ type deploymentRequest struct {
 	ProxyPort    int                   `json:"proxy_port"`
 	Volumes      []string              `json:"volumes"`
 	VolumeMounts []volumeMountRequest  `json:"volume_mounts"`
+	FileMounts   []fileMountRequest    `json:"file_mounts"`
 	Domain       string                `json:"domain"`
 	Public       bool                  `json:"public"`
 	BasicAuth    *basicAuthRequest     `json:"basic_auth"`
@@ -127,6 +128,7 @@ type patchDeploymentRequest struct {
 	ProxyPort    *int                  `json:"proxy_port"`
 	Volumes      []string              `json:"volumes"`
 	VolumeMounts []volumeMountRequest  `json:"volume_mounts"`
+	FileMounts   []fileMountRequest    `json:"file_mounts"`
 	Domain       string                `json:"domain"`
 	Public       *bool                 `json:"public"`
 	BasicAuth    *basicAuthRequest     `json:"basic_auth"`
@@ -632,6 +634,7 @@ func updateRequiresRedeploy(existing store.Deployment, body deploymentRequest) b
 		!slices.Equal(existing.Ports, body.Ports) ||
 		existing.ProxyPort != body.ProxyPort ||
 		!slices.Equal(existing.Volumes, body.Volumes) ||
+		!equalFileMounts(existing.FileMounts, body.FileMounts) ||
 		!equalBasicAuthConfig(existing.BasicAuth, body.BasicAuth)
 }
 
@@ -649,6 +652,9 @@ func patchRequiresRedeploy(existing store.Deployment, body patchDeploymentReques
 		return true
 	}
 	if body.Volumes != nil && !slices.Equal(existing.Volumes, body.Volumes) {
+		return true
+	}
+	if body.FileMounts != nil && !equalFileMounts(existing.FileMounts, body.FileMounts) {
 		return true
 	}
 	if body.BasicAuth != nil && !equalBasicAuthConfig(existing.BasicAuth, body.BasicAuth) {
@@ -808,10 +814,38 @@ func updateRequestMatchesExisting(existing store.Deployment, body deploymentRequ
 		slices.Equal(existing.Ports, body.Ports) &&
 		existing.ProxyPort == body.ProxyPort &&
 		slices.Equal(existing.Volumes, body.Volumes) &&
+		equalFileMounts(existing.FileMounts, body.FileMounts) &&
 		existing.Domain == body.Domain &&
 		existing.Public == body.Public &&
 		equalStoredBasicAuthConfig(existing.BasicAuth, basicAuth) &&
 		equalSecurityConfig(existing.Security, body.Security)
+}
+
+func equalFileMounts(existing []store.FileMount, request []fileMountRequest) bool {
+	if len(existing) != len(request) {
+		return false
+	}
+	for i := range existing {
+		left := existing[i]
+		right := request[i]
+		if left.Source != strings.TrimSpace(right.Source) ||
+			left.Target != strings.TrimSpace(right.Target) ||
+			left.Content != right.Content ||
+			left.ReadOnly != right.ReadOnly ||
+			left.FileMode != strings.TrimSpace(right.FileMode) ||
+			!equalOptionalInt(left.UID, right.UID) ||
+			!equalOptionalInt(left.GID, right.GID) {
+			return false
+		}
+	}
+	return true
+}
+
+func equalOptionalInt(left, right *int) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 func validateProxyPortSelection(domain string, proxyPort int, ports []string) error {

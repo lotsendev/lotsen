@@ -239,6 +239,16 @@ export type VolumeMount = {
   target: string
 }
 
+export type FileMount = {
+  source: string
+  target: string
+  content: string
+  uid?: number
+  gid?: number
+  file_mode?: string
+  read_only?: boolean
+}
+
 export type Deployment = {
   id: string
   name: string
@@ -248,6 +258,7 @@ export type Deployment = {
   proxy_port?: number
   volumes: string[]
   volume_mounts?: VolumeMount[]
+  file_mounts?: FileMount[]
   domain: string
   public: boolean
   basic_auth?: BasicAuthConfig
@@ -451,6 +462,7 @@ export type CreateDeploymentInput = {
   proxy_port?: number
   volumes?: string[]
   volume_mounts?: VolumeMount[]
+  file_mounts?: FileMount[]
   domain: string
   public: boolean
   basic_auth?: BasicAuthConfig
@@ -474,6 +486,7 @@ export type UpdateDeploymentInput = {
   proxy_port?: number
   volumes?: string[]
   volume_mounts?: VolumeMount[]
+  file_mounts?: FileMount[]
   domain: string
   public: boolean
   basic_auth?: BasicAuthConfig
@@ -497,6 +510,7 @@ export type PatchDeploymentInput = {
   proxy_port?: number
   volumes?: string[]
   volume_mounts?: VolumeMount[]
+  file_mounts?: FileMount[]
   domain?: string
   public?: boolean
   basic_auth?: BasicAuthConfig

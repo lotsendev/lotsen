@@ -7,6 +7,7 @@ import { useDynamicRows } from './useDynamicRows'
 
 export type EnvRow = { id: number; key: string; value: string }
 export type VolumeMountRow = { id: number; mode: 'managed' | 'bind'; source: string; target: string }
+export type FileMountRow = { id: number; source: string; target: string; content: string; readOnly: boolean }
 export type PortRow = { id: number; port: string }
 export type BasicAuthUserRow = { id: number; username: string; password: string }
 
@@ -16,11 +17,12 @@ export type FormErrors = {
   envs: Record<number, string>
   ports: Record<number, string>
   volumes: Record<number, string>
+  files: Record<number, string>
   basicAuth: Record<number, string>
   form?: string
 }
 
-const EMPTY_ERRORS: FormErrors = { envs: {}, ports: {}, volumes: {}, basicAuth: {} }
+const EMPTY_ERRORS: FormErrors = { envs: {}, ports: {}, volumes: {}, files: {}, basicAuth: {} }
 
 type UseCreateDeploymentFormOptions = {
   onSuccess?: () => void
@@ -40,6 +42,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
   const envRows = useDynamicRows<EnvRow>(id => ({ id, key: '', value: '' }))
   const portRows = useDynamicRows<PortRow>(id => ({ id, port: '' }))
   const volumeRows = useDynamicRows<VolumeMountRow>(id => ({ id, mode: 'managed', source: '', target: '' }))
+  const fileRows = useDynamicRows<FileMountRow>(id => ({ id, source: '', target: '', content: '', readOnly: true }))
   const basicAuthRows = useDynamicRows<BasicAuthUserRow>(id => ({ id, username: '', password: '' }))
 
   const mutation = useMutation({
@@ -55,6 +58,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
       envRows.reset()
       portRows.reset()
       volumeRows.reset()
+      fileRows.reset()
       basicAuthRows.reset()
       setErrors(EMPTY_ERRORS)
       options.onSuccess?.()
@@ -63,7 +67,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
   })
 
   function validate(): boolean {
-    const errs: FormErrors = { envs: {}, ports: {}, volumes: {}, basicAuth: {} }
+    const errs: FormErrors = { envs: {}, ports: {}, volumes: {}, files: {}, basicAuth: {} }
     if (!name.trim()) errs.name = 'Name is required'
     if (!image.trim()) errs.image = 'Image is required'
     for (const row of envRows.rows) {
@@ -96,6 +100,11 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
           : 'Host and container paths are required'
       }
     }
+    for (const row of fileRows.rows) {
+      if (!row.source.trim() || !row.target.trim()) {
+        errs.files[row.id] = 'File name and container path are required'
+      }
+    }
     if (basicAuthEnabled) {
       if (basicAuthRows.rows.length === 0) errs.form = 'Add at least one basic auth user'
       for (const row of basicAuthRows.rows) {
@@ -109,6 +118,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
       Object.keys(errs.envs).length === 0 &&
       Object.keys(errs.ports).length === 0 &&
       Object.keys(errs.volumes).length === 0 &&
+      Object.keys(errs.files).length === 0 &&
       Object.keys(errs.basicAuth).length === 0 &&
       !errs.form
     )
@@ -151,6 +161,12 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
         source: r.source.trim(),
         target: r.target.trim(),
       })),
+      file_mounts: fileRows.rows.map(r => ({
+        source: r.source.trim(),
+        target: r.target.trim(),
+        content: r.content,
+        read_only: r.readOnly,
+      })),
       domain: domain.trim(),
       public: isPublic,
       basic_auth: basicAuth,
@@ -167,6 +183,7 @@ export function useCreateDeploymentForm(options: UseCreateDeploymentFormOptions 
     envRows,
     portRows,
     volumeRows,
+    fileRows,
     basicAuthRows,
     errors,
     handleSubmit,

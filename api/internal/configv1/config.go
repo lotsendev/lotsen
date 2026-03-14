@@ -52,6 +52,7 @@ type Deployment struct {
 	Ports        []string          `json:"ports,omitempty"`
 	ProxyPort    *int              `json:"proxyPort,omitempty"`
 	VolumeMounts []VolumeMount     `json:"volumeMounts,omitempty"`
+	FileMounts   []FileMount       `json:"fileMounts,omitempty"`
 	BasicAuth    *BasicAuth        `json:"basicAuth,omitempty"`
 	Security     *Security         `json:"security,omitempty"`
 }
@@ -63,6 +64,16 @@ type VolumeMount struct {
 	UID     *int   `json:"uid,omitempty"`
 	GID     *int   `json:"gid,omitempty"`
 	DirMode string `json:"dirMode,omitempty"`
+}
+
+type FileMount struct {
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	Content  string `json:"content"`
+	UID      *int   `json:"uid,omitempty"`
+	GID      *int   `json:"gid,omitempty"`
+	FileMode string `json:"fileMode,omitempty"`
+	ReadOnly bool   `json:"readOnly,omitempty"`
 }
 
 type BasicAuth struct {
@@ -147,6 +158,9 @@ func Canonicalize(doc Document) Document {
 		}
 		if deployment.VolumeMounts != nil {
 			copied.VolumeMounts = slices.Clone(deployment.VolumeMounts)
+		}
+		if deployment.FileMounts != nil {
+			copied.FileMounts = slices.Clone(deployment.FileMounts)
 		}
 		if deployment.BasicAuth != nil {
 			users := slices.Clone(deployment.BasicAuth.Users)
@@ -314,6 +328,44 @@ func Validate(doc Document) error {
 					if mount.UID != nil || mount.GID != nil || strings.TrimSpace(mount.DirMode) != "" {
 						addErr(mountPath, "uid, gid, and dirMode are only supported for managed mounts")
 					}
+				}
+			}
+
+			seenFileSources := make(map[string]struct{}, len(deployment.FileMounts))
+			seenFileTargets := make(map[string]struct{}, len(deployment.FileMounts))
+			for mountIndex, mount := range deployment.FileMounts {
+				mountPath := fmt.Sprintf("%s.fileMounts[%d]", path, mountIndex)
+				source := strings.TrimSpace(mount.Source)
+				target := filepath.Clean(strings.TrimSpace(mount.Target))
+
+				if source == "" {
+					addErr(mountPath+".source", "is required")
+				} else if !managedVolumeNamePattern.MatchString(source) {
+					addErr(mountPath+".source", "must match managed file name pattern")
+				} else {
+					if _, exists := seenFileSources[source]; exists {
+						addErr(mountPath+".source", "must be unique")
+					}
+					seenFileSources[source] = struct{}{}
+				}
+
+				if target == "." || !filepath.IsAbs(target) {
+					addErr(mountPath+".target", "must be an absolute path")
+				} else {
+					if _, exists := seenFileTargets[target]; exists {
+						addErr(mountPath+".target", "must be unique")
+					}
+					seenFileTargets[target] = struct{}{}
+				}
+
+				if mount.UID != nil && *mount.UID < 0 {
+					addErr(mountPath+".uid", "must be >= 0")
+				}
+				if mount.GID != nil && *mount.GID < 0 {
+					addErr(mountPath+".gid", "must be >= 0")
+				}
+				if mount.FileMode != "" && !dirModePattern.MatchString(strings.TrimSpace(mount.FileMode)) {
+					addErr(mountPath+".fileMode", "must be an octal permission between 0000 and 0777")
 				}
 			}
 

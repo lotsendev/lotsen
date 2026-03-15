@@ -281,3 +281,248 @@ func TestRunConfigPlan_DeterministicOutputAndSections(t *testing.T) {
 		t.Fatalf("unexpected destructive registry actions: %#v", plan.Destructive.Registries)
 	}
 }
+
+func TestRunConfigApply_EndToEndAndIdempotentRerun(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "deployments.json")
+	t.Setenv("LOTSEN_DATA", storePath)
+	t.Setenv("LOTSEN_MANAGED_VOLUMES_DIR", filepath.Join(filepath.Dir(storePath), "volumes"))
+
+	s, err := store.NewJSONStore(storePath)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	if _, err := s.Create(store.Deployment{ID: "dep-update", Name: "app", Image: "ghcr.io/acme/app:1", Domain: "old.example.com", Public: true, Status: store.StatusHealthy}); err != nil {
+		t.Fatalf("create update deployment: %v", err)
+	}
+	if _, err := s.Create(store.Deployment{ID: "dep-delete", Name: "legacy", Image: "ghcr.io/acme/legacy:1", Domain: "legacy.example.com", Public: true, Status: store.StatusHealthy}); err != nil {
+		t.Fatalf("create delete deployment: %v", err)
+	}
+
+	if _, err := s.CreateRegistry("r-keep", "a.example", "user-a", "token-a"); err != nil {
+		t.Fatalf("create keep registry: %v", err)
+	}
+	if _, err := s.CreateRegistry("r-delete", "c.example", "user-c", "token-c"); err != nil {
+		t.Fatalf("create delete registry: %v", err)
+	}
+
+	hostStore, err := internalapi.NewFileHostProfileStore(hostProfilePath(storePath))
+	if err != nil {
+		t.Fatalf("new host profile store: %v", err)
+	}
+	if _, err := hostStore.Update(internalapi.HostProfile{DisplayName: "old-host", DashboardAccessMode: internalapi.DashboardAccessModeLoginOnly}); err != nil {
+		t.Fatalf("seed host profile: %v", err)
+	}
+
+	configPath := filepath.Join(t.TempDir(), "desired.json")
+	desired := `{
+  "apiVersion": "lotsen/v1",
+  "kind": "LotsenConfig",
+  "spec": {
+    "deployments": [
+      {
+        "name": "app",
+        "image": "ghcr.io/acme/app:2",
+        "domain": "app.example.com",
+        "public": true
+      },
+      {
+        "name": "new",
+        "image": "ghcr.io/acme/new:1",
+        "domain": "new.example.com",
+        "public": true
+      }
+    ],
+    "registries": [
+      {
+        "prefix": "a.example",
+        "username": "user-a",
+        "password": "${LOTSEN_SECRET_NEW_A}"
+      },
+      {
+        "prefix": "b.example",
+        "username": "user-b",
+        "password": "${LOTSEN_SECRET_B}"
+      }
+    ],
+    "host": {
+      "displayName": "prod-vps-1",
+      "dashboardAccessMode": "waf_and_login"
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(desired), 0o644); err != nil {
+		t.Fatalf("write desired config: %v", err)
+	}
+
+	planPath := filepath.Join(t.TempDir(), "plan.json")
+	if err := runConfig([]string{"plan", "-f", configPath, "--out", planPath}, io.Discard); err != nil {
+		t.Fatalf("plan run: %v", err)
+	}
+
+	planBytes, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("read plan: %v", err)
+	}
+	var plan configplan.Document
+	if err := json.Unmarshal(planBytes, &plan); err != nil {
+		t.Fatalf("decode plan: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := runConfig([]string{"apply", "-f", configPath, "--plan", planPath, "--approve", plan.Fingerprint}, &out); err != nil {
+		t.Fatalf("apply run: %v", err)
+	}
+
+	var applyResult struct {
+		Summary struct {
+			Applied int `json:"applied"`
+			Noop    int `json:"noop"`
+			Failed  int `json:"failed"`
+		} `json:"summary"`
+		PartialFailed bool `json:"partialFailed"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &applyResult); err != nil {
+		t.Fatalf("decode apply output: %v", err)
+	}
+	if applyResult.PartialFailed {
+		t.Fatalf("want successful apply, got partial failure: %s", out.String())
+	}
+	if applyResult.Summary.Failed != 0 {
+		t.Fatalf("want 0 failed outcomes, got %d", applyResult.Summary.Failed)
+	}
+
+	deployments, err := s.List()
+	if err != nil {
+		t.Fatalf("list deployments after apply: %v", err)
+	}
+	byName := map[string]store.Deployment{}
+	for _, deployment := range deployments {
+		byName[deployment.Name] = deployment
+	}
+	if _, exists := byName["legacy"]; exists {
+		t.Fatalf("want legacy deployment deleted, got %#v", byName["legacy"])
+	}
+	if byName["app"].Image != "ghcr.io/acme/app:2" {
+		t.Fatalf("want app image updated, got %q", byName["app"].Image)
+	}
+	if _, exists := byName["new"]; !exists {
+		t.Fatal("want new deployment created")
+	}
+
+	registries, err := s.ListRegistries()
+	if err != nil {
+		t.Fatalf("list registries after apply: %v", err)
+	}
+	prefixes := make(map[string]struct{}, len(registries))
+	for _, registry := range registries {
+		prefixes[registry.Prefix] = struct{}{}
+	}
+	if _, exists := prefixes["c.example"]; exists {
+		t.Fatal("want c.example registry deleted")
+	}
+	if _, exists := prefixes["b.example"]; !exists {
+		t.Fatal("want b.example registry created")
+	}
+
+	hostProfile, err := hostStore.Get()
+	if err != nil {
+		t.Fatalf("get host profile after apply: %v", err)
+	}
+	if hostProfile.DisplayName != "prod-vps-1" || hostProfile.DashboardAccessMode != internalapi.DashboardAccessModeWAFAndLogin {
+		t.Fatalf("unexpected host profile after apply: %#v", hostProfile)
+	}
+
+	planPath2 := filepath.Join(t.TempDir(), "plan-2.json")
+	if err := runConfig([]string{"plan", "-f", configPath, "--out", planPath2}, io.Discard); err != nil {
+		t.Fatalf("second plan run: %v", err)
+	}
+	planBytes2, err := os.ReadFile(planPath2)
+	if err != nil {
+		t.Fatalf("read second plan: %v", err)
+	}
+	var plan2 configplan.Document
+	if err := json.Unmarshal(planBytes2, &plan2); err != nil {
+		t.Fatalf("decode second plan: %v", err)
+	}
+
+	out.Reset()
+	if err := runConfig([]string{"apply", "-f", configPath, "--plan", planPath2, "--approve", plan2.Fingerprint}, &out); err != nil {
+		t.Fatalf("second apply run: %v", err)
+	}
+	if err := json.Unmarshal(out.Bytes(), &applyResult); err != nil {
+		t.Fatalf("decode second apply output: %v", err)
+	}
+	if applyResult.PartialFailed || applyResult.Summary.Failed != 0 {
+		t.Fatalf("want idempotent successful second apply, got %s", out.String())
+	}
+}
+
+func TestRunConfigApply_RejectsStaleFingerprint(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "deployments.json")
+	t.Setenv("LOTSEN_DATA", storePath)
+
+	s, err := store.NewJSONStore(storePath)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	if _, err := s.Create(store.Deployment{ID: "dep-1", Name: "app", Image: "ghcr.io/acme/app:1", Domain: "app.example.com", Public: true, Status: store.StatusHealthy}); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+
+	hostStore, err := internalapi.NewFileHostProfileStore(hostProfilePath(storePath))
+	if err != nil {
+		t.Fatalf("new host profile store: %v", err)
+	}
+	if _, err := hostStore.Update(internalapi.HostProfile{}); err != nil {
+		t.Fatalf("seed host profile: %v", err)
+	}
+
+	configPath := filepath.Join(t.TempDir(), "desired.json")
+	desired := `{
+  "apiVersion": "lotsen/v1",
+  "kind": "LotsenConfig",
+  "spec": {
+    "deployments": [
+      {
+        "name": "app",
+        "image": "ghcr.io/acme/app:2",
+        "domain": "app.example.com",
+        "public": true
+      }
+    ],
+    "registries": [],
+    "host": {}
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(desired), 0o644); err != nil {
+		t.Fatalf("write desired config: %v", err)
+	}
+
+	planPath := filepath.Join(t.TempDir(), "plan.json")
+	if err := runConfig([]string{"plan", "-f", configPath, "--out", planPath}, io.Discard); err != nil {
+		t.Fatalf("plan run: %v", err)
+	}
+
+	planBytes, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("read plan: %v", err)
+	}
+	var plan configplan.Document
+	if err := json.Unmarshal(planBytes, &plan); err != nil {
+		t.Fatalf("decode plan: %v", err)
+	}
+
+	if _, err := s.Create(store.Deployment{ID: "dep-race", Name: "race", Image: "ghcr.io/acme/race:1", Domain: "race.example.com", Public: true, Status: store.StatusHealthy}); err != nil {
+		t.Fatalf("introduce drift: %v", err)
+	}
+
+	err = runConfig([]string{"apply", "-f", configPath, "--plan", planPath, "--approve", plan.Fingerprint}, io.Discard)
+	if err == nil {
+		t.Fatal("want stale fingerprint error")
+	}
+	if !strings.Contains(err.Error(), "stale approval fingerprint") {
+		t.Fatalf("want stale fingerprint error, got %v", err)
+	}
+}

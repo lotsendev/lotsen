@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	internalapi "github.com/lotsendev/lotsen/internal/api"
+	"github.com/lotsendev/lotsen/internal/configapply"
 	"github.com/lotsendev/lotsen/internal/configplan"
 	"github.com/lotsendev/lotsen/internal/configv1"
 	"github.com/lotsendev/lotsen/store"
@@ -24,7 +26,7 @@ var (
 
 func runConfig(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: lotsen config <validate|fmt|export|plan> [flags]")
+		return errors.New("usage: lotsen config <validate|fmt|export|plan|apply> [flags]")
 	}
 
 	switch args[0] {
@@ -36,9 +38,82 @@ func runConfig(args []string, stdout io.Writer) error {
 		return runConfigExport(args[1:])
 	case "plan":
 		return runConfigPlan(args[1:])
+	case "apply":
+		return runConfigApply(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown config command %q", args[0])
 	}
+}
+
+func runConfigApply(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("config apply", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	configPath := fs.String("f", "", "Path to config file")
+	planPath := fs.String("plan", "", "Path to plan file")
+	approve := fs.String("approve", "", "Approved plan fingerprint")
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("%w\n\nUsage: lotsen config apply -f <file> --plan <plan-file> --approve <fingerprint>", err)
+	}
+
+	if strings.TrimSpace(*configPath) == "" || strings.TrimSpace(*planPath) == "" || strings.TrimSpace(*approve) == "" {
+		return errors.New("Usage: lotsen config apply -f <file> --plan <plan-file> --approve <fingerprint>")
+	}
+
+	desired, err := readConfigFile(*configPath)
+	if err != nil {
+		return err
+	}
+	if err := configv1.Validate(desired); err != nil {
+		return fmt.Errorf("config validation failed: %w", err)
+	}
+
+	planDoc, err := readPlanFile(*planPath)
+	if err != nil {
+		return err
+	}
+
+	approvedFingerprint := strings.TrimSpace(*approve)
+	if planDoc.Fingerprint != approvedFingerprint {
+		return errors.New("approval fingerprint does not match plan fingerprint")
+	}
+
+	live, err := exportConfigDocument()
+	if err != nil {
+		return fmt.Errorf("export live state: %w", err)
+	}
+
+	currentPlan, err := configplan.Build(desired, live)
+	if err != nil {
+		return fmt.Errorf("build plan: %w", err)
+	}
+	if currentPlan.Fingerprint != approvedFingerprint {
+		return fmt.Errorf("stale approval fingerprint: expected %s, got %s", currentPlan.Fingerprint, approvedFingerprint)
+	}
+
+	storePath := dataPath()
+	jsonStore, err := store.NewJSONStore(storePath)
+	if err != nil {
+		return fmt.Errorf("open store: %w", err)
+	}
+	hostProfileStore, err := internalapi.NewFileHostProfileStore(hostProfilePath(storePath))
+	if err != nil {
+		return fmt.Errorf("open host profile store: %w", err)
+	}
+
+	result, applyErr := configapply.Execute(desired, currentPlan, jsonStore, hostProfileStore)
+	encoded, marshalErr := json.MarshalIndent(result, "", "  ")
+	if marshalErr != nil {
+		return fmt.Errorf("marshal apply outcome: %w", marshalErr)
+	}
+	if _, writeErr := stdout.Write(append(encoded, '\n')); writeErr != nil {
+		return writeErr
+	}
+
+	if applyErr != nil {
+		return applyErr
+	}
+
+	return nil
 }
 
 func runConfigPlan(args []string) error {
@@ -173,6 +248,31 @@ func runConfigExport(args []string) error {
 	}
 
 	return nil
+}
+
+func readPlanFile(path string) (configplan.Document, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return configplan.Document{}, fmt.Errorf("open plan file: %w", err)
+	}
+	defer f.Close()
+
+	var plan configplan.Document
+	if err := json.NewDecoder(f).Decode(&plan); err != nil {
+		return configplan.Document{}, fmt.Errorf("decode plan file: %w", err)
+	}
+
+	if strings.TrimSpace(plan.APIVersion) != configv1.APIVersion {
+		return configplan.Document{}, fmt.Errorf("invalid plan apiVersion %q", plan.APIVersion)
+	}
+	if strings.TrimSpace(plan.Kind) != configplan.Kind {
+		return configplan.Document{}, fmt.Errorf("invalid plan kind %q", plan.Kind)
+	}
+	if strings.TrimSpace(plan.Fingerprint) == "" {
+		return configplan.Document{}, errors.New("plan fingerprint is required")
+	}
+
+	return plan, nil
 }
 
 func readConfigFile(path string) (configv1.Document, error) {
